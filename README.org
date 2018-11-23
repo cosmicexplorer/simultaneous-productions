@@ -1,0 +1,16 @@
+#+TITLE: simultaneous-productions
+#+STARTUP: showall
+
+A Rust parser combinator library efficiently implementing "simultaneous productions", a model equivalent to a Turing Machine (I think). The method of simultaneous productions allows specifying languages extremely naturally, and maps perfectly to the parser combinator operations I have in mind. It can also be implemented with a linear (?) partitioning algorithm.
+
+* TODO [0/5]
+- [ ] specify a simple language so that it compiles
+  - use fixed strings instead of regex for now
+- [ ] implement the simple language so that it can be parsed
+- [ ] make a simple language that is usable for some simple task
+  - csv parsing? /or at least a simple subset of it/
+- [ ] develop benchmarking and (fuzz)? testing methods
+- [ ] parse C and C++
+
+* LICENSE
+[[file:./LICENSE][GPL 3.0+]]
