@@ -1,12 +1,25 @@
 #+TITLE: simultaneous-productions
 #+STARTUP: showall
 
-A Rust parser combinator library efficiently implementing "simultaneous productions", a model equivalent to a Turing Machine (I think). The method of simultaneous productions allows specifying languages extremely naturally, and maps perfectly to the parser combinator operations I have in mind. It can also be implemented with a linear (?) partitioning algorithm.
+A Scala parser combinator library efficiently implementing "simultaneous productions", a model equivalent to a Turing Machine (I think). The method of simultaneous productions allows specifying languages extremely naturally, and maps perfectly to the parser combinator operations I have in mind. It can also be implemented with a linear (?) partitioning algorithm.
 
-* TODO [0/5]
+* Ideal Code
+
+#+BEGIN_SRC scala
+  val WithWeirdIntegerLiterals = Grammars.C.productions.entry[IntegerLiteral] // Use a type-indexed map!
+    .replaceCases
+    .addCase(('A', SomeSubProductionType, 'C') ~> { (a: Token, inner: SomeSubProductionType, c: Token) =>
+      IntegerLiteral(s"${a}${inner.toString}${c}")
+    }.build() // This could be hidden behind an implicit.
+  )
+#+END_SRC
+
+* TODO [0/6]
 - [ ] specify a simple language so that it compiles
   - use fixed strings instead of regex for now
+  - use strings instead of type-indexing the productions for now
 - [ ] implement the simple language so that it can be parsed
+- [ ] figure out how to allow productions to be type-indexed and require type-checking for that type in all the cases of the production
 - [ ] make a simple language that is usable for some simple task
   - csv parsing? /or at least a simple subset of it/
 - [ ] develop benchmarking and (fuzz)? testing methods
