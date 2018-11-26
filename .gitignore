@@ -2,4 +2,6 @@
 /.cache/
 /dist/
 /.pids/
-/.pants_workdir.file_lock
+/.pants.workdir.file_lock
+/.ensime
+*.pyc
