@@ -1,2 +1,5 @@
-/target
-**/*.rs.bk
+/.pants.d/
+/.cache/
+/dist/
+/.pids/
+/.pants_workdir.file_lock
