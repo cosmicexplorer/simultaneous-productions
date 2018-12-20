@@ -16,10 +16,22 @@ use std::hash::{Hash, Hasher};
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct Literal<Tok: Sized + PartialEq + Eq + Hash + Clone>(Vec<Tok>);
 
+impl Literal<char> {
+  fn from(s: &str) -> Self {
+    Literal(s.chars().collect())
+  }
+}
+
 // A reference to another production -- the string must match the assigned name of a production in a
 // set of simultaneous productions.
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct ProductionReference(String);
+
+impl ProductionReference {
+  fn new(s: &str) -> Self {
+    ProductionReference(s.to_string())
+  }
+}
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum CaseElement<Tok: Sized + PartialEq + Eq + Hash + Clone> {
@@ -74,6 +86,14 @@ pub struct TokenWithPosition<Tok: Sized + PartialEq + Eq + Hash + Clone> {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct StackChangeSet(Vec<StackChangeUnit>);
 
+impl StackChangeSet {
+  fn reversed(&self) -> Self {
+    let rev_changes = self.0.clone().into_iter().rev().collect::<Vec<_>>();
+    StackChangeSet(rev_changes)
+  }
+}
+
+// The specific ordering of the vector is meaningful, so this Hash impl makes sense.
 impl Hash for StackChangeSet {
   fn hash<H: Hasher>(&self, state: &mut H) {
     for unit_change in self.0.iter() {
@@ -210,7 +230,10 @@ impl <Tok: Sized + PartialEq + Eq + Hash + Clone> Tokenizeable<Tok>
         let pair_entry = pair_map.entry(consecutive_pair_key).or_insert(vec![]);
         (*pair_entry).push(state_change.clone());
       }
-      TokenIndex(pair_map.into_iter().map(|(k, changes)| (k, AllowedTransitions(changes.iter().cloned().collect::<IndexSet<_>>())))
+      TokenIndex(pair_map.into_iter().map(|(k, changes)| {
+        let transitions_deduplicated = changes.iter().cloned().collect::<IndexSet<_>>();
+        (k, AllowedTransitions(transitions_deduplicated))
+      })
                  .collect::<IndexMap<_, _>>())
     }
   }
@@ -222,13 +245,13 @@ mod tests {
   #[test]
   fn basic_productions() {
     let prods = SimultaneousProductions([
-      (ProductionReference("a".to_string()), Production(vec![
+      (ProductionReference::new("a"), Production(vec![
         Case(vec![
-          CaseElement::Lit(Literal(vec!['a', 'b']))])])),
-      (ProductionReference("b".to_string()), Production(vec![
+          CaseElement::Lit(Literal::from("ab"))])])),
+      (ProductionReference::new("b"), Production(vec![
         Case(vec![
-          CaseElement::Lit(Literal(vec!['a', 'b'])),
-          CaseElement::Prod(ProductionReference("a".to_string())),
+          CaseElement::Lit(Literal::from("ab")),
+          CaseElement::Prod(ProductionReference::new("a")),
         ])]))
     ].iter().cloned().collect());
     let token_index = prods.generate_token_index();
@@ -267,7 +290,7 @@ mod tests {
             pos: TokenPositionInProduction {
               case_context: Case(vec![
                 CaseElement::Lit(Literal(vec!['a', 'b'])),
-                CaseElement::Prod(ProductionReference("a".to_string())),
+                CaseElement::Prod(ProductionReference::new("a")),
               ]),
               case_pos: 0,
               literal_context: Literal(vec!['a', 'b']),
@@ -279,7 +302,7 @@ mod tests {
             pos: TokenPositionInProduction {
               case_context: Case(vec![
                 CaseElement::Lit(Literal(vec!['a', 'b'])),
-                CaseElement::Prod(ProductionReference("a".to_string())),
+                CaseElement::Prod(ProductionReference::new("a")),
               ]),
               case_pos: 0,
               literal_context: Literal(vec!['a', 'b']),
@@ -296,10 +319,10 @@ mod tests {
   #[should_panic(expected = "prod ref not found")]
   fn missing_prod_ref() {
     let prods = SimultaneousProductions([
-      (ProductionReference("b".to_string()), Production(vec![
+      (ProductionReference::new("b"), Production(vec![
         Case(vec![
-          CaseElement::Lit(Literal(vec!['a', 'b'])),
-          CaseElement::Prod(ProductionReference("c".to_string())),
+          CaseElement::Lit(Literal::from("ab")),
+          CaseElement::Prod(ProductionReference::new("c")),
         ])]))
     ].iter().cloned().collect());
     prods.generate_token_index();
