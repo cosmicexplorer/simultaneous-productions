@@ -6,12 +6,12 @@ A Scala parser combinator library efficiently implementing "simultaneous product
 * Ideal Code
 
 #+BEGIN_SRC scala
-  val WithWeirdIntegerLiterals = Grammars.C.productions.entry[IntegerLiteral] // Use a type-indexed map!
-    .replaceCases
-    .addCase(('A', SomeSubProductionType, 'C') ~> { (a: Token, inner: SomeSubProductionType, c: Token) =>
-      IntegerLiteral(s"${a}${inner.toString}${c}")
-    }.build() // This could be hidden behind an implicit.
-  )
+val WithWeirdIntegerLiterals = Grammars.C.productions.entry[IntegerLiteral] // Use a type-indexed map!
+  .replaceCases
+  .addCase(('A', SomeSubProductionType, 'C') ~> { (a: Token, inner: SomeSubProductionType, c: Token) =>
+    IntegerLiteral(s"${a}${inner.toString}${c}")
+  }.build() // This could be hidden behind an implicit.
+)
 #+END_SRC
 
 * TODO [0/6]
