@@ -7,8 +7,8 @@ extern crate indexmap;
 // `basic_productions()`) -- figure out if there is a better way to do this.
 use indexmap::{IndexMap, IndexSet};
 
-// use std::collections::HashMap;
 use std::hash::{Hash, Hasher};
+use std::iter::FromIterator;
 
 // TODO: trait aliases are not fully implemented!
 // trait TokenBound = Sized + PartialEq + Eq + Hash + Clone;
@@ -24,7 +24,8 @@ impl Literal<char> {
 
 // A reference to another production -- the string must match the assigned name of a production in a
 // set of simultaneous productions.
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+// NB: The `Ord` derivation lets us reliably hash `SimultaneousProductions<Tok>`.
+#[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub struct ProductionReference(String);
 
 impl ProductionReference {
@@ -42,14 +43,24 @@ pub enum CaseElement<Tok: Sized + PartialEq + Eq + Hash + Clone> {
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct Case<Tok: Sized + PartialEq + Eq + Hash + Clone>(Vec<CaseElement<Tok>>);
 
-// TODO: the Eq/Hash impls are going to be very expensive here! memoization is the right idea, or
-// pairing it with some uuid?
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct Production<Tok: Sized + PartialEq + Eq + Hash + Clone>(Vec<Case<Tok>>);
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct SimultaneousProductions<Tok: Sized + PartialEq + Eq + Hash + Clone>(
   IndexMap<ProductionReference, Production<Tok>>);
+
+impl <Tok: Sized + PartialEq + Eq + Hash + Clone> Hash for SimultaneousProductions<Tok> {
+  fn hash<H: Hasher>(&self, state: &mut H) {
+    let mut keys: Vec<_> = self.0.keys().collect();
+    keys.sort();
+    for k in keys.iter().cloned() {
+      let val = self.0.get(k).unwrap();
+      k.hash(state);
+      val.hash(state);
+    }
+  }
+}
 
 // This can be used to search backwards and/or forwards for allowed states during the execution of
 // the partitioning algorithm!
@@ -62,6 +73,7 @@ pub struct ConsecutiveTokenPair<Tok: Sized + PartialEq + Eq + Hash + Clone> {
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct TokenPositionInProduction<Tok: Sized + PartialEq + Eq + Hash + Clone> {
+  productions_context: SimultaneousProductions<Tok>,
   case_context: Case<Tok>,
   case_pos: usize,
   literal_context: Literal<Tok>,
@@ -120,12 +132,12 @@ pub struct AllowedTransitions<Tok: Sized + PartialEq + Eq + Hash + Clone>(IndexS
 
 impl <Tok: Sized + PartialEq + Eq + Hash + Clone> TokenWithPosition<Tok> {
   fn collect_backward_forward_transitions(&self) -> AllowedTransitions<Tok> {
-    let mut cur_transitions: IndexSet<StateChange<Tok>> = IndexSet::new();
     // forward literals
-    if self.pos.literal_pos < (self.pos.literal_context.0.len() - 1) {
+    let forward_transitions: Vec<StateChange<Tok>> = if self.pos.literal_pos < (self.pos.literal_context.0.len() - 1) {
       let next_index = self.pos.literal_pos + 1;
       let next_token = self.pos.literal_context.0.get(next_index).unwrap().clone();
       let next_pos = TokenPositionInProduction {
+        productions_context: self.pos.productions_context.clone(),
         case_context: self.pos.case_context.clone(),
         case_pos: self.pos.case_pos,
         literal_context: self.pos.literal_context.clone(),
@@ -140,15 +152,47 @@ impl <Tok: Sized + PartialEq + Eq + Hash + Clone> TokenWithPosition<Tok> {
         right_state: next_token_with_pos,
         stack_changes: StackChangeSet(vec![]),
       };
-      cur_transitions.insert(next_state_change);
+      vec![next_state_change]
+    } else if self.pos.case_pos < (self.pos.case_context.0.len() - 1) {
+      let next_case_index = self.pos.case_pos + 1;
+      let next_case_element = self.pos.case_context.0.get(next_case_index).unwrap().clone();
+      match next_case_element.clone() {
+        CaseElement::Lit(next_literal) => {
+          // We assert!(next_literal.0.len() > 0) in generate_token_index()!
+          let new_next_case_el_init_pos = 0;
+          let next_case_el_lit_pos = TokenPositionInProduction {
+            productions_context: self.pos.productions_context.clone(),
+            case_context: self.pos.case_context.clone(),
+            case_pos: next_case_index,
+            literal_context: next_literal.clone(),
+            literal_pos: new_next_case_el_init_pos,
+          };
+          let next_case_el_tok_with_pos = TokenWithPosition {
+            tok: next_literal.0.get(new_next_case_el_init_pos).unwrap().clone(),
+            pos: next_case_el_lit_pos,
+          };
+          let next_case_el_state_change = StateChange {
+            left_state: self.clone(),
+            right_state: next_case_el_tok_with_pos,
+            stack_changes: StackChangeSet(vec![]),
+          };
+          vec![next_case_el_state_change]
+        },
+        CaseElement::Prod(next_prod_ref) => {
+          panic!("???/next_prod_ref");
+        },
+      }
     } else {
-      println!("forward past end of literal (not implemented yet)!");
-    }
+      // We're at the end of a case -- do nothing (this is supposed to be covered by moving
+      // backward/forward from other states).
+      vec![]
+    };
     // backward literals
-    if self.pos.literal_pos > 0 {
+    let backward_transitions: Vec<StateChange<Tok>> = if self.pos.literal_pos > 0 {
       let prev_index = self.pos.literal_pos - 1;
       let prev_token = self.pos.literal_context.0.get(prev_index).unwrap().clone();
       let prev_pos = TokenPositionInProduction {
+        productions_context: self.pos.productions_context.clone(),
         case_context: self.pos.case_context.clone(),
         case_pos: self.pos.case_pos,
         literal_context: self.pos.literal_context.clone(),
@@ -163,10 +207,44 @@ impl <Tok: Sized + PartialEq + Eq + Hash + Clone> TokenWithPosition<Tok> {
         right_state: self.clone(),
         stack_changes: StackChangeSet(vec![]),
       };
-      cur_transitions.insert(prev_state_change);
+      vec![prev_state_change]
+    } else if self.pos.case_pos > 0 {
+      let prev_case_index = self.pos.case_pos - 1;
+      let prev_case_element = self.pos.case_context.0.get(prev_case_index).unwrap().clone();
+      match prev_case_element.clone() {
+        CaseElement::Lit(prev_literal) => {
+          // We assert!(prev_literal.0.len() > 0) in generate_token_index()!
+          let new_prev_case_el_init_pos = prev_literal.0.len() - 1;
+          let prev_case_el_lit_pos = TokenPositionInProduction {
+            productions_context: self.pos.productions_context.clone(),
+            case_context: self.pos.case_context.clone(),
+            case_pos: prev_case_index,
+            literal_context: prev_literal.clone(),
+            literal_pos: new_prev_case_el_init_pos,
+          };
+          let prev_case_el_tok_with_pos = TokenWithPosition {
+            tok: prev_literal.0.get(new_prev_case_el_init_pos).unwrap().clone(),
+            pos: prev_case_el_lit_pos,
+          };
+          let prev_case_el_state_change = StateChange {
+            left_state: prev_case_el_tok_with_pos,
+            right_state: self.clone(),
+            stack_changes: StackChangeSet(vec![]),
+          };
+          vec![prev_case_el_state_change]
+        },
+        CaseElement::Prod(prev_prod_ref) => {
+          panic!("???/prev_prod_ref");
+        },
+      }
     } else {
-      println!("backward past start of literal (not implemented yet)!");
-    }
+      // We're at the beginning of a case -- do nothing (this is supposed to be covered by moving
+      // backward/forward from other states).
+      vec![]
+    };
+    let cur_transitions: IndexSet<StateChange<Tok>> = IndexSet::from_iter(
+      forward_transitions.into_iter().chain(backward_transitions.into_iter())
+    );
     AllowedTransitions(cur_transitions)
   }
 }
@@ -194,8 +272,10 @@ impl <Tok: Sized + PartialEq + Eq + Hash + Clone> Tokenizeable<Tok>
         production.0.iter().flat_map(|case| {
           case.0.iter().enumerate().flat_map(|(element_index, element)| match element {
             CaseElement::Lit(literal) => {
+              assert!(literal.0.len() > 0);
               literal.0.clone().into_iter().enumerate().flat_map(|(token_index, tok)| {
                 let cur_new_state = TokenPositionInProduction {
+                  productions_context: self.clone(),
                   case_context: case.clone(),
                   case_pos: element_index,
                   literal_context: literal.clone(),
@@ -265,6 +345,7 @@ mod tests {
           left_state: TokenWithPosition {
             tok: 'a',
             pos: TokenPositionInProduction {
+              productions_context: prods.clone(),
               case_context: Case(vec![
                 CaseElement::Lit(Literal(vec!['a', 'b']))]),
               case_pos: 0,
@@ -275,6 +356,7 @@ mod tests {
           right_state: TokenWithPosition {
             tok: 'b',
             pos: TokenPositionInProduction {
+              productions_context: prods.clone(),
               case_context: Case(vec![
                 CaseElement::Lit(Literal(vec!['a', 'b']))]),
               case_pos: 0,
@@ -288,6 +370,7 @@ mod tests {
           left_state: TokenWithPosition {
             tok: 'a',
             pos: TokenPositionInProduction {
+              productions_context: prods.clone(),
               case_context: Case(vec![
                 CaseElement::Lit(Literal(vec!['a', 'b'])),
                 CaseElement::Prod(ProductionReference::new("a")),
@@ -300,6 +383,7 @@ mod tests {
           right_state: TokenWithPosition {
             tok: 'b',
             pos: TokenPositionInProduction {
+              productions_context: prods.clone(),
               case_context: Case(vec![
                 CaseElement::Lit(Literal(vec!['a', 'b'])),
                 CaseElement::Prod(ProductionReference::new("a")),
