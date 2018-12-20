@@ -5,10 +5,10 @@ extern crate indexmap;
 
 // TODO: indexmap here is only used for testing purposes, so we can compare the results (see
 // `basic_productions()`) -- figure out if there is a better way to do this.
-use indexmap::IndexMap;
+use indexmap::{IndexMap, IndexSet};
 
 // use std::collections::HashMap;
-use std::hash::Hash;
+use std::hash::{Hash, Hasher};
 
 // TODO: trait aliases are not fully implemented!
 // trait TokenBound = Sized + PartialEq + Eq + Hash + Clone;
@@ -21,18 +21,18 @@ pub struct Literal<Tok: Sized + PartialEq + Eq + Hash + Clone>(Vec<Tok>);
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct ProductionReference(String);
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum CaseElement<Tok: Sized + PartialEq + Eq + Hash + Clone> {
   Lit(Literal<Tok>),
   Prod(ProductionReference),
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct Case<Tok: Sized + PartialEq + Eq + Hash + Clone>(Vec<CaseElement<Tok>>);
 
 // TODO: the Eq/Hash impls are going to be very expensive here! memoization is the right idea, or
 // pairing it with some uuid?
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct Production<Tok: Sized + PartialEq + Eq + Hash + Clone>(Vec<Case<Tok>>);
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -48,7 +48,7 @@ pub struct ConsecutiveTokenPair<Tok: Sized + PartialEq + Eq + Hash + Clone> {
   right_tok: Tok,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct TokenPositionInProduction<Tok: Sized + PartialEq + Eq + Hash + Clone> {
   case_context: Case<Tok>,
   case_pos: usize,
@@ -65,13 +65,24 @@ pub enum StackChangeUnit {
   Negative(StackSymbol),
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct TokenWithPosition<Tok: Sized + PartialEq + Eq + Hash + Clone> {
   tok: Tok,
   pos: TokenPositionInProduction<Tok>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
+pub struct StackChangeSet(Vec<StackChangeUnit>);
+
+impl Hash for StackChangeSet {
+  fn hash<H: Hasher>(&self, state: &mut H) {
+    for unit_change in self.0.iter() {
+      unit_change.hash(state);
+    }
+  }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct StateChange<Tok: Sized + PartialEq + Eq + Hash + Clone> {
   // TODO: should we include the `left`/`right` tokens here as well? It's redundant, but it may help
   // during debugging of the algorithm / help avoid mapping state changes to incorrect token
@@ -79,17 +90,17 @@ pub struct StateChange<Tok: Sized + PartialEq + Eq + Hash + Clone> {
   left_state: TokenWithPosition<Tok>,
   right_state: TokenWithPosition<Tok>,
   // NB: when going backwards, this should be reversed!
-  stack_changes: Vec<StackChangeUnit>,
+  stack_changes: StackChangeSet,
 }
 
 // This contains all of the possible state changes that can result from moving from one token to
 // another.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct AllowedTransitions<Tok: Sized + PartialEq + Eq + Hash + Clone>(Vec<StateChange<Tok>>);
+pub struct AllowedTransitions<Tok: Sized + PartialEq + Eq + Hash + Clone>(IndexSet<StateChange<Tok>>);
 
 impl <Tok: Sized + PartialEq + Eq + Hash + Clone> TokenWithPosition<Tok> {
   fn collect_backward_forward_transitions(&self) -> AllowedTransitions<Tok> {
-    let mut cur_transitions: Vec<StateChange<Tok>> = Vec::new();
+    let mut cur_transitions: IndexSet<StateChange<Tok>> = IndexSet::new();
     // forward literals
     if self.pos.literal_pos < (self.pos.literal_context.0.len() - 1) {
       let next_index = self.pos.literal_pos + 1;
@@ -107,9 +118,9 @@ impl <Tok: Sized + PartialEq + Eq + Hash + Clone> TokenWithPosition<Tok> {
       let next_state_change = StateChange {
         left_state: self.clone(),
         right_state: next_token_with_pos,
-        stack_changes: vec![],
+        stack_changes: StackChangeSet(vec![]),
       };
-      cur_transitions.push(next_state_change);
+      cur_transitions.insert(next_state_change);
     } else {
       println!("forward past end of literal (not implemented yet)!");
     }
@@ -130,9 +141,9 @@ impl <Tok: Sized + PartialEq + Eq + Hash + Clone> TokenWithPosition<Tok> {
       let prev_state_change = StateChange {
         left_state: prev_token_with_pos,
         right_state: self.clone(),
-        stack_changes: vec![],
+        stack_changes: StackChangeSet(vec![]),
       };
-      cur_transitions.push(prev_state_change);
+      cur_transitions.insert(prev_state_change);
     } else {
       println!("backward past start of literal (not implemented yet)!");
     }
@@ -178,6 +189,7 @@ impl <Tok: Sized + PartialEq + Eq + Hash + Clone> Tokenizeable<Tok>
               }).collect::<Vec<_>>()
             },
             CaseElement::Prod(prod_ref) => {
+              // TODO: make this whole thing into a Result<_, _>!
               other_self.0.get(prod_ref).expect("prod ref not found");
               vec![]
             },
@@ -186,9 +198,9 @@ impl <Tok: Sized + PartialEq + Eq + Hash + Clone> Tokenizeable<Tok>
       }).collect::<Vec<_>>();
       // `states` has been populated -- let each TokenWithPosition take care of finding the
       // neighboring states for itself.
-      let all_state_changes: Vec<StateChange<Tok>> = states.iter().flat_map(|token_with_position| {
+      let all_state_changes: IndexSet<StateChange<Tok>> = states.iter().flat_map(|token_with_position| {
         token_with_position.collect_backward_forward_transitions().0
-      }).collect::<Vec<_>>();
+      }).collect::<IndexSet<_>>();
       // TODO: this can probably be done immutably pretty easily?
       let mut pair_map: IndexMap<ConsecutiveTokenPair<Tok>, Vec<StateChange<Tok>>> =
         IndexMap::new();
@@ -199,7 +211,7 @@ impl <Tok: Sized + PartialEq + Eq + Hash + Clone> Tokenizeable<Tok>
         let pair_entry = pair_map.entry(consecutive_pair_key).or_insert(vec![]);
         (*pair_entry).push(state_change.clone());
       }
-      TokenIndex(pair_map.into_iter().map(|(k, changes)| (k, AllowedTransitions(changes.to_vec())))
+      TokenIndex(pair_map.into_iter().map(|(k, changes)| (k, AllowedTransitions(changes.iter().cloned().collect::<IndexSet<_>>())))
                  .collect::<IndexMap<_, _>>())
     }
   }
@@ -248,30 +260,7 @@ mod tests {
               literal_pos: 1,
             }
           },
-          stack_changes: vec![],
-        },
-        StateChange {
-          left_state: TokenWithPosition {
-            tok: 'a',
-            pos: TokenPositionInProduction {
-              case_context: Case(vec![
-                CaseElement::Lit(Literal(vec!['a', 'b']))]),
-              case_pos: 0,
-              literal_context: Literal(vec!['a', 'b']),
-              literal_pos: 0,
-            }
-          },
-          right_state: TokenWithPosition {
-            tok: 'b',
-            pos: TokenPositionInProduction {
-              case_context: Case(vec![
-                CaseElement::Lit(Literal(vec!['a', 'b']))]),
-              case_pos: 0,
-              literal_context: Literal(vec!['a', 'b']),
-              literal_pos: 1,
-            }
-          },
-          stack_changes: vec![],
+          stack_changes: StackChangeSet(vec![]),
         },
         StateChange {
           left_state: TokenWithPosition {
@@ -298,36 +287,9 @@ mod tests {
               literal_pos: 1,
             }
           },
-          stack_changes: vec![],
+          stack_changes: StackChangeSet(vec![]),
         },
-        StateChange {
-          left_state: TokenWithPosition {
-            tok: 'a',
-            pos: TokenPositionInProduction {
-              case_context: Case(vec![
-                CaseElement::Lit(Literal(vec!['a', 'b'])),
-                CaseElement::Prod(ProductionReference("a".to_string())),
-              ]),
-              case_pos: 0,
-              literal_context: Literal(vec!['a', 'b']),
-              literal_pos: 0,
-            }
-          },
-          right_state: TokenWithPosition {
-            tok: 'b',
-            pos: TokenPositionInProduction {
-              case_context: Case(vec![
-                CaseElement::Lit(Literal(vec!['a', 'b'])),
-                CaseElement::Prod(ProductionReference("a".to_string())),
-              ]),
-              case_pos: 0,
-              literal_context: Literal(vec!['a', 'b']),
-              literal_pos: 1,
-            }
-          },
-          stack_changes: vec![],
-        },
-      ]))
+      ].iter().cloned().collect::<IndexSet<_>>()))
     ].iter().cloned().collect::<IndexMap<_, _>>()));
   }
 
