@@ -1,7 +1,3 @@
-/.pants.d/
-/.cache/
-/dist/
-/.pids/
-/.pants.workdir.file_lock
-/.ensime
-*.pyc
+/target
+**/*.rs.bk
+Cargo.lock

@@ -5,7 +5,29 @@ A Scala parser combinator library efficiently implementing "simultaneous product
 
 * Ideal Code
 
+#+BEGIN_SRC rust
+
+#+END_SRC
+
 #+BEGIN_SRC scala
+val FloatingPointLiteral = sp.productions(
+  ("float-signed" -> Cases(Parser(Tok("-") * Ref("float-unsigned"), { - _._2 }),
+                           Parser(Tok("+") * Ref("float-unsigned"), { _._2 }))),
+  // NB: should make sure sp.NumberLiterals returns 0 for an empty string
+  ("float-base" -> SingleCase(sp.NumberLiterals)),
+  ("float-mantissa" -> SingleCase(sp.NumberLiterals)),
+  ("float-unsigned" -> Cases(Parser(Ref("float-base"), { toFloat(sp.parseIntegral(_._1)) }),
+                             Parser(Ref("float-base") * Tok(".") * Ref("float-mantissa"), {
+                               // glossing over the details of converting e.g. ".123" to 1/10 + 2/10 + 3/10
+                               case (base, _, mantissa) => toFloat(sp.parseIntegral(base)) + sp.parseFloat(mantissa)
+                             }))),
+  ("exponent" -> Cases(Parser(Tok("e") * Ref("exponent-negated")),
+                       Parser(Tok("e") * Ref("exponent-unsigned")))),
+  ("exponent-negated" -> SingleCase(Parser(Tok("-") * Ref("exponent-unsigned")))),
+  // sp.NumberLiterals is a whole Parser, and should probably return a string
+  ("exponent-unsigned" -> SingleCase(sp.NumberLiterals)),
+)
+
 val WithWeirdIntegerLiterals = Grammars.C.productions.entry[IntegerLiteral] // Use a type-indexed map!
   .replaceCases
   .addCase(('A', SomeSubProductionType, 'C') ~> { (a: Token, inner: SomeSubProductionType, c: Token) =>
