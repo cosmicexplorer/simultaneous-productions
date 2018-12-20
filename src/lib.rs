@@ -84,9 +84,9 @@ impl Hash for StackChangeSet {
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct StateChange<Tok: Sized + PartialEq + Eq + Hash + Clone> {
-  // TODO: should we include the `left`/`right` tokens here as well? It's redundant, but it may help
-  // during debugging of the algorithm / help avoid mapping state changes to incorrect token
-  // pairs. For now, we will separate these.
+  // TODO: map `left_state` and `right_state` to simply unique strings, which are the value of some
+  // Map<Tok, String> -- we don't need all the information from `TokenPositionInProduction` *during
+  // parsing*.
   left_state: TokenWithPosition<Tok>,
   right_state: TokenWithPosition<Tok>,
   // NB: when going backwards, this should be reversed!
@@ -147,7 +147,6 @@ impl <Tok: Sized + PartialEq + Eq + Hash + Clone> TokenWithPosition<Tok> {
     } else {
       println!("backward past start of literal (not implemented yet)!");
     }
-    // panic!("not implemented yet!");
     AllowedTransitions(cur_transitions)
   }
 }
