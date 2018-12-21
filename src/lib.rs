@@ -99,6 +99,18 @@ pub struct TokenWithPosition<Tok: Sized + PartialEq + Eq + Hash + Clone> {
 pub struct StackChangeSet(Vec<StackChangeUnit>);
 
 impl StackChangeSet {
+  fn empty() -> Self {
+    StackChangeSet(vec![])
+  }
+
+  fn init(st: StackChangeUnit) -> Self {
+    StackChangeSet(vec![st])
+  }
+
+  fn append(&self, st: StackChangeUnit) -> Self {
+    StackChangeSet(self.0.iter().cloned().chain(vec![st].into_iter()).collect())
+  }
+
   fn reversed(&self) -> Self {
     let rev_changes = self.0.clone().into_iter().rev().collect::<Vec<_>>();
     StackChangeSet(rev_changes)
@@ -150,7 +162,7 @@ impl <Tok: Sized + PartialEq + Eq + Hash + Clone> TokenWithPosition<Tok> {
       let next_state_change = StateChange {
         left_state: self.clone(),
         right_state: next_token_with_pos,
-        stack_changes: StackChangeSet(vec![]),
+        stack_changes: StackChangeSet::empty(),
       };
       vec![next_state_change]
     } else if self.pos.case_pos < (self.pos.case_context.0.len() - 1) {
@@ -174,12 +186,67 @@ impl <Tok: Sized + PartialEq + Eq + Hash + Clone> TokenWithPosition<Tok> {
           let next_case_el_state_change = StateChange {
             left_state: self.clone(),
             right_state: next_case_el_tok_with_pos,
-            stack_changes: StackChangeSet(vec![]),
+            stack_changes: StackChangeSet::empty(),
           };
           vec![next_case_el_state_change]
         },
         CaseElement::Prod(next_prod_ref) => {
-          panic!("???/next_prod_ref");
+          // We check that all production refs exist in generate_token_index()!
+          let next_prod = self.pos.productions_context.0.get(&next_prod_ref.clone()).unwrap().clone();
+          // Find all reachable states that are one token transition away -- a BFS with depth 1.
+          let mut reachable_cases: Vec<(Case<Tok>, StackChangeSet)> =
+            next_prod.0.iter().cloned().map(|case| {
+              let new_stack_sym = StackSymbol(next_prod_ref.clone());
+              (case, StackChangeSet::init(StackChangeUnit::Positive(new_stack_sym)))
+            }).collect();
+          let mut one_step_state_changes: IndexSet<StateChange<Tok>> = IndexSet::new();
+          while !reachable_cases.is_empty() {
+            let new_reachable_cases = reachable_cases.drain(..).flat_map(|(cur_case, cur_stack_changes)| {
+              // We assert!(case.0.len() > 0) in generate_token_index()!
+              // TODO: we commented that out -- we need to be able to support empty cases! This may
+              // also require some munging of the data model.
+              let new_next_stepped_case_el_init_pos = 0;
+              match cur_case.0.get(new_next_stepped_case_el_init_pos).unwrap().clone() {
+                CaseElement::Lit(next_literal) => {
+                  // We assert!(next_literal.0.len() > 0) in generate_token_index()!
+                  let new_next_stepped_literal_init_pos = 0;
+                  let stepped_to_pos = TokenPositionInProduction {
+                    productions_context: self.pos.productions_context.clone(),
+                    case_context: cur_case.clone(),
+                    case_pos: new_next_stepped_case_el_init_pos,
+                    literal_context: next_literal.clone(),
+                    literal_pos: new_next_stepped_literal_init_pos,
+                  };
+                  let stepped_to_state = TokenWithPosition {
+                    tok: next_literal.0.get(new_next_stepped_literal_init_pos).unwrap().clone(),
+                    pos: stepped_to_pos,
+                  };
+                  let stepped_state_change = StateChange {
+                    left_state: self.clone(),
+                    right_state: stepped_to_state,
+                    stack_changes: cur_stack_changes,
+                  };
+                  one_step_state_changes.insert(stepped_state_change);
+                  vec![]
+                },
+                CaseElement::Prod(further_next_prod_ref) => {
+                  let further_next_prod = self.pos.productions_context.0
+                    .get(&further_next_prod_ref.clone()).unwrap().clone();
+                  // TODO: this can cause an infinite loop on normal inputs unless we can reasonably
+                  // extend `StackChangeSet` to hold a cycle so that it can be resumed during
+                  // parsing.
+                  // NB: The above might be the "pathological" case that causes the algorithm to be
+                  // nonlinear -- BUT ONLY IF WE LET THAT HAPPEN (and don't e.g. amortize!).
+                  further_next_prod.0.into_iter().map(|case| {
+                    let new_stack_sym = StackSymbol(further_next_prod_ref.clone());
+                    (case, cur_stack_changes.append(StackChangeUnit::Positive(new_stack_sym)))
+                  }).collect::<Vec<_>>()
+                },
+              }
+            }).collect::<Vec<_>>();
+            reachable_cases.extend(new_reachable_cases.into_iter());
+          }
+          one_step_state_changes.into_iter().collect::<Vec<_>>()
         },
       }
     } else {
@@ -205,7 +272,7 @@ impl <Tok: Sized + PartialEq + Eq + Hash + Clone> TokenWithPosition<Tok> {
       let prev_state_change = StateChange {
         left_state: prev_token_with_pos,
         right_state: self.clone(),
-        stack_changes: StackChangeSet(vec![]),
+        stack_changes: StackChangeSet::empty(),
       };
       vec![prev_state_change]
     } else if self.pos.case_pos > 0 {
@@ -229,7 +296,7 @@ impl <Tok: Sized + PartialEq + Eq + Hash + Clone> TokenWithPosition<Tok> {
           let prev_case_el_state_change = StateChange {
             left_state: prev_case_el_tok_with_pos,
             right_state: self.clone(),
-            stack_changes: StackChangeSet(vec![]),
+            stack_changes: StackChangeSet::empty(),
           };
           vec![prev_case_el_state_change]
         },
@@ -269,7 +336,9 @@ impl <Tok: Sized + PartialEq + Eq + Hash + Clone> Tokenizeable<Tok>
     fn generate_token_index(&self) -> TokenIndex<Tok> {
       let other_self = self.clone();
       let states: Vec<TokenWithPosition<Tok>> = self.0.iter().flat_map(|(_, production)| {
+        assert!(production.0.len() > 0);
         production.0.iter().flat_map(|case| {
+          // assert!(case.0.len() > 0);
           case.0.iter().enumerate().flat_map(|(element_index, element)| match element {
             CaseElement::Lit(literal) => {
               assert!(literal.0.len() > 0);
@@ -364,7 +433,7 @@ mod tests {
               literal_pos: 1,
             }
           },
-          stack_changes: StackChangeSet(vec![]),
+          stack_changes: StackChangeSet::empty(),
         },
         StateChange {
           left_state: TokenWithPosition {
@@ -393,9 +462,43 @@ mod tests {
               literal_pos: 1,
             }
           },
-          stack_changes: StackChangeSet(vec![]),
+          stack_changes: StackChangeSet::empty(),
         },
-      ].iter().cloned().collect::<IndexSet<_>>()))
+      ].iter().cloned().collect::<IndexSet<_>>())),
+      (ConsecutiveTokenPair {
+        left_tok: 'b',
+        right_tok: 'a',
+      }, AllowedTransitions(vec![
+        StateChange {
+          left_state: TokenWithPosition {
+            tok: 'b',
+            pos: TokenPositionInProduction {
+              productions_context: prods.clone(),
+              case_context: Case(vec![
+                CaseElement::Lit(Literal(vec!['a', 'b'])),
+                CaseElement::Prod(ProductionReference::new("a"))]),
+              case_pos: 0,
+              literal_context: Literal(vec!['a', 'b']),
+              literal_pos: 1,
+            }
+          },
+          right_state: TokenWithPosition {
+            tok: 'a',
+            pos: TokenPositionInProduction {
+              productions_context: prods.clone(),
+              case_context: Case(vec![
+                CaseElement::Lit(Literal(vec!['a', 'b']))]),
+              case_pos: 0,
+              literal_context: Literal(vec!['a', 'b']),
+              literal_pos: 0,
+            }
+          },
+          stack_changes: StackChangeSet(vec![
+            StackChangeUnit::Positive(
+              StackSymbol(ProductionReference::new("a"))),
+          ]),
+        },
+      ].iter().cloned().collect::<IndexSet<_>>())),
     ].iter().cloned().collect::<IndexMap<_, _>>()));
   }
 
