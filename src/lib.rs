@@ -169,12 +169,6 @@ enum StackStep {
   Negative(StackSym),
 }
 
-#[derive(Debug, Copy, PartialEq, Eq)]
-struct ConsecutiveTokenPair<Tok: Sized + PartialEq + Eq + Hash + Clone> {
-  left_token: Tok,
-  right_token: Tok,
-}
-
 // This refers to the position of a particular ProdRef within the grammar (its location within a
 // specific Case).
 #[derive(Debug, Copy, PartialEq, Eq)]
@@ -184,24 +178,53 @@ struct ProdRefPosition {
   case_el: CaseElRef,
 }
 
+// NB: Strongly associated with use in `IntermediateInputTokenTransition` -- for collecting
+// `StackStep`s at the end (or something), make another wrapper!
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct StackDiff(Vec<StackStep>);
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 struct IntermediateInputTokenTransition {
-  stack: Vec<StackStep>,
+  diff: StackDiff,
   pos: ProdRefPosition,
 }
 
+// TODO: Some merge method for parallel parses!
 #[derive(Debug, Clone, PartialEq, Eq)]
 struct KnownStateTraversals {
-  completed_traversals: Vec<Vec<StackStep>>,
+  // NB: I believe this corresponds to the collapsing find of a union-find (and the imprecise
+  // correspondence is because /our disjoint sets are subparses/) -- this may or may not
+  // need to be figured out more to ensure the desired runtime (which may not be linear as a result
+  // of extending union-find).
+  completed_traversals: Vec<StackDiff>,
+  // NB: This is what lets us start off with single-token transitions (we then clone and expand this
+  // after reading some specific input). We can start off by populating this to whatever depth we
+  // want.
+  // TODO: consider the relationship between populating token transitions in the lookbehind cache to
+  // some specific depth (e.g. strings of 3, 4, 5 tokens) and SIMD type 1 instructions (my
+  // notations: meaning recognizing a specific sequence of tokens). SIMD type 2 (finding a specific
+  // token in a longer string of bytes) can already easily be used with just token pairs (and
+  // others).
+  // TODO: consider a `Set<StackDiff>` so we can handle cycles (or perhaps a Map<_, ???>, or
+  // something else, to store what happens in between -- figure it out later)!
   intermediate_traversals: VecDeque<IntermediateInputTokenTransition>,
 }
 
+// Index into the lookbehind cache, along with RightTokRef.
 #[derive(Debug, Copy, PartialOrd, Ord, PartialEq, Eq)]
 struct LeftTokRef(usize);
 
 #[derive(Debug, Copy, PartialOrd, Ord, PartialEq, Eq)]
 struct RightTokRef(usize);
 
+// Index into the lookbehind cache entry for a (LeftTokRef, RightTokRef) pair to avoid copying all
+// the e.g. stack transitions over to maintain state.
+#[derive(Debug, Copy, PartialOrd, Ord, PartialEq, Eq)]
+struct LookbehindRef(usize);
+
+// [=< This is called the "lookbehind" cache because it's either that or "lookahead", and
+// "lookbehind" sounds like it's doing more difficult work, and "back-forward cache" is what firefox
+// calls its cache for js state for the browser back button and I want mozilla to like me. >=]
 #[derive(Debug, Clone, PartialEq, Eq)]
 struct LookbehindCache<Tok: Sized + PartialEq + Eq + Hash + Clone>(
   // TODO: IndexMap is a good intermediate structure, but we'll have better locality for free (and
@@ -209,15 +232,13 @@ struct LookbehindCache<Tok: Sized + PartialEq + Eq + Hash + Clone>(
   // formulate this as a Vec<Vec<_>> and iterate (I think)!
   IndexMap<ConsecutiveTokenPair<Tok>, KnownStateTraversals>);
 
-// TODO: worry about optimizing recognition of particular subsequences of tokens with SIMD later!
+// NB: There is no reference to the original grammar -- this is intentional, and I believe makes it
+// easier to have the runtime we want just fall out of the code without too much work.
 #[derive(Debug, Clone, PartialEq, Eq)]
 struct PreprocessedGrammar<Tok: Sized + PartialEq + Eq + Hash + Clone> {
-  // TODO: If we can reformulate this to not be necessary, we'll get the runtime we want for free
-  // (?!).
-  grammar: TokenGrammar<Tok>,
   tokens: Vec<Tok>,
   // NB: same length as `tokens`!
-  token_locations: Vec<TokenPosition>,
+  token_locations: Vec<Vec<TokenPosition>>,
   initial_lookbehind_cache: IndexMap<ConsecutiveTokenPair<Tok>, KnownStateTraversals>,
 }
 
@@ -251,7 +272,6 @@ impl <Tok: Sized + PartialEq + Eq + Hash + Clone> PreprocessedGrammar<Tok> {
       })
     });
     PreprocessedGrammar {
-      grammar,
       tokens: toks_with_locs.keys().iter().collect(),
       token_locations: toks_with_locs.values().iter().collect(),
     }
@@ -295,7 +315,6 @@ struct Parse<Tok: Sized + PartialEq + Eq + Hash + Clone> {
 #[derive(Debug, Clone, PartialEq, Eq)]
 struct UnionFind<Tok: Sized + PartialEq + Eq + Hash + Clone> {
   parse: Parse<Tok>,
-  // TODO: make this an Arc<Mutex<_>> or something!
   lookbehind_cache: IndexMap<ConsecutiveTokenPair<Tok>, KnownStateTraversals>,
 }
 
