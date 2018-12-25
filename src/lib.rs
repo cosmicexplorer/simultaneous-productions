@@ -154,41 +154,24 @@ impl <Tok: Sized + PartialEq + Eq + Hash + Clone>
     }
   }
 
-#[derive(Debug, Copy, PartialEq, Eq)]
+#[derive(Debug, Copy, PartialEq, Eq, Hash)]
 struct StackSym(ProdRef);
 
-#[derive(Debug, Copy, PartialEq, Eq)]
+#[derive(Debug, Copy, PartialEq, Eq, Hash)]
 enum StackStep {
   Positive(StackSym),
   Negative(StackSym),
 }
 
-// This refers to the position of a particular ProdRef within the grammar (its location within a
-// specific Case).
-#[derive(Debug, Copy, PartialEq, Eq)]
-struct ProdRefPosition {
-  prod: ProdRef,
-  case: CaseRef,
-  case_el: CaseElRef,
-}
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+struct StackDiff(Vec<StackStep>);
 
-#[derive(Debug, Clone, PartialEq, Eq)]
-enum StackDiff {
-  Empty,
-  Single(Vec<StackStep>),
-  Cycle(Vec<StackStep>),
-}
-
-// TODO: Some merge method for parallel parses!
 // TODO: consider the relationship between populating token transitions in the lookbehind cache to
 // some specific depth (e.g. strings of 3, 4, 5 tokens) and SIMD type 1 instructions (my
 // notations: meaning recognizing a specific sequence of tokens). SIMD type 2 (finding a specific
 // token in a longer string of bytes) can already easily be used with just token pairs (and
 // others).
-#[derive(Debug, Clone, PartialEq, Eq)]
-struct KnownStateTraversals(Vec<StackDiff>);
-
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
 struct StatePair {
   left: TokenPosition,
   right: TokenPosition,
@@ -201,7 +184,9 @@ struct PreprocessedGrammar<Tok: Sized + PartialEq + Eq + Hash + Clone> {
   // These don't need to be quick to access or otherwise optimized for the algorithm until we create
   // a `Parse` -- these are chosen to reduce redundancy.
   states: IndexMap<Tok, Vec<TokenPosition>>,
-  transitions: IndexMap<StatePair, KnownStateTraversals>,
+  // TODO: we don't yet support stack cycles (ignored), or multiple stack paths to the same
+  // succeeding state from an initial state (also ignored) -- details in index_tokens().
+  transitions: IndexMap<StatePair, Vec<StackDiff>>,
 }
 
 #[derive(Debug, Copy, PartialEq, Eq, Hash)]
@@ -226,29 +211,39 @@ enum AnonStep {
   Negative(AnonSym),
 }
 
-#[derive(Debug, Copy, PartialEq, Eq)]
+#[derive(Debug, Copy, PartialEq, Eq, Hash)]
 enum GrammarEdgeWeightStep {
   Named(StackStep),
   Anon(AnonStep),
 }
 
 impl GrammarEdgeWeightStep {
-  fn negates(&self, rhs: &Self) -> bool {
+  fn is_negative(&self) -> bool {
     match self {
-      Self::Anon(this_step) => match this_step {
-        AnonStep::Positive(this_pos_sym) => match rhs {
-          Self::Anon(AnonStep::Negative(other_neg_sym)) => this_pos_sym == other_neg_sym,
-          _ => false,
-        },
-        AnonStep::Negative(this_neg_sym) => match rhs {
-          Self::Anon()
-        }
-      }
-      Self::Anon(AnonStep::Positive(this_sym)) => match rhs {
-        Self::Anon(AnonStep::Negative(other_sym)) => this_sym == other_sym,
+      &GrammarEdgeWeightStep::Named(StackStep::Negative(_)) => true,
+      &GrammarEdgeWeightStep::Anon(AnonStep::Negative(_)) => true,
+      _ => false,
+    }
+  }
+
+  fn is_negated_by(&self, rhs: &Self) -> bool {
+    match self {
+      Self::Anon(AnonStep::Positive(cur_sym)) => match rhs {
+        Self::Anon(AnonStep::Negative(other_sym)) => cur_sym == other_sym,
         _ => false,
       },
-      Self::Named(StackStep::Positive(this_sym)) =>
+      Self::Anon(AnonStep::Negative(cur_sym)) => match rhs {
+        Self::Anon(AnonStep::Positive(other_sym)) => cur_sym == other_sym,
+        _ => false,
+      },
+      Self::Named(StackStep::Positive(cur_sym)) => match rhs {
+        Self::Named(StackStep::Negative(other_sym)) => cur_sym == other_sym,
+        _ => false,
+      },
+      Self::Named(StackStep::Positive(cur_sym)) => match rhs {
+        Self::Named(StackStep::Negative(other_sym)) => cur_sym == other_sym,
+        _ => false,
+      },
     }
   }
 }
@@ -259,24 +254,10 @@ struct GrammarEdge {
   target: GrammarVertex,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
 struct GrammarTraversalState {
-  target: GrammarVertex,
+  traversal_target: GrammarVertex,
   prev_stack: VecDeque<GrammarEdgeWeightStep>,
-}
-
-impl GrammarTraversalState {
-  fn advance(&self, neighbors: &IndexMap<GrammarVertex, Vec<GrammarEdge>>) -> Vec<Self> {
-    let edges = neighbors.get(self.target).unwrap().clone();
-    edges.iter().flat_map(|edge| {
-      let cur_stack = self.prev_stack.clone();
-      for edge_step in edge.weight.into_iter() {
-        match edge_step {
-          GrammarEdgeWeightStep::Anon()
-        }
-      }
-    }).collect::<Vec<_>>()
-  }
 }
 
 impl <Tok: Sized + PartialEq + Eq + Hash + Clone> PreprocessedGrammar<Tok> {
@@ -284,6 +265,8 @@ impl <Tok: Sized + PartialEq + Eq + Hash + Clone> PreprocessedGrammar<Tok> {
     let mut toks_with_locs: IndexMap<Tok, Vec<TokenPosition>> = IndexMap::new();
     let mut neighbors: IndexMap<GrammarVertex, Vec<GrammarEdge>> = IndexMap::new();
     let mut cur_anon_sym = AnonSym(0);
+    // Map all the tokens to states (`TokenPosition`s) which reference them, and build up a graph in
+    // `neighbors` of the elements in each case.
     grammar.graph.0.iter().cloned().enumerate(|(prod_ind, prod)| {
       let prod_ref = ProdRef(prod_ind);
       prod.0.iter().cloned().enumerate(|(case_ind, case)| {
@@ -341,22 +324,108 @@ impl <Tok: Sized + PartialEq + Eq + Hash + Clone> PreprocessedGrammar<Tok> {
         (*final_case_el_neighborhood).push(epsilon_edge);
       });
     });
-    // TODO: add Epsilon vertex with zero-weight edges to everything (or do it implicitly?)!
-    // Crawl `neighbors` to get the `KnownStateTraversals` for each state.
+
+    // Crawl `neighbors` to get the `StackDiff` between each pair of states.
+    // TODO: add support for stack cycles! Right now we just disallow stack cycles, but it's not
+    // difficult to support this (in addition to iterating over all the known tokens, also iterate
+    // over all the `ProdRef`s to find cycles (and record the stack diffs occuring during a single
+    // iteration of the cycle), and in matching, remember that any instance of a cycling `ProdRef`
+    // can have an indefinite number of iterations of its cycle)!
     let mut transitions: IndexMap<StatePair, KnownStateTraversals> = IndexMap::new();
-    for tok_pos in toks_with_locs.values().flatten() {
+    for left_tok_pos in toks_with_locs.values().flatten() {
       let mut queue: VecDeque<GrammarTraversalState> = VecDeque::new();
-      queue.push(GrammarTraversalState {
-        target: GrammarVertex::State(tok_pos),
+      // TODO: Store not just productions we've found, but the different pathhs taken to them (don't
+      // try to do anything with cycles here, though)!
+      let mut seen_productions: IndexSet<ProdRef> = IndexSet::new();
+      queue.push_back(GrammarTraversalState {
+        traversal_target: GrammarVertex::State(left_tok_pos),
         prev_stack: VecDeque::new(),
       });
       while !queue.is_empty() {
-        
+        let GrammarTraversalState {
+          traversal_target,
+          prev_stack,
+        } = queue.pop_front().unwrap();
+        for new_edge in neighbors.get(target).unwrap().iter().cloned() {
+          let GrammarEdge {
+            weight,
+            target,
+          } = new_edge;
+          let new_stack = prev_stack.clone();
+          // I love move construction being the default. This is why Rust is the best language to
+          // implement algorithms. I don't have to worry about accidental aliasing causing
+          // correctness issues.
+          let cur_edge_steps = VecDeque::from(weight);
+          // Remove any negative elements at the beginning of the edge weights, or else fail.
+          // NB: We assume that if there are negative stack steps, they are *only* located at the
+          // beginning of the edge's weight! This is ok because we are generating the stack steps
+          // ourselves earlier in this same method.
+          let mut match_has_failed = false;
+          while cur_edge_steps.front().map_or(false, |front_step| front_step.is_negative()) {
+            let neg_step = cur_edge_steps.pop_front().unwrap();
+            match new_stack.pop_back() {
+              None => {
+                match_has_failed = true;
+                break;
+              },
+              // TODO: we know this is going to be positive -- can we simplify the matching logic of
+              // is_negated_by() above?
+              Some(last_step) => {
+                if !last_step.is_negated_by(neg_step) {
+                  match_has_failed = true;
+                  new_stack.push_back(last_step);
+                  break;
+                }
+              }
+            }
+          }
+          if !match_has_failed {
+            new_stack.extend(cur_edge_steps.into_iter());
+            match traversal_target {
+              // We have completed a traversal -- there should be no "anon" steps.
+              GrammarVertex::State(right_tok_pos) => {
+                let state_pair = StatePair {
+                  left: left_tok_pos,
+                  right: right_tok_pos,
+                };
+                let diff: Vec<StackStep> = Vec::new();
+                for el in new_stack.into_iter() {
+                  match el {
+                    GrammarEdgeWeightStep::Anon(_) => panic!("no anon steps should exist now"),
+                    GrammarEdgeWeightStep::Named(s) => diff.push(s),
+                  }
+                }
+                let transitions_for_pair = transitions.entry(state_pair).or_insert(vec![]);
+                (*transitions_for_pair).push(StackDiff(diff));
+              },
+              // Add the target vertex with the new stack appended to the end (minus any initial
+              // negatives).
+              GrammarVertex::Prod(next_prod_ref) => {
+                let (_, seen) = seen_productions.insert_full(next_prod_ref);
+                if !seen {
+                  queue.push_back(GrammarTraversalState {
+                    traversal_target: GrammarVertex::Prod(next_prod_ref),
+                    prev_stack: new_stack,
+                  });
+                }
+              },
+              // The epsilon vertex has a zero-weight edge to all productions.
+              GrammarVertex::Epsilon => {
+                for next_prod in grammar.graph.0.iter().cloned() {
+                  queue.push_back(GrammarTraversalState {
+                    traversal_target: GrammarVertex::Prod(next_prod),
+                    prev_stack: new_stack.clone(),
+                  });
+                }
+              },
+            }
+          }
+        }
       }
     }
     PreprocessedGrammar {
       states: toks_with_locs,
-      transitions: ???,
+      transitions,
     }
   }
 }
@@ -395,403 +464,6 @@ struct Parse<Tok: Sized + PartialEq + Eq + Hash + Clone> {
   // NB: same length as `input`!
   state: Vec<KnownPathsToInputToken<Tok>>,
 }
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-struct UnionFind<Tok: Sized + PartialEq + Eq + Hash + Clone> {
-  parse: Parse<Tok>,
-  lookbehind_cache: IndexMap<ConsecutiveTokenPair<Tok>, KnownStateTraversals>,
-}
-
-impl <Tok: Sized + PartialEq + Eq + Hash + Clone> UnionFind<Tok> {
-  fn init(grammar: PreprocessedGrammar<Tok>, input: Vec<Tok>) -> Self {
-    // TODO: initialize all the `completed_traversals` and some `intermediate_traversals` (do a
-    // depth-1 BFS forward and backward from each token kinda like we do below, but in a single
-    // pass)! (and do this as part of PreprocessedGrammar<Tok>, honestly)
-    let mut per_token_init_state: Vec<KnownPathsToInputToken<Tok>> = Vec::with_capacity(input.len());
-    for 0..input.len() {
-      per_token_init_state.push(KnownPathsToInputToken(vec![]));
-    }
-    let parse = Parse {
-      grammar,
-      input,
-      state: per_token_init_state,
-    };
-    UnionFind {
-      parse,
-      lookbehind_cache: IndexMap::new(),
-    }
-  }
-
-  // TODO: as we advance the parse state, we can independently advance the lookbehind cache state!
-  // (!!!!!!)
-  // TODO: some way to know when it's done (ish)!
-  fn iterate(&mut self) {
-    // TODO: pick a consecutive pair of indices in the input!
-    // TODO: see if the lookbehind cache has any candidates for matching the two tokens!
-    // TODO: if not, see if the lookbehind cache has any intermediate positions!
-  }
-}
-
-/// Old Stuff
-
-// NB: This is the "state".
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
-pub struct TokenPositionInProduction<Tok: Sized + PartialEq + Eq + Hash + Clone> {
-  productions_context: SimultaneousProductions<Tok>,
-  production_pos: ProductionReference,
-  case_context: Case<Tok>,
-  case_pos: usize,
-  literal_context: Literal<Tok>,
-  literal_pos: usize,
-}
-
-impl <Tok: Sized + PartialEq + Eq + Hash + Clone> TokenPositionInProduction<Tok> {
-  fn with_new_literal_index(&self, new_index: usize) -> Self {
-    assert!(0 <= new_index <= self.literal_context.0.len());
-    TokenPositionInProduction {
-      productions_context: self.productions_context.clone(),
-      case_context: self.case_context.clone(),
-      case_pos: self.case_pos,
-      literal_context: self.literal_context.clone(),
-      literal_pos: new_index,
-    }
-  }
-
-  // We are always within some literal, because we are always on a token, which is always associated
-  // with a specific position within a specific literal.
-  fn forward_within_literal(&self) -> Option<StateChange<Tok>> {
-    let next_index = self.literal_pos + 1;
-    self.literal_context.0.get(next_index).map(|next_token| {
-      let next_pos = self.with_new_literal_index(next_index);
-      StateChange {
-        left_state: self.clone(),
-        right_state: next_pos,
-        stack_changes: AccumulatedTransitions::empty(),
-      }
-    })
-  }
-
-  fn backward_within_literal(&self) -> Option<StateChange<Tok>> {
-    assert!(self.literal_pos >= 0);
-    if self.literal_pos == 0 {
-      None
-    } else {
-      let prev_index = self.literal_pos - 1;
-      let prev_token = self.literal_context.0.get(prev_index).unwrap();
-      let prev_pos = self.with_new_literal_index(prev_index);
-      Some(StateChange {
-        left_state: prev_pos,
-        right_state: self.clone(),
-        stack_changes: AccumulatedTransitions::empty(),
-      })
-    }
-  }
-
-  fn forward_within_case(&self) ->
-}
-
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
-pub struct StackSymbol(ProductionReference);
-
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
-pub enum StackChangeUnit {
-  Positive(StackSymbol),
-  Negative(StackSymbol),
-}
-
-// #[derive(Debug, Clone, PartialEq, Eq, Hash)]
-// pub struct TokenWithPosition<Tok: Sized + PartialEq + Eq + Hash + Clone> {
-//   tok: Tok,
-//   pos: TokenPositionInProduction<Tok>,
-// }
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct AccumulatedTransitions(Vec<StackChangeUnit>);
-
-impl AccumulatedTransitions {
-  fn empty() -> Self {
-    AccumulatedTransitions(vec![])
-  }
-
-  fn init(st: StackChangeUnit) -> Self {
-    AccumulatedTransitions(vec![st])
-  }
-
-  fn append(&self, st: StackChangeUnit) -> Self {
-    AccumulatedTransitions(self.0.iter().cloned().chain(vec![st].into_iter()).collect())
-  }
-
-  fn reversed(&self) -> Self {
-    let rev_changes = self.0.clone().into_iter().rev().collect::<Vec<_>>();
-    AccumulatedTransitions(rev_changes)
-  }
-}
-
-// The specific ordering of the vector is meaningful, so this Hash impl makes sense.
-impl Hash for AccumulatedTransitions {
-  fn hash<H: Hasher>(&self, state: &mut H) {
-    for unit_change in self.0.iter() {
-      unit_change.hash(state);
-    }
-  }
-}
-
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
-pub struct StateChange<Tok: Sized + PartialEq + Eq + Hash + Clone> {
-  // TODO: map `left_state` and `right_state` to simply unique strings, which are the value of some
-  // Map<Tok, String> -- we don't need all the information from `TokenPositionInProduction` *during
-  // parsing*.
-  left_state: TokenPositionInProduction<Tok>,
-  right_state: TokenPositionInProduction<Tok>,
-  // NB: when going backwards, this should be reversed!
-  stack_changes: AccumulatedTransitions,
-}
-
-// This contains all of the possible state changes that can result from moving from one token to
-// another.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct AllowedTransitions<Tok: Sized + PartialEq + Eq + Hash + Clone>(IndexSet<StateChange<Tok>>);
-
-impl <Tok: Sized + PartialEq + Eq + Hash + Clone> TokenWithPosition<Tok> {
-  fn collect_backward_forward_transitions(&self) -> AllowedTransitions<Tok> {
-    // forward literals
-    let forward_transitions: Vec<StateChange<Tok>> = if self.pos.literal_pos < (self.pos.literal_context.0.len() - 1) {
-      let next_index = self.pos.literal_pos + 1;
-      let next_token = self.pos.literal_context.0.get(next_index).unwrap().clone();
-      let next_pos = TokenPositionInProduction {
-        productions_context: self.pos.productions_context.clone(),
-        case_context: self.pos.case_context.clone(),
-        case_pos: self.pos.case_pos,
-        literal_context: self.pos.literal_context.clone(),
-        literal_pos: next_index,
-      };
-      let next_token_with_pos = TokenWithPosition {
-        tok: next_token,
-        pos: next_pos,
-      };
-      let next_state_change = StateChange {
-        left_state: self.clone(),
-        right_state: next_token_with_pos,
-        stack_changes: AccumulatedTransitions::empty(),
-      };
-      vec![next_state_change]
-    } else if self.pos.case_pos < (self.pos.case_context.0.len() - 1) {
-      let next_case_index = self.pos.case_pos + 1;
-      let next_case_element = self.pos.case_context.0.get(next_case_index).unwrap().clone();
-      match next_case_element.clone() {
-        CaseElement::Lit(next_literal) => {
-          // We assert!(next_literal.0.len() > 0) in generate_token_index()!
-          let new_next_case_el_init_pos = 0;
-          let next_case_el_lit_pos = TokenPositionInProduction {
-            productions_context: self.pos.productions_context.clone(),
-            case_context: self.pos.case_context.clone(),
-            case_pos: next_case_index,
-            literal_context: next_literal.clone(),
-            literal_pos: new_next_case_el_init_pos,
-          };
-          let next_case_el_tok_with_pos = TokenWithPosition {
-            tok: next_literal.0.get(new_next_case_el_init_pos).unwrap().clone(),
-            pos: next_case_el_lit_pos,
-          };
-          let next_case_el_state_change = StateChange {
-            left_state: self.clone(),
-            right_state: next_case_el_tok_with_pos,
-            stack_changes: AccumulatedTransitions::empty(),
-          };
-          vec![next_case_el_state_change]
-        },
-        CaseElement::Prod(next_prod_ref) => {
-          // We check that all production refs exist in generate_token_index()!
-          let next_prod = self.pos.productions_context.0.get(&next_prod_ref.clone()).unwrap().clone();
-          // Find all reachable states that are one token transition away -- a BFS with depth 1.
-          let mut reachable_cases: Vec<(Case<Tok>, AccumulatedTransitions)> =
-            next_prod.0.iter().cloned().map(|case| {
-              let new_stack_sym = StackSymbol(next_prod_ref.clone());
-              (case, AccumulatedTransitions::init(StackChangeUnit::Positive(new_stack_sym)))
-            }).collect();
-          let mut one_step_state_changes: IndexSet<StateChange<Tok>> = IndexSet::new();
-          while !reachable_cases.is_empty() {
-            let new_reachable_cases = reachable_cases.drain(..).flat_map(|(cur_case, cur_stack_changes)| {
-              // We assert!(case.0.len() > 0) in generate_token_index()!
-              // TODO: we commented that out -- we need to be able to support empty cases! This may
-              // also require some munging of the data model.
-              let new_next_stepped_case_el_init_pos = 0;
-              match cur_case.0.get(new_next_stepped_case_el_init_pos).unwrap().clone() {
-                CaseElement::Lit(next_literal) => {
-                  // We assert!(next_literal.0.len() > 0) in generate_token_index()!
-                  let new_next_stepped_literal_init_pos = 0;
-                  let stepped_to_pos = TokenPositionInProduction {
-                    productions_context: self.pos.productions_context.clone(),
-                    case_context: cur_case.clone(),
-                    case_pos: new_next_stepped_case_el_init_pos,
-                    literal_context: next_literal.clone(),
-                    literal_pos: new_next_stepped_literal_init_pos,
-                  };
-                  let stepped_to_state = TokenWithPosition {
-                    tok: next_literal.0.get(new_next_stepped_literal_init_pos).unwrap().clone(),
-                    pos: stepped_to_pos,
-                  };
-                  let stepped_state_change = StateChange {
-                    left_state: self.clone(),
-                    right_state: stepped_to_state,
-                    stack_changes: cur_stack_changes,
-                  };
-                  one_step_state_changes.insert(stepped_state_change);
-                  vec![]
-                },
-                CaseElement::Prod(further_next_prod_ref) => {
-                  let further_next_prod = self.pos.productions_context.0
-                    .get(&further_next_prod_ref.clone()).unwrap().clone();
-                  // TODO: this can cause an infinite loop on normal inputs unless we can reasonably
-                  // extend `AccumulatedTransitions` to hold a cycle so that it can be resumed during
-                  // parsing.
-                  // NB: The above might be the "pathological" case that causes the algorithm to be
-                  // nonlinear -- BUT ONLY IF WE LET THAT HAPPEN (and don't e.g. amortize!).
-                  further_next_prod.0.into_iter().map(|case| {
-                    let new_stack_sym = StackSymbol(further_next_prod_ref.clone());
-                    (case, cur_stack_changes.append(StackChangeUnit::Positive(new_stack_sym)))
-                  }).collect::<Vec<_>>()
-                },
-              }
-            }).collect::<Vec<_>>();
-            reachable_cases.extend(new_reachable_cases.into_iter());
-          }
-          one_step_state_changes.into_iter().collect::<Vec<_>>()
-        },
-      }
-    } else {
-      // We're at the end of a case -- do nothing (this is supposed to be covered by moving
-      // backward/forward from other states).
-      vec![]
-    };
-    // backward literals
-    let backward_transitions: Vec<StateChange<Tok>> = if self.pos.literal_pos > 0 {
-      let prev_index = self.pos.literal_pos - 1;
-      let prev_token = self.pos.literal_context.0.get(prev_index).unwrap().clone();
-      let prev_pos = TokenPositionInProduction {
-        productions_context: self.pos.productions_context.clone(),
-        case_context: self.pos.case_context.clone(),
-        case_pos: self.pos.case_pos,
-        literal_context: self.pos.literal_context.clone(),
-        literal_pos: prev_index,
-      };
-      let prev_token_with_pos = TokenWithPosition {
-        tok: prev_token,
-        pos: prev_pos,
-      };
-      let prev_state_change = StateChange {
-        left_state: prev_token_with_pos,
-        right_state: self.clone(),
-        stack_changes: AccumulatedTransitions::empty(),
-      };
-      vec![prev_state_change]
-    } else if self.pos.case_pos > 0 {
-      let prev_case_index = self.pos.case_pos - 1;
-      let prev_case_element = self.pos.case_context.0.get(prev_case_index).unwrap().clone();
-      match prev_case_element.clone() {
-        CaseElement::Lit(prev_literal) => {
-          // We assert!(prev_literal.0.len() > 0) in generate_token_index()!
-          let new_prev_case_el_init_pos = prev_literal.0.len() - 1;
-          let prev_case_el_lit_pos = TokenPositionInProduction {
-            productions_context: self.pos.productions_context.clone(),
-            case_context: self.pos.case_context.clone(),
-            case_pos: prev_case_index,
-            literal_context: prev_literal.clone(),
-            literal_pos: new_prev_case_el_init_pos,
-          };
-          let prev_case_el_tok_with_pos = TokenWithPosition {
-            tok: prev_literal.0.get(new_prev_case_el_init_pos).unwrap().clone(),
-            pos: prev_case_el_lit_pos,
-          };
-          let prev_case_el_state_change = StateChange {
-            left_state: prev_case_el_tok_with_pos,
-            right_state: self.clone(),
-            stack_changes: AccumulatedTransitions::empty(),
-          };
-          vec![prev_case_el_state_change]
-        },
-        CaseElement::Prod(prev_prod_ref) => {
-          panic!("???/prev_prod_ref");
-        },
-      }
-    } else {
-      // We're at the beginning of a case -- do nothing (this is supposed to be covered by moving
-      // backward/forward from other states).
-      vec![]
-    };
-    let cur_transitions: IndexSet<StateChange<Tok>> = IndexSet::from_iter(
-      forward_transitions.into_iter().chain(backward_transitions.into_iter())
-    );
-    AllowedTransitions(cur_transitions)
-  }
-}
-
-// TODO: to generate this, move forward and backward "one step" for all states (all
-// TokenPositionInProduction instances) -- meaning, find all the other TokenPositionInProduction
-// instances reachable from this one with a single token transition, and as you reach into
-// sub-productions, build up the appropriate `stack_changes`! This should be done in
-// `generate_token_index()`, I think.
-// TODO: IndexMap is only used here so we can compare the hashmap results -- for testing only --
-// this should be fixed (?).
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct TokenIndex<Tok: Sized + PartialEq + Eq + Hash + Clone>(IndexMap<
-    ConsecutiveTokenPair<Tok>, AllowedTransitions<Tok>>);
-
-pub trait Tokenizeable<Tok: Sized + PartialEq + Eq + Hash + Clone> {
-  fn generate_token_index(&self) -> TokenIndex<Tok>;
-}
-
-impl <Tok: Sized + PartialEq + Eq + Hash + Clone> Tokenizeable<Tok>
-  for SimultaneousProductions<Tok> {
-    fn generate_token_index(&self) -> TokenIndex<Tok> {
-      let other_self = self.clone();
-      let states: Vec<TokenPositionInProduction<Tok>> = self.0.iter().flat_map(|(_, production)| {
-        assert!(production.0.len() > 0);
-        production.0.iter().flat_map(|case| {
-          // assert!(case.0.len() > 0);
-          case.0.iter().enumerate().flat_map(|(element_index, element)| match element {
-            CaseElement::Lit(literal) => {
-              assert!(literal.0.len() > 0);
-              literal.0.clone().into_iter().enumerate().flat_map(|(token_index, tok)| {
-                vec![TokenPositionInProduction {
-                  productions_context: self.clone(),
-                  case_context: case.clone(),
-                  case_pos: element_index,
-                  literal_context: literal.clone(),
-                  literal_pos: token_index,
-                }];
-              }).collect::<Vec<_>>()
-            },
-            CaseElement::Prod(prod_ref) => {
-              // TODO: make this whole thing into a Result<_, _>!
-              other_self.0.get(prod_ref).expect("prod ref not found");
-              vec![]
-            },
-          }).collect::<Vec<_>>()
-        }).collect::<Vec<_>>()
-      }).collect::<Vec<_>>();
-      // `states` has been populated -- let each TokenPositionInProduction take care of finding the
-      // neighboring states for itself.
-      let all_state_changes: IndexSet<StateChange<Tok>> = states.iter().flat_map(|token_with_position| {
-        token_with_position.collect_backward_forward_transitions().0
-      }).collect::<IndexSet<_>>();
-      // TODO: this can probably be done immutably pretty easily?
-      let mut pair_map: IndexMap<ConsecutiveTokenPair<Tok>, Vec<StateChange<Tok>>> =
-        IndexMap::new();
-      for state_change in all_state_changes.iter() {
-        let left_tok = state_change.left_state.tok.clone();
-        let right_tok = state_change.right_state.tok.clone();
-        let consecutive_pair_key = ConsecutiveTokenPair { left_tok, right_tok };
-        let pair_entry = pair_map.entry(consecutive_pair_key).or_insert(vec![]);
-        (*pair_entry).push(state_change.clone());
-      }
-      TokenIndex(pair_map.into_iter().map(|(k, changes)| {
-        let transitions_deduplicated = changes.iter().cloned().collect::<IndexSet<_>>();
-        (k, AllowedTransitions(transitions_deduplicated))
-      })
-                 .collect::<IndexMap<_, _>>())
-    }
-  }
 
 #[cfg(test)]
 mod tests {
