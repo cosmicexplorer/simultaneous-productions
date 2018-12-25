@@ -219,9 +219,8 @@ enum GrammarEdgeWeightStep {
 }
 
 impl GrammarEdgeWeightStep {
-  fn is_negative(&self) -> bool {
+  fn is_negative_anon(&self) -> bool {
     match self {
-      &GrammarEdgeWeightStep::Named(StackStep::Negative(_)) => true,
       &GrammarEdgeWeightStep::Anon(AnonStep::Negative(_)) => true,
       _ => false,
     }
@@ -384,14 +383,13 @@ impl <Tok: Sized + PartialEq + Eq + Hash + Clone> PreprocessedGrammar<Tok> {
           // correctness issues.
           let mut cur_edge_steps = VecDeque::from(weight);
           eprintln!("cur_edge_steps: {:?}", cur_edge_steps);
-          // TODO: this is WRONG!!! absolutely need to allow negative named stack syms (but remove
-          // them if applicable)!!!
-          // Remove any negative elements at the beginning of the edge weights, or else fail.
+          // Remove any negative *anonymous* elements at the beginning of the edge weights, or else
+          // fail.
           // NB: We assume that if there are negative stack steps, they are *only* located at the
           // beginning of the edge's weight! This is ok because we are generating the stack steps
           // ourselves earlier in this same method.
           let mut match_has_failed = false;
-          while cur_edge_steps.front().map_or(false, |front_step| front_step.is_negative()) {
+          while cur_edge_steps.front().map_or(false, |front_step| front_step.is_negative_anon()) {
             let neg_step = cur_edge_steps.pop_front().unwrap();
             match new_stack.pop_back() {
               None => {
@@ -406,7 +404,7 @@ impl <Tok: Sized + PartialEq + Eq + Hash + Clone> PreprocessedGrammar<Tok> {
                   new_stack.push_back(last_step);
                   break;
                 }
-              }
+              },
             }
           }
           if !match_has_failed {
