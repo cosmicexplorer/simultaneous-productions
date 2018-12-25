@@ -278,14 +278,12 @@ impl <Tok: Sized + PartialEq + Eq + Hash + Clone> PreprocessedGrammar<Tok> {
           let case_el_ref = CaseElRef(case_el_ind);
           // Make the appropriate weight steps to add to the current edge.
           let mut weight_steps: Vec<GrammarEdgeWeightStep> = match prev_vtx {
-
-            GrammarVertex::Prod(_) => if is_start_of_case {
-              // Add a positive named step, if we have just entered a case.
-              vec![GrammarEdgeWeightStep::Named(StackStep::Positive(StackSym(prod_ref)))]
-            } else {
+            GrammarVertex::Prod(_) => if !is_start_of_case {
               // Add a negative anonymous step, but only if we have just come from a ProdRef (and
               // not at the start of a case, only to cancel out a previous ProdRef case element).
               vec![GrammarEdgeWeightStep::Anon(AnonStep::Negative(prev_anon_sym))]
+            } else {
+              vec![]
             },
             _ => {
               assert!(!is_start_of_case,
@@ -310,7 +308,12 @@ impl <Tok: Sized + PartialEq + Eq + Hash + Clone> PreprocessedGrammar<Tok> {
             },
             CaseEl::Prod(cur_el_prod_ref) => {
               // Add a positive anonymous step, only if we are stepping onto a ProdRef.
-              weight_steps.push(GrammarEdgeWeightStep::Anon(AnonStep::Positive(cur_anon_sym)));
+              weight_steps.extend([
+                GrammarEdgeWeightStep::Anon(AnonStep::Positive(cur_anon_sym)),
+                // Also add a positive stack step (to be canceled out by a later step onto the
+                // epsilon vertex from the final case element of a case of the target ProdRef).
+                GrammarEdgeWeightStep::Named(StackStep::Positive(StackSym(cur_el_prod_ref))),
+              ].iter().cloned());
               GrammarVertex::Prod(cur_el_prod_ref)
             },
           };
@@ -326,16 +329,17 @@ impl <Tok: Sized + PartialEq + Eq + Hash + Clone> PreprocessedGrammar<Tok> {
           prev_anon_sym = cur_anon_sym;
         }
         // Add edge to epsilon vertex at end of case.
-        let mut epsilon_edge_weight = match prev_vtx {
-          // Only add a negative anonymous symbol if we are stepping off of a ProdRef (as above, for
-          // in between case elements).
-          GrammarVertex::Prod(_) => vec![
-            GrammarEdgeWeightStep::Anon(AnonStep::Negative(cur_anon_sym)),
-          ],
-          _ => vec![],
+        let mut epsilon_edge_weight = vec![
+          GrammarEdgeWeightStep::Named(StackStep::Negative(StackSym(prod_ref))),
+        ];
+        // Only add a negative anonymous symbol if we are stepping off of a ProdRef (as above, for
+        // in between case elements).
+        match prev_vtx {
+          GrammarVertex::Prod(_) => if !is_start_of_case {
+            epsilon_edge_weight.push(GrammarEdgeWeightStep::Anon(AnonStep::Negative(cur_anon_sym)));
+          },
+          _ => (),
         };
-        epsilon_edge_weight.push(
-          GrammarEdgeWeightStep::Named(StackStep::Negative(StackSym(prod_ref))));
         let epsilon_edge = GrammarEdge {
           weight: epsilon_edge_weight,
           target: GrammarVertex::Epsilon,
@@ -344,6 +348,7 @@ impl <Tok: Sized + PartialEq + Eq + Hash + Clone> PreprocessedGrammar<Tok> {
         (*final_case_el_neighborhood).push(epsilon_edge);
       }
     }
+    eprintln!("neighbors: {:?}", neighbors);
 
     // Crawl `neighbors` to get the `StackDiff` between each pair of states.
     // TODO: add support for stack cycles! Right now we just disallow stack cycles, but it's not
@@ -352,9 +357,6 @@ impl <Tok: Sized + PartialEq + Eq + Hash + Clone> PreprocessedGrammar<Tok> {
     // iteration of the cycle), and in matching, remember that any instance of a cycling `ProdRef`
     // can have an indefinite number of iterations of its cycle)!
     let mut transitions: IndexMap<StatePair, Vec<StackDiff>> = IndexMap::new();
-    for init_prod_ind in 0..grammar.graph.0.len() {
-      let init_prod_ref = ProdRef(init_prod_ind);
-    }
     for left_tok_pos in toks_with_locs.values().flatten() {
       let mut queue: VecDeque<GrammarTraversalState> = VecDeque::new();
       // TODO: Store not just productions we've found, but the different paths taken to them (don't
@@ -389,6 +391,8 @@ impl <Tok: Sized + PartialEq + Eq + Hash + Clone> PreprocessedGrammar<Tok> {
           // beginning of the edge's weight! This is ok because we are generating the stack steps
           // ourselves earlier in this same method.
           let mut match_has_failed = false;
+          // TODO: we can have exactly ????
+          // while new_stack.back().map_or(false, ||)
           while cur_edge_steps.front().map_or(false, |front_step| front_step.is_negative_anon()) {
             let neg_step = cur_edge_steps.pop_front().unwrap();
             match new_stack.pop_back() {
