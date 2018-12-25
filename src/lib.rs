@@ -274,35 +274,46 @@ impl <Tok: Sized + PartialEq + Eq + Hash + Clone> PreprocessedGrammar<Tok> {
         let case_ref = CaseRef(case_ind);
         let mut is_start_of_case = true;
         let mut prev_vtx = GrammarVertex::Prod(prod_ref);
+        let mut prev_anon_sym = cur_anon_sym;
         for (case_el_ind, case_el) in case.0.iter().cloned().enumerate() {
           let case_el_ref = CaseElRef(case_el_ind);
-          let cur_pos = TokenPosition {
-            prod: prod_ref,
-            case: case_ref,
-            case_el: case_el_ref,
-          };
           // Make the appropriate weight steps to add to the current edge.
-          let mut weight_steps: Vec<GrammarEdgeWeightStep> = Vec::new();
-          if !is_start_of_case {
-            weight_steps.push(GrammarEdgeWeightStep::Anon(AnonStep::Negative(cur_anon_sym)));
-          }
+          let mut weight_steps: Vec<GrammarEdgeWeightStep> = match prev_vtx {
+
+            GrammarVertex::Prod(_) => if is_start_of_case {
+              // Add a positive named step, if we have just entered a case.
+              vec![GrammarEdgeWeightStep::Named(StackStep::Positive(StackSym(prod_ref)))]
+            } else {
+              // Add a negative anonymous step, but only if we have just come from a ProdRef (and
+              // not at the start of a case, only to cancel out a previous ProdRef case element).
+              vec![GrammarEdgeWeightStep::Anon(AnonStep::Negative(prev_anon_sym))]
+            },
+            _ => {
+              assert!(!is_start_of_case,
+                      "the start of a case should always have a ProdRef as prev_vtx");
+              vec![]
+            },
+          };
           // Get a new anonymous symbol.
           cur_anon_sym = cur_anon_sym.inc();
-          weight_steps.push(GrammarEdgeWeightStep::Anon(AnonStep::Positive(cur_anon_sym)));
-          if is_start_of_case {
-            weight_steps.push(
-              GrammarEdgeWeightStep::Named(StackStep::Positive(StackSym(prod_ref))));
-          }
-          is_start_of_case = false;
           // Analyze the current case element.
           let cur_vtx = match case_el {
             CaseEl::Tok(tok_ref) => {
               let cur_tok = grammar.tokens.get(tok_ref.0).unwrap().clone();
               let tok_loc_entry = toks_with_locs.entry(cur_tok).or_insert(vec![]);
+              let cur_pos = TokenPosition {
+                prod: prod_ref,
+                case: case_ref,
+                case_el: case_el_ref,
+              };
               (*tok_loc_entry).push(cur_pos);
               GrammarVertex::State(cur_pos)
             },
-            CaseEl::Prod(cur_el_prod_ref) => GrammarVertex::Prod(cur_el_prod_ref),
+            CaseEl::Prod(cur_el_prod_ref) => {
+              // Add a positive anonymous step, only if we are stepping onto a ProdRef.
+              weight_steps.push(GrammarEdgeWeightStep::Anon(AnonStep::Positive(cur_anon_sym)));
+              GrammarVertex::Prod(cur_el_prod_ref)
+            },
           };
           // Add appropriate edges to neighbors for the current state.
           let edge = GrammarEdge {
@@ -311,14 +322,23 @@ impl <Tok: Sized + PartialEq + Eq + Hash + Clone> PreprocessedGrammar<Tok> {
           };
           let prev_neighborhood = neighbors.entry(prev_vtx).or_insert(vec![]);
           (*prev_neighborhood).push(edge);
+          is_start_of_case = false;
           prev_vtx = cur_vtx;
+          prev_anon_sym = cur_anon_sym;
         }
         // Add edge to epsilon vertex at end of case.
-        let epsilon_edge = GrammarEdge {
-          weight: vec![
+        let mut epsilon_edge_weight = match prev_vtx {
+          // Only add a negative anonymous symbol if we are stepping off of a ProdRef (as above, for
+          // in between case elements).
+          GrammarVertex::Prod(_) => vec![
             GrammarEdgeWeightStep::Anon(AnonStep::Negative(cur_anon_sym)),
-            GrammarEdgeWeightStep::Named(StackStep::Negative(StackSym(prod_ref))),
           ],
+          _ => vec![],
+        };
+        epsilon_edge_weight.push(
+          GrammarEdgeWeightStep::Named(StackStep::Negative(StackSym(prod_ref))));
+        let epsilon_edge = GrammarEdge {
+          weight: epsilon_edge_weight,
           target: GrammarVertex::Epsilon,
         };
         let final_case_el_neighborhood = neighbors.entry(prev_vtx).or_insert(vec![]);
@@ -333,9 +353,12 @@ impl <Tok: Sized + PartialEq + Eq + Hash + Clone> PreprocessedGrammar<Tok> {
     // iteration of the cycle), and in matching, remember that any instance of a cycling `ProdRef`
     // can have an indefinite number of iterations of its cycle)!
     let mut transitions: IndexMap<StatePair, Vec<StackDiff>> = IndexMap::new();
+    for init_prod_ind in 0..grammar.graph.0.len() {
+      let init_prod_ref = ProdRef(init_prod_ind);
+    }
     for left_tok_pos in toks_with_locs.values().flatten() {
       let mut queue: VecDeque<GrammarTraversalState> = VecDeque::new();
-      // TODO: Store not just productions we've found, but the different pathhs taken to them (don't
+      // TODO: Store not just productions we've found, but the different paths taken to them (don't
       // try to do anything with cycles here, though)!
       let mut seen_productions: IndexSet<ProdRef> = IndexSet::new();
       queue.push_back(GrammarTraversalState {
@@ -343,20 +366,24 @@ impl <Tok: Sized + PartialEq + Eq + Hash + Clone> PreprocessedGrammar<Tok> {
         prev_stack: VecDeque::new(),
       });
       while !queue.is_empty() {
+        eprintln!("queue: {:?}", queue);
         let GrammarTraversalState {
           traversal_target,
           prev_stack,
         } = queue.pop_front().unwrap();
         for new_edge in neighbors.get(&traversal_target).unwrap().iter().cloned() {
+          eprintln!("new_edge: {:?}", new_edge);
           let GrammarEdge {
             weight,
             target,
           } = new_edge;
           let mut new_stack = prev_stack.clone();
+          eprintln!("new_stack: {:?}", new_stack);
           // I love move construction being the default. This is why Rust is the best language to
           // implement algorithms. I don't have to worry about accidental aliasing causing
           // correctness issues.
           let mut cur_edge_steps = VecDeque::from(weight);
+          eprintln!("cur_edge_steps: {:?}", cur_edge_steps);
           // TODO: this is WRONG!!! absolutely need to allow negative named stack syms (but remove
           // them if applicable)!!!
           // Remove any negative elements at the beginning of the edge weights, or else fail.
