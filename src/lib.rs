@@ -7,7 +7,7 @@ extern crate indexmap;
 use indexmap::{IndexMap, IndexSet};
 
 use std::convert::From;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::hash::{Hash, Hasher};
 use std::iter::FromIterator;
 
@@ -71,42 +71,35 @@ pub struct SimultaneousProductions<Tok: Sized + PartialEq + Eq + Hash + Clone>(
 // A version of `ProductionReference` which uses a `usize` for speed. We adopt the convention of
 // abbreviated names for things used in algorithms.
 // Points to a particular Production within an ImplicitRepresentation.
-#[derive(Debug, Copy, PartialOrd, Ord, PartialEq, Eq)]
+#[derive(Debug, Copy, PartialOrd, Ord, PartialEq, Eq, Hash)]
 struct ProdRef(usize);
 
 // Points to a particular case within a Production.
-#[derive(Debug, Copy, PartialOrd, Ord, PartialEq, Eq)]
+#[derive(Debug, Copy, PartialOrd, Ord, PartialEq, Eq, Hash)]
 struct CaseRef(usize);
 
 // Points to an element of a particular Case.
-#[derive(Debug, Copy, PartialOrd, Ord, PartialEq, Eq)]
+#[derive(Debug, Copy, PartialOrd, Ord, PartialEq, Eq, Hash)]
 struct CaseElRef(usize);
 
-// Points to a particular token within a Literal instance.
-#[derive(Debug, Copy, PartialOrd, Ord, PartialEq, Eq)]
-struct TokInLitRef(usize);
-
-// TODO: could add Hash here if we ever want it.
 // This refers to a specific token, implying that we must be pointing to a particular index of a
 // particular Literal. This corresponds to a "state" in the simultaneous productions terminology.
-#[derive(Debug, Copy, PartialEq, Eq)]
+#[derive(Debug, Copy, PartialEq, Eq, Hash)]
 struct TokenPosition {
   prod: ProdRef,
   case: CaseRef,
   case_el: CaseElRef,
-  tok_loc: TokInLitRef,
 }
 
 /// Graph Representation
 
-// Points to a particular Literal out of some indexed set of Literals which is stored separately
-// from the graph representation.
+// TODO: describe!
 #[derive(Debug, Copy, PartialOrd, Ord, PartialEq, Eq)]
-struct LitRef(usize);
+struct TokRef(usize);
 
 #[derive(Debug, Copy, PartialEq, Eq)]
 enum CaseEl {
-  Lit(LitRef),
+  Tok(TokRef),
   Prod(ProdRef),
 };
 
@@ -124,7 +117,7 @@ struct ImplicitRepresentation(Vec<ProductionImpl>);
 #[derive(Debug, Clone, PartialEq, Eq)]
 struct TokenGrammar<Tok: Sized + PartialEq + Eq + Hash + Clone> {
   graph: ImplicitRepresentation,
-  literals: Vec<Literal<Tok>>,
+  tokens: Vec<Tok>,
 }
 
 impl <Tok: Sized + PartialEq + Eq + Hash + Clone>
@@ -135,27 +128,28 @@ impl <Tok: Sized + PartialEq + Eq + Hash + Clone>
       // returns the type!).
       let prod_ref_mapping: HashMap<ProductionReference, usize> = prods.0.iter().cloned()
         .map(|(prod_ref, _)| prod_ref).enumerate(|(ind, p)| (p, ind)).collect();
-      // Collect all the literals as we traverse the productions (worry about uniqueness as an
-      // optimization).
-      let mut all_literals: Vec<Literal<Tok>> = Vec::new();
+      // Collect all the tokens (splitting up literals) as we traverse the productions.
+      let mut all_tokens: IndexSet<Tok> = IndexSet::new();
       // Pretty straightforwardly map the productions into the new space.
       let new_prods: Vec<_> = prods.0.iter().map(|(_, prod)| {
-        let new_cases: Vec<_> = prod.0.iter().map(|(_, case)| {
-          let new_els: Vec<_> = case.0.iter().map(|(_, el)| match el {
+        prod.0.iter().map(|(_, case)| {
+          case.0.iter().flat_map(|(_, el)| match el {
             CaseElement::Lit(literal) => {
-              all_literals.push(literal.clone());
-              CaseEl::Lit(LitRef(all_literals.len() - 1))
+              literal.0.iter().map(|cur_tok| {
+                let (tok_ind, _) = all_tokens.insert_full(cur_tok);
+                CaseEl::Tok(TokRef(tok_ind))
+              }).collect::<Vec<_>>()
             },
             CaseElement::Prod(prod_ref) => {
-              let prod_ref_ind = prod_ref_mapping.get(prood_ref).unwrap();
-              CaseEl::Prod(ProdRef(prod_ref_ind))
+              let prod_ref_ind = prod_ref_mapping.get(prod_ref).unwrap();
+              vec![CaseEl::Prod(ProdRef(prod_ref_ind))]
             },
-          }).collect()
-        }).collect()
+          }).collect::<Vec<_>>()
+        }).collect::<Vec<_>>()
       }).collect();
       TokenGrammar {
         graph: ImplicitRepresentation(new_prods),
-        literals: all_literals,
+        tokens: all_tokens.iter().collect(),
       }
     }
   }
@@ -178,102 +172,191 @@ struct ProdRefPosition {
   case_el: CaseElRef,
 }
 
-// NB: Strongly associated with use in `IntermediateInputTokenTransition` -- for collecting
-// `StackStep`s at the end (or something), make another wrapper!
 #[derive(Debug, Clone, PartialEq, Eq)]
-struct StackDiff(Vec<StackStep>);
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-struct IntermediateInputTokenTransition {
-  diff: StackDiff,
-  pos: ProdRefPosition,
+enum StackDiff {
+  Empty,
+  Single(Vec<StackStep>),
+  Cycle(Vec<StackStep>),
 }
 
 // TODO: Some merge method for parallel parses!
+// TODO: consider the relationship between populating token transitions in the lookbehind cache to
+// some specific depth (e.g. strings of 3, 4, 5 tokens) and SIMD type 1 instructions (my
+// notations: meaning recognizing a specific sequence of tokens). SIMD type 2 (finding a specific
+// token in a longer string of bytes) can already easily be used with just token pairs (and
+// others).
 #[derive(Debug, Clone, PartialEq, Eq)]
-struct KnownStateTraversals {
-  // NB: I believe this corresponds to the collapsing find of a union-find (and the imprecise
-  // correspondence is because /our disjoint sets are subparses/) -- this may or may not
-  // need to be figured out more to ensure the desired runtime (which may not be linear as a result
-  // of extending union-find).
-  completed_traversals: Vec<StackDiff>,
-  // NB: This is what lets us start off with single-token transitions (we then clone and expand this
-  // after reading some specific input). We can start off by populating this to whatever depth we
-  // want.
-  // TODO: consider the relationship between populating token transitions in the lookbehind cache to
-  // some specific depth (e.g. strings of 3, 4, 5 tokens) and SIMD type 1 instructions (my
-  // notations: meaning recognizing a specific sequence of tokens). SIMD type 2 (finding a specific
-  // token in a longer string of bytes) can already easily be used with just token pairs (and
-  // others).
-  // TODO: consider a `Set<StackDiff>` so we can handle cycles (or perhaps a Map<_, ???>, or
-  // something else, to store what happens in between -- figure it out later)!
-  intermediate_traversals: VecDeque<IntermediateInputTokenTransition>,
+struct KnownStateTraversals(Vec<StackDiff>);
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct StatePair {
+  left: TokenPosition,
+  right: TokenPosition,
 }
 
-// Index into the lookbehind cache, along with RightTokRef.
-#[derive(Debug, Copy, PartialOrd, Ord, PartialEq, Eq)]
-struct LeftTokRef(usize);
-
-#[derive(Debug, Copy, PartialOrd, Ord, PartialEq, Eq)]
-struct RightTokRef(usize);
-
-// Index into the lookbehind cache entry for a (LeftTokRef, RightTokRef) pair to avoid copying all
-// the e.g. stack transitions over to maintain state.
-#[derive(Debug, Copy, PartialOrd, Ord, PartialEq, Eq)]
-struct LookbehindRef(usize);
-
-// [=< This is called the "lookbehind" cache because it's either that or "lookahead", and
-// "lookbehind" sounds like it's doing more difficult work, and "back-forward cache" is what firefox
-// calls its cache for js state for the browser back button and I want mozilla to like me. >=]
-#[derive(Debug, Clone, PartialEq, Eq)]
-struct LookbehindCache<Tok: Sized + PartialEq + Eq + Hash + Clone>(
-  // TODO: IndexMap is a good intermediate structure, but we'll have better locality for free (and
-  // find it much easier to implement our Lex-BFS according to the algorithm) if we
-  // formulate this as a Vec<Vec<_>> and iterate (I think)!
-  IndexMap<ConsecutiveTokenPair<Tok>, KnownStateTraversals>);
-
-// NB: There is no reference to the original grammar -- this is intentional, and I believe makes it
+// NB: There is no reference to any `TokenGrammar` -- this is intentional, and I believe makes it
 // easier to have the runtime we want just fall out of the code without too much work.
 #[derive(Debug, Clone, PartialEq, Eq)]
 struct PreprocessedGrammar<Tok: Sized + PartialEq + Eq + Hash + Clone> {
-  tokens: Vec<Tok>,
-  // NB: same length as `tokens`!
-  token_locations: Vec<Vec<TokenPosition>>,
-  initial_lookbehind_cache: IndexMap<ConsecutiveTokenPair<Tok>, KnownStateTraversals>,
+  // These don't need to be quick to access or otherwise optimized for the algorithm until we create
+  // a `Parse` -- these are chosen to reduce redundancy.
+  states: IndexMap<Tok, Vec<TokenPosition>>,
+  transitions: IndexMap<StatePair, KnownStateTraversals>,
+}
+
+#[derive(Debug, Copy, PartialEq, Eq, Hash)]
+enum GrammarVertex {
+  State(TokenPosition),
+  Prod(ProdRef),
+  Epsilon,
+}
+
+#[derive(Debug, Copy, PartialEq, Eq)]
+struct AnonSym(usize);
+
+impl AnonSym {
+  fn inc(&self) -> Self {
+    AnonSym(self.0 + 1)
+  }
+}
+
+#[derive(Debug, Copy, PartialEq, Eq)]
+enum AnonStep {
+  Positive(AnonSym),
+  Negative(AnonSym),
+}
+
+#[derive(Debug, Copy, PartialEq, Eq)]
+enum GrammarEdgeWeightStep {
+  Named(StackStep),
+  Anon(AnonStep),
+}
+
+impl GrammarEdgeWeightStep {
+  fn negates(&self, rhs: &Self) -> bool {
+    match self {
+      Self::Anon(this_step) => match this_step {
+        AnonStep::Positive(this_pos_sym) => match rhs {
+          Self::Anon(AnonStep::Negative(other_neg_sym)) => this_pos_sym == other_neg_sym,
+          _ => false,
+        },
+        AnonStep::Negative(this_neg_sym) => match rhs {
+          Self::Anon()
+        }
+      }
+      Self::Anon(AnonStep::Positive(this_sym)) => match rhs {
+        Self::Anon(AnonStep::Negative(other_sym)) => this_sym == other_sym,
+        _ => false,
+      },
+      Self::Named(StackStep::Positive(this_sym)) =>
+    }
+  }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct GrammarEdge {
+  weight: Vec<GrammarEdgeWeightStep>,
+  target: GrammarVertex,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct GrammarTraversalState {
+  target: GrammarVertex,
+  prev_stack: VecDeque<GrammarEdgeWeightStep>,
+}
+
+impl GrammarTraversalState {
+  fn advance(&self, neighbors: &IndexMap<GrammarVertex, Vec<GrammarEdge>>) -> Vec<Self> {
+    let edges = neighbors.get(self.target).unwrap().clone();
+    edges.iter().flat_map(|edge| {
+      let cur_stack = self.prev_stack.clone();
+      for edge_step in edge.weight.into_iter() {
+        match edge_step {
+          GrammarEdgeWeightStep::Anon()
+        }
+      }
+    }).collect::<Vec<_>>()
+  }
 }
 
 impl <Tok: Sized + PartialEq + Eq + Hash + Clone> PreprocessedGrammar<Tok> {
   fn index_tokens(grammar: TokenGrammar<Tok>) -> Self {
     let mut toks_with_locs: IndexMap<Tok, Vec<TokenPosition>> = IndexMap::new();
+    let mut neighbors: IndexMap<GrammarVertex, Vec<GrammarEdge>> = IndexMap::new();
+    let mut cur_anon_sym = AnonSym(0);
     grammar.graph.0.iter().cloned().enumerate(|(prod_ind, prod)| {
       let prod_ref = ProdRef(prod_ind);
       prod.0.iter().cloned().enumerate(|(case_ind, case)| {
         let case_ref = CaseRef(case_ind);
+        let mut is_start_of_case = true;
+        let mut prev_vtx = GrammarVertex::Prod(prod_ref);
         case.0.iter().cloned().enumerate(|(case_el_ind, case_el)| {
           let case_el_ref = CaseElRef(case_el_ind);
-          match case_el {
-            CaseEl::Lit(lit_ref) => {
-              let cur_literal = grammar.literals.get(lit_ref.0).unwrap().clone();
-              for (tok_ind, tok) in cur_literal.iter().enumerate() {
-                let tok_in_lit_ref = TokInLitRef(tok_ind);
-                let cur_pos = TokenPosition {
-                  prod: prod_ref,
-                  case: case_ref,
-                  case_el: case_el_ref,
-                  tok_loc: tok_in_lit_ref,
-                };
-                let tok_loc_entry = toks_with_locs.entry(tok).or_insert(vec![]);
-                *tok_loc_entry.push(cur_pos);
-              }
-            },
-            CaseEl::Prod(_) => (),
+          let cur_pos = TokenPosition {
+            prod: prod_ref,
+            case: case_ref,
+            case_el: case_el_ref,
+          };
+          // Make the appropriate weight steps to add to the current edge.
+          let mut weight_steps: Vec<GrammarEdgeWeightStep> = Vec::new();
+          if !is_start_of_case {
+            weight_steps.push(GrammarEdgeWeightStep::Anon(AnonStep::Negative(cur_anon_sym)));
           }
-        })
-      })
+          // Get a new anonymous symbol.
+          cur_anon_sym = cur_anon_sym.inc();
+          weight_steps.push(GrammarEdgeWeightStep::Anon(AnonStep::Positive(cur_anon_sym)));
+          if is_start_of_case {
+            weight_steps.push(
+              GrammarEdgeWeightStep::Named(StackStep::Positive(StackSym(prod_ref))));
+          }
+          is_start_of_case = false;
+          // Analyze the current case element.
+          let cur_vtx = match case_el {
+            CaseEl::Tok(tok_ref) => {
+              let cur_tok = grammar.tokens.get(tok_ref.0).unwrap().clone();
+              let tok_loc_entry = toks_with_locs.entry(tok).or_insert(vec![]);
+              (*tok_loc_entry).push(cur_pos);
+              GrammarVertex::State(cur_pos)
+            },
+            CaseEl::Prod(cur_el_prod_ref) => GrammarVertex::Prod(cur_el_prod_ref),
+          };
+          // Add appropriate edges to neighbors for the current state.
+          let edge = GrammarEdge {
+            weight: weight_steps,
+            target: cur_vtx,
+          };
+          let prev_neighborhood = neighbors.entry(prev_vtx).or_insert(vec![]);
+          (*prev_neighborhood).push(edge);
+          prev_vtx = cur_vtx;
+        });
+        // Add edge to epsilon vertex at end of case.
+        let epsilon_edge = GrammarEdge {
+          weight: vec![
+            GrammarEdgeWeightStep::Anon(AnonStep::Negative(cur_anon_sym)),
+            GrammarEdgeWeightStep::Named(StackStep::Negative(StackSym(prod_ref))),
+          ],
+          target: GrammarVertex::Epsilon,
+        };
+        let final_case_el_neighborhood = neighbors.entry(prev_vtx).or_insert(vec![]);
+        (*final_case_el_neighborhood).push(epsilon_edge);
+      });
     });
+    // TODO: add Epsilon vertex with zero-weight edges to everything (or do it implicitly?)!
+    // Crawl `neighbors` to get the `KnownStateTraversals` for each state.
+    let mut transitions: IndexMap<StatePair, KnownStateTraversals> = IndexMap::new();
+    for tok_pos in toks_with_locs.values().flatten() {
+      let mut queue: VecDeque<GrammarTraversalState> = VecDeque::new();
+      queue.push(GrammarTraversalState {
+        target: GrammarVertex::State(tok_pos),
+        prev_stack: VecDeque::new(),
+      });
+      while !queue.is_empty() {
+        
+      }
+    }
     PreprocessedGrammar {
-      tokens: toks_with_locs.keys().iter().collect(),
-      token_locations: toks_with_locs.values().iter().collect(),
+      states: toks_with_locs,
+      transitions: ???,
     }
   }
 }
@@ -282,6 +365,7 @@ impl <Tok: Sized + PartialEq + Eq + Hash + Clone> PreprocessedGrammar<Tok> {
 
 // May have to "reach into" the stack vec here at times when incrementally finding stack diffs to
 // traverse to the next/prev token.
+// TODO: this should probably be an index into the lookbehind cache!
 #[derive(Debug, Clone, PartialEq, Eq)]
 struct TokenTransition<Tok: Sized + PartialEq + Eq + Hash + Clone> {
   stack: Vec<StackStep>,
@@ -300,9 +384,9 @@ struct KnownPathsToInputToken<Tok: Sized + PartialEq + Eq + Hash + Clone>(
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 struct Parse<Tok: Sized + PartialEq + Eq + Hash + Clone> {
-  // TODO: this could be owned -- but if it's not, that opens the possibility of varying the grammar
-  // for different parses (which is something you might want to do if you're /learning/ a grammar)
-  // (!!!!!!!!!?!).
+  // TODO: this could be bound to an external lifetime -- but if it's not, that opens the
+  // possibility of varying the grammar for different parses (which is something you might want to
+  // do if you're /learning/ a grammar) (!!!!!!!!!?!).
   grammar: PreprocessedGrammar<Tok>,
   // NB: Don't worry too much about this right now. The grammar is idempotent -- the parse can be
   // too (without any modifications??!!??!!!!!!!).
