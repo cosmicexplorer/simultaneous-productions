@@ -357,6 +357,8 @@ impl <Tok: Sized + PartialEq + Eq + Hash + Clone> PreprocessedGrammar<Tok> {
           // implement algorithms. I don't have to worry about accidental aliasing causing
           // correctness issues.
           let mut cur_edge_steps = VecDeque::from(weight);
+          // TODO: this is WRONG!!! absolutely need to allow negative named stack syms (but remove
+          // them if applicable)!!!
           // Remove any negative elements at the beginning of the edge weights, or else fail.
           // NB: We assume that if there are negative stack steps, they are *only* located at the
           // beginning of the edge's weight! This is ok because we are generating the stack steps
@@ -483,6 +485,52 @@ mod tests {
         ])]))
     ].iter().cloned().collect());
     let grammar = TokenGrammar::from(prods);
+    assert_eq!(grammar.clone(), TokenGrammar {
+      tokens: vec!['a', 'b'],
+      graph: ImplicitRepresentation(vec![
+        ProductionImpl(vec![
+          CaseImpl(vec![CaseEl::Tok(TokRef(0)), CaseEl::Tok(TokRef(1))]),
+        ]),
+        ProductionImpl(vec![
+          CaseImpl(vec![
+            CaseEl::Tok(TokRef(0)),
+            CaseEl::Tok(TokRef(1)),
+            CaseEl::Prod(ProdRef(0)),
+          ]),
+        ]),
+      ]),
+    });
+    let preprocessed_grammar = PreprocessedGrammar::index_tokens(grammar);
+    assert_eq!(preprocessed_grammar.clone(), PreprocessedGrammar {
+      states: vec![
+        ('a', vec![
+          TokenPosition { prod: ProdRef(0), case: CaseRef(0), case_el: CaseElRef(0) },
+          TokenPosition { prod: ProdRef(1), case: CaseRef(0), case_el: CaseElRef(0) },
+        ]),
+        ('b', vec![
+          TokenPosition { prod: ProdRef(0), case: CaseRef(0), case_el: CaseElRef(1) },
+          TokenPosition { prod: ProdRef(1), case: CaseRef(0), case_el: CaseElRef(1) },
+        ]),
+      ].iter().cloned().collect::<IndexMap<char, Vec<TokenPosition>>>(),
+      transitions: vec![
+        (StatePair {
+          left: TokenPosition { prod: ProdRef(0), case: CaseRef(0), case_el: CaseElRef(0) },
+          right: TokenPosition { prod: ProdRef(0), case: CaseRef(0), case_el: CaseElRef(1) },
+        }, vec![StackDiff(vec![])]),
+        (StatePair {
+          left: TokenPosition { prod: ProdRef(1), case: CaseRef(0), case_el: CaseElRef(0) },
+          right: TokenPosition { prod: ProdRef(1), case: CaseRef(0), case_el: CaseElRef(1) },
+        }, vec![StackDiff(vec![])]),
+        (StatePair {
+          left: TokenPosition { prod: ProdRef(1), case: CaseRef(0), case_el: CaseElRef(1) },
+          right: TokenPosition { prod: ProdRef(0), case: CaseRef(0), case_el: CaseElRef(0) },
+        }, vec![StackDiff(vec![StackStep::Positive(StackSym(ProdRef(0)))])]),
+        (StatePair {
+          left: TokenPosition { prod: ProdRef(0), case: CaseRef(0), case_el: CaseElRef(1) },
+          right: TokenPosition { prod: ProdRef(1), case: CaseRef(0), case_el: CaseElRef(0) },
+        }, vec![StackDiff(vec![StackStep::Negative(StackSym(ProdRef(0)))])]),
+      ].iter().cloned().collect::<IndexMap<StatePair, Vec<StackDiff>>>(),
+    });
     panic!("idk");
   }
 
