@@ -7,9 +7,8 @@ extern crate indexmap;
 use indexmap::{IndexMap, IndexSet};
 
 use std::convert::From;
-use std::collections::{HashMap, HashSet};
-use std::hash::{Hash, Hasher};
-use std::iter::FromIterator;
+use std::collections::{HashMap, VecDeque};
+use std::hash::Hash;
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct Literal<Tok: Sized + PartialEq + Eq + Hash + Clone>(Vec<Tok>);
@@ -71,20 +70,20 @@ pub struct SimultaneousProductions<Tok: Sized + PartialEq + Eq + Hash + Clone>(
 // A version of `ProductionReference` which uses a `usize` for speed. We adopt the convention of
 // abbreviated names for things used in algorithms.
 // Points to a particular Production within an ImplicitRepresentation.
-#[derive(Debug, Copy, PartialOrd, Ord, PartialEq, Eq, Hash)]
+#[derive(Debug, Copy, Clone, PartialOrd, Ord, PartialEq, Eq, Hash)]
 struct ProdRef(usize);
 
 // Points to a particular case within a Production.
-#[derive(Debug, Copy, PartialOrd, Ord, PartialEq, Eq, Hash)]
+#[derive(Debug, Copy, Clone, PartialOrd, Ord, PartialEq, Eq, Hash)]
 struct CaseRef(usize);
 
 // Points to an element of a particular Case.
-#[derive(Debug, Copy, PartialOrd, Ord, PartialEq, Eq, Hash)]
+#[derive(Debug, Copy, Clone, PartialOrd, Ord, PartialEq, Eq, Hash)]
 struct CaseElRef(usize);
 
 // This refers to a specific token, implying that we must be pointing to a particular index of a
 // particular Literal. This corresponds to a "state" in the simultaneous productions terminology.
-#[derive(Debug, Copy, PartialEq, Eq, Hash)]
+#[derive(Debug, Copy, Clone, PartialEq, Eq, Hash)]
 struct TokenPosition {
   prod: ProdRef,
   case: CaseRef,
@@ -94,14 +93,14 @@ struct TokenPosition {
 /// Graph Representation
 
 // TODO: describe!
-#[derive(Debug, Copy, PartialOrd, Ord, PartialEq, Eq)]
+#[derive(Debug, Copy, Clone, PartialOrd, Ord, PartialEq, Eq)]
 struct TokRef(usize);
 
-#[derive(Debug, Copy, PartialEq, Eq)]
+#[derive(Debug, Copy, Clone, PartialEq, Eq)]
 enum CaseEl {
   Tok(TokRef),
   Prod(ProdRef),
-};
+}
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 struct CaseImpl(Vec<CaseEl>);
@@ -126,38 +125,40 @@ impl <Tok: Sized + PartialEq + Eq + Hash + Clone>
     fn from(prods: SimultaneousProductions<Tok>) -> Self {
       // Mapping from strings -> indices (TODO: from a type-indexed map, where each production
       // returns the type!).
-      let prod_ref_mapping: HashMap<ProductionReference, usize> = prods.0.iter().cloned()
-        .map(|(prod_ref, _)| prod_ref).enumerate(|(ind, p)| (p, ind)).collect();
+      let prod_ref_mapping: HashMap<ProductionReference, usize> = prods.0.iter()
+        .map(|(prod_ref, _)| prod_ref).cloned().enumerate().map(|(ind, p)| (p, ind)).collect();
       // Collect all the tokens (splitting up literals) as we traverse the productions.
       let mut all_tokens: IndexSet<Tok> = IndexSet::new();
       // Pretty straightforwardly map the productions into the new space.
       let new_prods: Vec<_> = prods.0.iter().map(|(_, prod)| {
-        prod.0.iter().map(|(_, case)| {
-          case.0.iter().flat_map(|(_, el)| match el {
+        let cases: Vec<_> = prod.0.iter().map(|case| {
+          let case_els: Vec<_> = case.0.iter().flat_map(|el| match el {
             CaseElement::Lit(literal) => {
-              literal.0.iter().map(|cur_tok| {
+              literal.0.iter().cloned().map(|cur_tok| {
                 let (tok_ind, _) = all_tokens.insert_full(cur_tok);
                 CaseEl::Tok(TokRef(tok_ind))
               }).collect::<Vec<_>>()
             },
             CaseElement::Prod(prod_ref) => {
-              let prod_ref_ind = prod_ref_mapping.get(prod_ref).unwrap();
-              vec![CaseEl::Prod(ProdRef(prod_ref_ind))]
+              let prod_ref_ind = prod_ref_mapping.get(prod_ref).expect("prod ref not found");
+              vec![CaseEl::Prod(ProdRef(*prod_ref_ind))]
             },
-          }).collect::<Vec<_>>()
-        }).collect::<Vec<_>>()
+          }).collect();
+          CaseImpl(case_els)
+        }).collect();
+        ProductionImpl(cases)
       }).collect();
       TokenGrammar {
         graph: ImplicitRepresentation(new_prods),
-        tokens: all_tokens.iter().collect(),
+        tokens: all_tokens.iter().cloned().collect(),
       }
     }
   }
 
-#[derive(Debug, Copy, PartialEq, Eq, Hash)]
+#[derive(Debug, Copy, Clone, PartialEq, Eq, Hash)]
 struct StackSym(ProdRef);
 
-#[derive(Debug, Copy, PartialEq, Eq, Hash)]
+#[derive(Debug, Copy, Clone, PartialEq, Eq, Hash)]
 enum StackStep {
   Positive(StackSym),
   Negative(StackSym),
@@ -189,14 +190,14 @@ struct PreprocessedGrammar<Tok: Sized + PartialEq + Eq + Hash + Clone> {
   transitions: IndexMap<StatePair, Vec<StackDiff>>,
 }
 
-#[derive(Debug, Copy, PartialEq, Eq, Hash)]
+#[derive(Debug, Copy, Clone, PartialEq, Eq, Hash)]
 enum GrammarVertex {
   State(TokenPosition),
   Prod(ProdRef),
   Epsilon,
 }
 
-#[derive(Debug, Copy, PartialEq, Eq)]
+#[derive(Debug, Copy, Clone, PartialEq, Eq, Hash)]
 struct AnonSym(usize);
 
 impl AnonSym {
@@ -205,13 +206,13 @@ impl AnonSym {
   }
 }
 
-#[derive(Debug, Copy, PartialEq, Eq)]
+#[derive(Debug, Copy, Clone, PartialEq, Eq, Hash)]
 enum AnonStep {
   Positive(AnonSym),
   Negative(AnonSym),
 }
 
-#[derive(Debug, Copy, PartialEq, Eq, Hash)]
+#[derive(Debug, Copy, Clone, PartialEq, Eq, Hash)]
 enum GrammarEdgeWeightStep {
   Named(StackStep),
   Anon(AnonStep),
@@ -228,20 +229,20 @@ impl GrammarEdgeWeightStep {
 
   fn is_negated_by(&self, rhs: &Self) -> bool {
     match self {
-      Self::Anon(AnonStep::Positive(cur_sym)) => match rhs {
-        Self::Anon(AnonStep::Negative(other_sym)) => cur_sym == other_sym,
+      GrammarEdgeWeightStep::Anon(AnonStep::Positive(cur_sym)) => match rhs {
+        GrammarEdgeWeightStep::Anon(AnonStep::Negative(other_sym)) => cur_sym == other_sym,
         _ => false,
       },
-      Self::Anon(AnonStep::Negative(cur_sym)) => match rhs {
-        Self::Anon(AnonStep::Positive(other_sym)) => cur_sym == other_sym,
+      GrammarEdgeWeightStep::Anon(AnonStep::Negative(cur_sym)) => match rhs {
+        GrammarEdgeWeightStep::Anon(AnonStep::Positive(other_sym)) => cur_sym == other_sym,
         _ => false,
       },
-      Self::Named(StackStep::Positive(cur_sym)) => match rhs {
-        Self::Named(StackStep::Negative(other_sym)) => cur_sym == other_sym,
+      GrammarEdgeWeightStep::Named(StackStep::Positive(cur_sym)) => match rhs {
+        GrammarEdgeWeightStep::Named(StackStep::Negative(other_sym)) => cur_sym == other_sym,
         _ => false,
       },
-      Self::Named(StackStep::Positive(cur_sym)) => match rhs {
-        Self::Named(StackStep::Negative(other_sym)) => cur_sym == other_sym,
+      GrammarEdgeWeightStep::Named(StackStep::Negative(cur_sym)) => match rhs {
+        GrammarEdgeWeightStep::Named(StackStep::Positive(other_sym)) => cur_sym == other_sym,
         _ => false,
       },
     }
@@ -267,13 +268,13 @@ impl <Tok: Sized + PartialEq + Eq + Hash + Clone> PreprocessedGrammar<Tok> {
     let mut cur_anon_sym = AnonSym(0);
     // Map all the tokens to states (`TokenPosition`s) which reference them, and build up a graph in
     // `neighbors` of the elements in each case.
-    grammar.graph.0.iter().cloned().enumerate(|(prod_ind, prod)| {
+    for (prod_ind, prod) in grammar.graph.0.iter().cloned().enumerate() {
       let prod_ref = ProdRef(prod_ind);
-      prod.0.iter().cloned().enumerate(|(case_ind, case)| {
+      for (case_ind, case) in prod.0.iter().cloned().enumerate() {
         let case_ref = CaseRef(case_ind);
         let mut is_start_of_case = true;
         let mut prev_vtx = GrammarVertex::Prod(prod_ref);
-        case.0.iter().cloned().enumerate(|(case_el_ind, case_el)| {
+        for (case_el_ind, case_el) in case.0.iter().cloned().enumerate() {
           let case_el_ref = CaseElRef(case_el_ind);
           let cur_pos = TokenPosition {
             prod: prod_ref,
@@ -297,7 +298,7 @@ impl <Tok: Sized + PartialEq + Eq + Hash + Clone> PreprocessedGrammar<Tok> {
           let cur_vtx = match case_el {
             CaseEl::Tok(tok_ref) => {
               let cur_tok = grammar.tokens.get(tok_ref.0).unwrap().clone();
-              let tok_loc_entry = toks_with_locs.entry(tok).or_insert(vec![]);
+              let tok_loc_entry = toks_with_locs.entry(cur_tok).or_insert(vec![]);
               (*tok_loc_entry).push(cur_pos);
               GrammarVertex::State(cur_pos)
             },
@@ -311,7 +312,7 @@ impl <Tok: Sized + PartialEq + Eq + Hash + Clone> PreprocessedGrammar<Tok> {
           let prev_neighborhood = neighbors.entry(prev_vtx).or_insert(vec![]);
           (*prev_neighborhood).push(edge);
           prev_vtx = cur_vtx;
-        });
+        }
         // Add edge to epsilon vertex at end of case.
         let epsilon_edge = GrammarEdge {
           weight: vec![
@@ -322,8 +323,8 @@ impl <Tok: Sized + PartialEq + Eq + Hash + Clone> PreprocessedGrammar<Tok> {
         };
         let final_case_el_neighborhood = neighbors.entry(prev_vtx).or_insert(vec![]);
         (*final_case_el_neighborhood).push(epsilon_edge);
-      });
-    });
+      }
+    }
 
     // Crawl `neighbors` to get the `StackDiff` between each pair of states.
     // TODO: add support for stack cycles! Right now we just disallow stack cycles, but it's not
@@ -331,14 +332,14 @@ impl <Tok: Sized + PartialEq + Eq + Hash + Clone> PreprocessedGrammar<Tok> {
     // over all the `ProdRef`s to find cycles (and record the stack diffs occuring during a single
     // iteration of the cycle), and in matching, remember that any instance of a cycling `ProdRef`
     // can have an indefinite number of iterations of its cycle)!
-    let mut transitions: IndexMap<StatePair, KnownStateTraversals> = IndexMap::new();
+    let mut transitions: IndexMap<StatePair, Vec<StackDiff>> = IndexMap::new();
     for left_tok_pos in toks_with_locs.values().flatten() {
       let mut queue: VecDeque<GrammarTraversalState> = VecDeque::new();
       // TODO: Store not just productions we've found, but the different pathhs taken to them (don't
       // try to do anything with cycles here, though)!
       let mut seen_productions: IndexSet<ProdRef> = IndexSet::new();
       queue.push_back(GrammarTraversalState {
-        traversal_target: GrammarVertex::State(left_tok_pos),
+        traversal_target: GrammarVertex::State(*left_tok_pos),
         prev_stack: VecDeque::new(),
       });
       while !queue.is_empty() {
@@ -346,16 +347,16 @@ impl <Tok: Sized + PartialEq + Eq + Hash + Clone> PreprocessedGrammar<Tok> {
           traversal_target,
           prev_stack,
         } = queue.pop_front().unwrap();
-        for new_edge in neighbors.get(target).unwrap().iter().cloned() {
+        for new_edge in neighbors.get(&traversal_target).unwrap().iter().cloned() {
           let GrammarEdge {
             weight,
             target,
           } = new_edge;
-          let new_stack = prev_stack.clone();
+          let mut new_stack = prev_stack.clone();
           // I love move construction being the default. This is why Rust is the best language to
           // implement algorithms. I don't have to worry about accidental aliasing causing
           // correctness issues.
-          let cur_edge_steps = VecDeque::from(weight);
+          let mut cur_edge_steps = VecDeque::from(weight);
           // Remove any negative elements at the beginning of the edge weights, or else fail.
           // NB: We assume that if there are negative stack steps, they are *only* located at the
           // beginning of the edge's weight! This is ok because we are generating the stack steps
@@ -371,7 +372,7 @@ impl <Tok: Sized + PartialEq + Eq + Hash + Clone> PreprocessedGrammar<Tok> {
               // TODO: we know this is going to be positive -- can we simplify the matching logic of
               // is_negated_by() above?
               Some(last_step) => {
-                if !last_step.is_negated_by(neg_step) {
+                if !last_step.is_negated_by(&neg_step) {
                   match_has_failed = true;
                   new_stack.push_back(last_step);
                   break;
@@ -381,14 +382,14 @@ impl <Tok: Sized + PartialEq + Eq + Hash + Clone> PreprocessedGrammar<Tok> {
           }
           if !match_has_failed {
             new_stack.extend(cur_edge_steps.into_iter());
-            match traversal_target {
+            match target {
               // We have completed a traversal -- there should be no "anon" steps.
               GrammarVertex::State(right_tok_pos) => {
                 let state_pair = StatePair {
-                  left: left_tok_pos,
+                  left: *left_tok_pos,
                   right: right_tok_pos,
                 };
-                let diff: Vec<StackStep> = Vec::new();
+                let mut diff: Vec<StackStep> = Vec::new();
                 for el in new_stack.into_iter() {
                   match el {
                     GrammarEdgeWeightStep::Anon(_) => panic!("no anon steps should exist now"),
@@ -411,9 +412,9 @@ impl <Tok: Sized + PartialEq + Eq + Hash + Clone> PreprocessedGrammar<Tok> {
               },
               // The epsilon vertex has a zero-weight edge to all productions.
               GrammarVertex::Epsilon => {
-                for next_prod in grammar.graph.0.iter().cloned() {
+                for next_prod_ind in 0..grammar.graph.0.len() {
                   queue.push_back(GrammarTraversalState {
-                    traversal_target: GrammarVertex::Prod(next_prod),
+                    traversal_target: GrammarVertex::Prod(ProdRef(next_prod_ind)),
                     prev_stack: new_stack.clone(),
                   });
                 }
@@ -481,103 +482,8 @@ mod tests {
           CaseElement::Prod(ProductionReference::new("a")),
         ])]))
     ].iter().cloned().collect());
-    let token_index = prods.generate_token_index();
-    // TODO: actually implement everything!
-    assert_eq!(token_index, TokenIndex([
-      (ConsecutiveTokenPair {
-        left_tok: 'a',
-        right_tok: 'b',
-      }, AllowedTransitions(vec![
-        StateChange {
-          left_state: TokenWithPosition {
-            tok: 'a',
-            pos: TokenPositionInProduction {
-              productions_context: prods.clone(),
-              case_context: Case(vec![
-                CaseElement::Lit(Literal(vec!['a', 'b']))]),
-              case_pos: 0,
-              literal_context: Literal(vec!['a', 'b']),
-              literal_pos: 0,
-            }
-          },
-          right_state: TokenWithPosition {
-            tok: 'b',
-            pos: TokenPositionInProduction {
-              productions_context: prods.clone(),
-              case_context: Case(vec![
-                CaseElement::Lit(Literal(vec!['a', 'b']))]),
-              case_pos: 0,
-              literal_context: Literal(vec!['a', 'b']),
-              literal_pos: 1,
-            }
-          },
-          stack_changes: AccumulatedTransitions::empty(),
-        },
-        StateChange {
-          left_state: TokenWithPosition {
-            tok: 'a',
-            pos: TokenPositionInProduction {
-              productions_context: prods.clone(),
-              case_context: Case(vec![
-                CaseElement::Lit(Literal(vec!['a', 'b'])),
-                CaseElement::Prod(ProductionReference::new("a")),
-              ]),
-              case_pos: 0,
-              literal_context: Literal(vec!['a', 'b']),
-              literal_pos: 0,
-            }
-          },
-          right_state: TokenWithPosition {
-            tok: 'b',
-            pos: TokenPositionInProduction {
-              productions_context: prods.clone(),
-              case_context: Case(vec![
-                CaseElement::Lit(Literal(vec!['a', 'b'])),
-                CaseElement::Prod(ProductionReference::new("a")),
-              ]),
-              case_pos: 0,
-              literal_context: Literal(vec!['a', 'b']),
-              literal_pos: 1,
-            }
-          },
-          stack_changes: AccumulatedTransitions::empty(),
-        },
-      ].iter().cloned().collect::<IndexSet<_>>())),
-      (ConsecutiveTokenPair {
-        left_tok: 'b',
-        right_tok: 'a',
-      }, AllowedTransitions(vec![
-        StateChange {
-          left_state: TokenWithPosition {
-            tok: 'b',
-            pos: TokenPositionInProduction {
-              productions_context: prods.clone(),
-              case_context: Case(vec![
-                CaseElement::Lit(Literal(vec!['a', 'b'])),
-                CaseElement::Prod(ProductionReference::new("a"))]),
-              case_pos: 0,
-              literal_context: Literal(vec!['a', 'b']),
-              literal_pos: 1,
-            }
-          },
-          right_state: TokenWithPosition {
-            tok: 'a',
-            pos: TokenPositionInProduction {
-              productions_context: prods.clone(),
-              case_context: Case(vec![
-                CaseElement::Lit(Literal(vec!['a', 'b']))]),
-              case_pos: 0,
-              literal_context: Literal(vec!['a', 'b']),
-              literal_pos: 0,
-            }
-          },
-          stack_changes: AccumulatedTransitions(vec![
-            StackChangeUnit::Positive(
-              StackSymbol(ProductionReference::new("a"))),
-          ]),
-        },
-      ].iter().cloned().collect::<IndexSet<_>>())),
-    ].iter().cloned().collect::<IndexMap<_, _>>()));
+    let grammar = TokenGrammar::from(prods);
+    panic!("idk");
   }
 
   #[test]
@@ -590,6 +496,6 @@ mod tests {
           CaseElement::Prod(ProductionReference::new("c")),
         ])]))
     ].iter().cloned().collect());
-    prods.generate_token_index();
+    TokenGrammar::from(prods);
   }
 }
