@@ -140,7 +140,8 @@ impl <Tok: Sized + PartialEq + Eq + Hash + Clone>
               }).collect::<Vec<_>>()
             },
             CaseElement::Prod(prod_ref) => {
-              let prod_ref_ind = prod_ref_mapping.get(prod_ref).expect("prod ref not found");
+              let prod_ref_ind = prod_ref_mapping.get(prod_ref)
+                .expect(&format!("prod ref {:?} not found", prod_ref));
               vec![CaseEl::Prod(ProdRef(*prod_ref_ind))]
             },
           }).collect();
@@ -588,7 +589,7 @@ mod tests {
   }
 
   #[test]
-  #[should_panic(expected = "prod ref not found")]
+  #[should_panic(expected = "prod ref ProductionReference(\"c\") not found")]
   fn missing_prod_ref() {
     let prods = SimultaneousProductions([
       (ProductionReference::new("b"), Production(vec![
