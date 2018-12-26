@@ -521,7 +521,7 @@ mod tests {
   use super::*;
 
   #[test]
-  fn non_cyclic_productions() {
+  fn preprocessed_state_for_non_cyclic_productions() {
     let prods = SimultaneousProductions([
       (ProductionReference::new("a"), Production(vec![
         Case(vec![
@@ -582,7 +582,7 @@ mod tests {
         (StatePair {
           left: TokenPosition { prod: ProdRef(0), case: CaseRef(0), case_el: CaseElRef(1) },
           right: TokenPosition { prod: ProdRef(0), case: CaseRef(0), case_el: CaseElRef(0) },
-        }, vec![StackDiff(vec![StackStep::Negative(StackSym(ProdRef(0)))])])
+        }, vec![StackDiff(vec![StackStep::Negative(StackSym(ProdRef(0)))])]),
       ].iter().cloned().collect::<IndexMap<StatePair, Vec<StackDiff>>>(),
     });
   }
