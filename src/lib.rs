@@ -3,7 +3,7 @@
 extern crate indexmap;
 
 // TODO: indexmap here is used for testing purposes, so we can compare the results (see
-// `basic_productions()`) -- figure out if there is a better way to do this.
+// `non_cyclic_productions()`) -- figure out if there is a better way to do this.
 use indexmap::{IndexMap, IndexSet};
 
 use std::convert::From;
@@ -186,7 +186,8 @@ struct PreprocessedGrammar<Tok: Sized + PartialEq + Eq + Hash + Clone> {
   // a `Parse` -- these are chosen to reduce redundancy.
   states: IndexMap<Tok, Vec<TokenPosition>>,
   // TODO: we don't yet support stack cycles (ignored), or multiple stack paths to the same
-  // succeeding state from an initial state (also ignored) -- details in index_tokens().
+  // succeeding state from an initial state (also ignored) -- details in
+  // build_pairwise_transitions_table().
   transitions: IndexMap<StatePair, Vec<StackDiff>>,
 }
 
@@ -219,13 +220,6 @@ enum GrammarEdgeWeightStep {
 }
 
 impl GrammarEdgeWeightStep {
-  fn is_anon(&self) -> bool {
-    match self {
-      &GrammarEdgeWeightStep::Anon(_) => true,
-      _ => false,
-    }
-  }
-
   fn is_negative(&self) -> bool {
     match self {
       &GrammarEdgeWeightStep::Anon(AnonStep::Negative(_)) => true,
@@ -256,10 +250,15 @@ impl GrammarEdgeWeightStep {
   }
 }
 
-fn shuffle_negative_steps_returning_whether_matched(
+// I love move construction being the default. This is why Rust is the best language to
+// implement algorithms. I don't have to worry about accidental aliasing causing
+// correctness issues.
+fn shuffling_negative_steps_successfully_matched(
   stack: &mut VecDeque<GrammarEdgeWeightStep>,
-  edge_steps: &mut VecDeque<GrammarEdgeWeightStep>,
+  mut edge_steps: VecDeque<GrammarEdgeWeightStep>,
 ) -> bool {
+  eprintln!("stack: {:?}", stack);
+  eprintln!("edge_steps: {:?}", edge_steps);
   let mut match_has_failed = false;
   while edge_steps.front().map_or(false, |front_step| front_step.is_negative()) {
     let neg_step = edge_steps.pop_front().unwrap();
@@ -279,6 +278,11 @@ fn shuffle_negative_steps_returning_whether_matched(
       break;
     }
   }
+  // We have now moved all of the edge steps into the stack.
+  // NB: This *should* be fine to do even on a failed match, but watch this carefully!
+  stack.extend(edge_steps.into_iter());
+  eprintln!("new stack: {:?}", stack);
+  eprintln!("match_has_failed: {:?}", match_has_failed);
   !match_has_failed
 }
 
@@ -295,7 +299,9 @@ struct GrammarTraversalState {
 }
 
 impl <Tok: Sized + PartialEq + Eq + Hash + Clone> PreprocessedGrammar<Tok> {
-  fn index_tokens(grammar: TokenGrammar<Tok>) -> Self {
+  fn index_tokens(
+    grammar: &TokenGrammar<Tok>,
+  ) -> (IndexMap<Tok, Vec<TokenPosition>>, IndexMap<GrammarVertex, Vec<GrammarEdge>>) {
     let mut toks_with_locs: IndexMap<Tok, Vec<TokenPosition>> = IndexMap::new();
     let mut neighbors: IndexMap<GrammarVertex, Vec<GrammarEdge>> = IndexMap::new();
     let mut cur_anon_sym = AnonSym(0);
@@ -383,8 +389,15 @@ impl <Tok: Sized + PartialEq + Eq + Hash + Clone> PreprocessedGrammar<Tok> {
         (*final_case_el_neighborhood).push(epsilon_edge);
       }
     }
-    eprintln!("neighbors: {:?}", neighbors);
+    (toks_with_locs, neighbors)
+  }
 
+  fn build_pairwise_transitions_table(
+    grammar: &TokenGrammar<Tok>,
+    toks_with_locs: IndexMap<Tok, Vec<TokenPosition>>,
+    neighbors: IndexMap<GrammarVertex, Vec<GrammarEdge>>,
+  ) -> Self {
+    eprintln!("neighbors: {:?}", neighbors);
     // Crawl `neighbors` to get the `StackDiff` between each pair of states.
     // TODO: add support for stack cycles! Right now we just disallow stack cycles, but it's not
     // difficult to support this (in addition to iterating over all the known tokens, also iterate
@@ -415,36 +428,25 @@ impl <Tok: Sized + PartialEq + Eq + Hash + Clone> PreprocessedGrammar<Tok> {
             target,
           } = new_edge;
           let mut new_stack = prev_stack.clone();
-          eprintln!("new_stack: {:?}", new_stack);
-          // I love move construction being the default. This is why Rust is the best language to
-          // implement algorithms. I don't have to worry about accidental aliasing causing
-          // correctness issues.
-          let mut cur_edge_steps = VecDeque::from(weight);
-          eprintln!("cur_edge_steps: {:?}", cur_edge_steps);
           // Match any negative elements at the beginning of the edge weights, or else fail.
           // NB: We assume that if there are negative stack steps, they are *only* located at the
           // beginning of the edge's weight! This is ok because we are generating the stack steps
           // ourselves earlier in this same method.
-          if shuffle_negative_steps_returning_whether_matched(&mut new_stack, &mut cur_edge_steps) {
-            new_stack.extend(cur_edge_steps.into_iter());
-            eprintln!("next new_stack: {:?}", new_stack);
+          if shuffling_negative_steps_successfully_matched(&mut new_stack, VecDeque::from(weight)) {
             eprintln!("target: {:?}", target);
             match target {
               // We have completed a traversal -- there should be no "anon" steps.
               GrammarVertex::State(right_tok_pos) => {
-                let state_pair = StatePair {
+                let diff: Vec<StackStep> = new_stack.into_iter().filter_map(|step| match step {
+                  GrammarEdgeWeightStep::Named(s) => Some(s),
+                  _ => None,
+                }).collect();
+                eprintln!("diff: {:?}", diff);
+                let transitions_for_pair = transitions.entry(StatePair {
                   left: *left_tok_pos,
                   right: right_tok_pos,
-                };
-                let mut diff: Vec<StackStep> = Vec::new();
-                for el in new_stack.into_iter() {
-                  match el {
-                    GrammarEdgeWeightStep::Named(s) => diff.push(s),
-                    _ => (),
-                  }
-                }
-                eprintln!("diff: {:?}", diff);
-                let transitions_for_pair = transitions.entry(state_pair).or_insert(vec![]);
+                }).or_insert(vec![]);
+                eprintln!("transitions_for_pair: {:?}", transitions_for_pair);
                 (*transitions_for_pair).push(StackDiff(diff));
               },
               // Add the target vertex with the new stack appended to the end (minus any initial
@@ -519,7 +521,7 @@ mod tests {
   use super::*;
 
   #[test]
-  fn basic_productions() {
+  fn non_cyclic_productions() {
     let prods = SimultaneousProductions([
       (ProductionReference::new("a"), Production(vec![
         Case(vec![
@@ -546,7 +548,9 @@ mod tests {
         ]),
       ]),
     });
-    let preprocessed_grammar = PreprocessedGrammar::index_tokens(grammar);
+    let (toks_with_locs, neighbors) = PreprocessedGrammar::index_tokens(&grammar);
+    let preprocessed_grammar = PreprocessedGrammar::build_pairwise_transitions_table(
+      &grammar, toks_with_locs, neighbors);
     assert_eq!(preprocessed_grammar.clone(), PreprocessedGrammar {
       states: vec![
         ('a', vec![
