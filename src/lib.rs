@@ -13,8 +13,11 @@ use std::hash::Hash;
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct Literal<Tok: Sized + PartialEq + Eq + Hash + Clone>(Vec<Tok>);
 
-impl <'a> From<&'a str> for Literal<char> {
-  fn from(s: &'a str) -> Self {
+// NB: a From impl is usually intended to denote that allocation is /not/ performed, I think: see
+// https://doc.rust-lang.org/std/convert/trait.From.html -- fn new() makes more sense for this use
+// case.
+impl Literal<char> {
+  fn new(s: &str) -> Self {
     Literal(s.chars().collect())
   }
 }
@@ -25,8 +28,8 @@ impl <'a> From<&'a str> for Literal<char> {
 #[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub struct ProductionReference(String);
 
-impl <'a> From<&'a str> for ProductionReference {
-  fn from(s: &'a str) -> Self {
+impl ProductionReference {
+  fn new(s: &str) -> Self {
     ProductionReference(s.to_string())
   }
 }
@@ -119,42 +122,40 @@ struct TokenGrammar<Tok: Sized + PartialEq + Eq + Hash + Clone> {
   tokens: Vec<Tok>,
 }
 
-impl <Tok: Sized + PartialEq + Eq + Hash + Clone>
-  From<SimultaneousProductions<Tok>>
-  for TokenGrammar<Tok> {
-    fn from(prods: SimultaneousProductions<Tok>) -> Self {
-      // Mapping from strings -> indices (TODO: from a type-indexed map, where each production
-      // returns the type!).
-      let prod_ref_mapping: HashMap<ProductionReference, usize> = prods.0.iter()
-        .map(|(prod_ref, _)| prod_ref).cloned().enumerate().map(|(ind, p)| (p, ind)).collect();
-      // Collect all the tokens (splitting up literals) as we traverse the productions.
-      let mut all_tokens: IndexSet<Tok> = IndexSet::new();
-      // Pretty straightforwardly map the productions into the new space.
-      let new_prods: Vec<_> = prods.0.iter().map(|(_, prod)| {
-        let cases: Vec<_> = prod.0.iter().map(|case| {
-          let case_els: Vec<_> = case.0.iter().flat_map(|el| match el {
-            CaseElement::Lit(literal) => {
-              literal.0.iter().cloned().map(|cur_tok| {
-                let (tok_ind, _) = all_tokens.insert_full(cur_tok);
-                CaseEl::Tok(TokRef(tok_ind))
-              }).collect::<Vec<_>>()
-            },
-            CaseElement::Prod(prod_ref) => {
-              let prod_ref_ind = prod_ref_mapping.get(prod_ref)
-                .expect(&format!("prod ref {:?} not found", prod_ref));
-              vec![CaseEl::Prod(ProdRef(*prod_ref_ind))]
-            },
-          }).collect();
-          CaseImpl(case_els)
+impl <Tok: Sized + PartialEq + Eq + Hash + Clone> TokenGrammar<Tok> {
+  fn new(prods: &SimultaneousProductions<Tok>) -> Self {
+    // Mapping from strings -> indices (TODO: from a type-indexed map, where each production
+    // returns the type!).
+    let prod_ref_mapping: HashMap<ProductionReference, usize> = prods.0.iter()
+      .map(|(prod_ref, _)| prod_ref).cloned().enumerate().map(|(ind, p)| (p, ind)).collect();
+    // Collect all the tokens (splitting up literals) as we traverse the productions.
+    let mut all_tokens: IndexSet<Tok> = IndexSet::new();
+    // Pretty straightforwardly map the productions into the new space.
+    let new_prods: Vec<_> = prods.0.iter().map(|(_, prod)| {
+      let cases: Vec<_> = prod.0.iter().map(|case| {
+        let case_els: Vec<_> = case.0.iter().flat_map(|el| match el {
+          CaseElement::Lit(literal) => {
+            literal.0.iter().cloned().map(|cur_tok| {
+              let (tok_ind, _) = all_tokens.insert_full(cur_tok);
+              CaseEl::Tok(TokRef(tok_ind))
+            }).collect::<Vec<_>>()
+          },
+          CaseElement::Prod(prod_ref) => {
+            let prod_ref_ind = prod_ref_mapping.get(prod_ref)
+              .expect(&format!("prod ref {:?} not found", prod_ref));
+            vec![CaseEl::Prod(ProdRef(*prod_ref_ind))]
+          },
         }).collect();
-        ProductionImpl(cases)
+        CaseImpl(case_els)
       }).collect();
-      TokenGrammar {
-        graph: ImplicitRepresentation(new_prods),
-        tokens: all_tokens.iter().cloned().collect(),
-      }
+      ProductionImpl(cases)
+    }).collect();
+    TokenGrammar {
+      graph: ImplicitRepresentation(new_prods),
+      tokens: all_tokens.iter().cloned().collect(),
     }
   }
+}
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq, Hash)]
 struct StackSym(ProdRef);
@@ -436,7 +437,8 @@ impl <Tok: Sized + PartialEq + Eq + Hash + Clone> PreprocessedGrammar<Tok> {
           if shuffling_negative_steps_successfully_matched(&mut new_stack, VecDeque::from(weight)) {
             eprintln!("target: {:?}", target);
             match target {
-              // We have completed a traversal -- there should be no "anon" steps.
+              // We have completed a traversal -- there should be no "anon" steps in the result
+              // (those are only for bookkeeping during this construction phase).
               GrammarVertex::State(right_tok_pos) => {
                 let diff: Vec<StackStep> = new_stack.into_iter().filter_map(|step| match step {
                   GrammarEdgeWeightStep::Named(s) => Some(s),
@@ -479,32 +481,26 @@ impl <Tok: Sized + PartialEq + Eq + Hash + Clone> PreprocessedGrammar<Tok> {
   }
 }
 
-// TODO: turn this and the PreprocessedGrammar<Tok> From impl into TryFrom!
-impl <'a, Tok: Sized + PartialEq + Eq + Hash + Clone>
-  From<&'a TokenGrammar<Tok>>
-  for PreprocessedGrammar<Tok> {
-    fn from(grammar: &'a TokenGrammar<Tok>) -> Self {
-      let (states, neighbors) = Self::index_tokens(grammar);
-      let transitions = Self::build_pairwise_transitions_table(grammar, &states, &neighbors);
-      PreprocessedGrammar {
-        states,
-        transitions,
-      }
+impl <Tok: Sized + PartialEq + Eq + Hash + Clone> PreprocessedGrammar<Tok> {
+  fn new(grammar: &TokenGrammar<Tok>) -> Self {
+    let (states, neighbors) = Self::index_tokens(grammar);
+    let transitions = Self::build_pairwise_transitions_table(grammar, &states, &neighbors);
+    PreprocessedGrammar {
+      states,
+      transitions,
     }
   }
+}
 
 /// Problem Instance
 
-// May have to "reach into" the stack vec here at times when incrementally finding stack diffs to
-// traverse to the next/prev token.
-// TODO: this should probably be an index into the lookbehind cache!
+// TODO: List of known stack paths, for both "sides", per input token (sorted lexicographically)!
+// TODO: Lexicographic sorting can be accomplished using a trie (of stack syms!!!!!!!!)! A sparse
+// trie might work too -- can do this with a vec of filled indices alongside the trie vec (when
+// would we want to use this? perhaps so that we don't need to store a Vec<Option<_>>? that's
+// actually pretty reasonable).
 #[derive(Debug, Clone, PartialEq, Eq)]
-struct TokenTransition<Tok: Sized + PartialEq + Eq + Hash + Clone> {
-  stack: Vec<StackStep>,
-  // The previous token.
-  // TODO: this may not be necessary in comparison to an index into the input, actually.
-  tok: Tok,
-}
+struct
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 struct AccumulatedTransitions<Tok: Sized + PartialEq + Eq + Hash + Clone>(
@@ -535,16 +531,16 @@ mod tests {
   #[test]
   fn preprocessed_state_for_non_cyclic_productions() {
     let prods = SimultaneousProductions([
-      (ProductionReference::from("a"), Production(vec![
+      (ProductionReference::new("a"), Production(vec![
         Case(vec![
-          CaseElement::Lit(Literal::from("ab"))])])),
-      (ProductionReference::from("b"), Production(vec![
+          CaseElement::Lit(Literal::new("ab"))])])),
+      (ProductionReference::new("b"), Production(vec![
         Case(vec![
-          CaseElement::Lit(Literal::from("ab")),
-          CaseElement::Prod(ProductionReference::from("a")),
+          CaseElement::Lit(Literal::new("ab")),
+          CaseElement::Prod(ProductionReference::new("a")),
         ])]))
     ].iter().cloned().collect());
-    let grammar = TokenGrammar::from(prods);
+    let grammar = TokenGrammar::new(&prods);
     assert_eq!(grammar.clone(), TokenGrammar {
       tokens: vec!['a', 'b'],
       graph: ImplicitRepresentation(vec![
@@ -560,7 +556,7 @@ mod tests {
         ]),
       ]),
     });
-    let preprocessed_grammar = PreprocessedGrammar::from(&grammar);
+    let preprocessed_grammar = PreprocessedGrammar::new(&grammar);
     assert_eq!(preprocessed_grammar.clone(), PreprocessedGrammar {
       states: vec![
         ('a', vec![
@@ -601,12 +597,12 @@ mod tests {
   #[should_panic(expected = "prod ref ProductionReference(\"c\") not found")]
   fn missing_prod_ref() {
     let prods = SimultaneousProductions([
-      (ProductionReference::from("b"), Production(vec![
+      (ProductionReference::new("b"), Production(vec![
         Case(vec![
-          CaseElement::Lit(Literal::from("ab")),
-          CaseElement::Prod(ProductionReference::from("c")),
+          CaseElement::Lit(Literal::new("ab")),
+          CaseElement::Prod(ProductionReference::new("c")),
         ])]))
     ].iter().cloned().collect());
-    TokenGrammar::from(prods);
+    TokenGrammar::new(&prods);
   }
 }
