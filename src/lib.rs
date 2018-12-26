@@ -13,8 +13,8 @@ use std::hash::Hash;
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct Literal<Tok: Sized + PartialEq + Eq + Hash + Clone>(Vec<Tok>);
 
-impl Literal<char> {
-  fn from(s: &str) -> Self {
+impl <'a> From<&'a str> for Literal<char> {
+  fn from(s: &'a str) -> Self {
     Literal(s.chars().collect())
   }
 }
@@ -25,8 +25,8 @@ impl Literal<char> {
 #[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub struct ProductionReference(String);
 
-impl ProductionReference {
-  fn new(s: &str) -> Self {
+impl <'a> From<&'a str> for ProductionReference {
+  fn from(s: &'a str) -> Self {
     ProductionReference(s.to_string())
   }
 }
@@ -535,13 +535,13 @@ mod tests {
   #[test]
   fn preprocessed_state_for_non_cyclic_productions() {
     let prods = SimultaneousProductions([
-      (ProductionReference::new("a"), Production(vec![
+      (ProductionReference::from("a"), Production(vec![
         Case(vec![
           CaseElement::Lit(Literal::from("ab"))])])),
-      (ProductionReference::new("b"), Production(vec![
+      (ProductionReference::from("b"), Production(vec![
         Case(vec![
           CaseElement::Lit(Literal::from("ab")),
-          CaseElement::Prod(ProductionReference::new("a")),
+          CaseElement::Prod(ProductionReference::from("a")),
         ])]))
     ].iter().cloned().collect());
     let grammar = TokenGrammar::from(prods);
@@ -601,10 +601,10 @@ mod tests {
   #[should_panic(expected = "prod ref ProductionReference(\"c\") not found")]
   fn missing_prod_ref() {
     let prods = SimultaneousProductions([
-      (ProductionReference::new("b"), Production(vec![
+      (ProductionReference::from("b"), Production(vec![
         Case(vec![
           CaseElement::Lit(Literal::from("ab")),
-          CaseElement::Prod(ProductionReference::new("c")),
+          CaseElement::Prod(ProductionReference::from("c")),
         ])]))
     ].iter().cloned().collect());
     TokenGrammar::from(prods);
