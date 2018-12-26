@@ -479,6 +479,7 @@ impl <Tok: Sized + PartialEq + Eq + Hash + Clone> PreprocessedGrammar<Tok> {
   }
 }
 
+// TODO: turn this and the PreprocessedGrammar<Tok> From impl into TryFrom!
 impl <'a, Tok: Sized + PartialEq + Eq + Hash + Clone>
   From<&'a TokenGrammar<Tok>>
   for PreprocessedGrammar<Tok> {
