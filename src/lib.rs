@@ -395,9 +395,9 @@ impl <Tok: Sized + PartialEq + Eq + Hash + Clone> PreprocessedGrammar<Tok> {
 
   fn build_pairwise_transitions_table(
     grammar: &TokenGrammar<Tok>,
-    toks_with_locs: IndexMap<Tok, Vec<TokenPosition>>,
-    neighbors: IndexMap<GrammarVertex, Vec<GrammarEdge>>,
-  ) -> Self {
+    toks_with_locs: &IndexMap<Tok, Vec<TokenPosition>>,
+    neighbors: &IndexMap<GrammarVertex, Vec<GrammarEdge>>,
+  ) -> IndexMap<StatePair, Vec<StackDiff>> {
     eprintln!("neighbors: {:?}", neighbors);
     // Crawl `neighbors` to get the `StackDiff` between each pair of states.
     // TODO: add support for stack cycles! Right now we just disallow stack cycles, but it's not
@@ -475,12 +475,22 @@ impl <Tok: Sized + PartialEq + Eq + Hash + Clone> PreprocessedGrammar<Tok> {
         }
       }
     }
-    PreprocessedGrammar {
-      states: toks_with_locs,
-      transitions,
-    }
+    transitions
   }
 }
+
+impl <'a, Tok: Sized + PartialEq + Eq + Hash + Clone>
+  From<&'a TokenGrammar<Tok>>
+  for PreprocessedGrammar<Tok> {
+    fn from(grammar: &'a TokenGrammar<Tok>) -> Self {
+      let (states, neighbors) = Self::index_tokens(grammar);
+      let transitions = Self::build_pairwise_transitions_table(grammar, &states, &neighbors);
+      PreprocessedGrammar {
+        states,
+        transitions,
+      }
+    }
+  }
 
 /// Problem Instance
 
@@ -549,9 +559,7 @@ mod tests {
         ]),
       ]),
     });
-    let (toks_with_locs, neighbors) = PreprocessedGrammar::index_tokens(&grammar);
-    let preprocessed_grammar = PreprocessedGrammar::build_pairwise_transitions_table(
-      &grammar, toks_with_locs, neighbors);
+    let preprocessed_grammar = PreprocessedGrammar::from(&grammar);
     assert_eq!(preprocessed_grammar.clone(), PreprocessedGrammar {
       states: vec![
         ('a', vec![
