@@ -69,6 +69,8 @@ pub struct SimultaneousProductions<Tok: Sized + PartialEq + Eq + Hash + Clone>(
 
 // NB: all these Refs have nice properties, which includes being storeable without reference to any
 // particular graph, being totally ordered, and being able to be incremented.
+// TODO: see if auto-implementing Clone (as well as Copy) means Clone is used over copy and if
+// that's somehow slower???
 
 // A version of `ProductionReference` which uses a `usize` for speed. We adopt the convention of
 // abbreviated names for things used in algorithms.
@@ -157,10 +159,13 @@ impl <Tok: Sized + PartialEq + Eq + Hash + Clone> TokenGrammar<Tok> {
   }
 }
 
-#[derive(Debug, Copy, Clone, PartialEq, Eq, Hash)]
+#[derive(Debug, Copy, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
 struct StackSym(ProdRef);
 
-#[derive(Debug, Copy, Clone, PartialEq, Eq, Hash)]
+// NB: I can't BELIEVE rust can auto-derive PartialOrd and Ord for structs and enums! Note that this
+// orders all of the positive stack symbols first, and /then/ moves on to the negative symbols -- I
+// think all we need is consistency so this is fine.
+#[derive(Debug, Copy, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
 enum StackStep {
   Positive(StackSym),
   Negative(StackSym),
@@ -170,9 +175,9 @@ enum StackStep {
 struct StackDiff(Vec<StackStep>);
 
 // TODO: consider the relationship between populating token transitions in the lookbehind cache to
-// some specific depth (e.g. strings of 3, 4, 5 tokens) and SIMD type 1 instructions (my
-// notations: meaning recognizing a specific sequence of tokens). SIMD type 2 (finding a specific
-// token in a longer string of bytes) can already easily be used with just token pairs (and
+// some specific depth (e.g. strings of 3, 4, 5 tokens) and SIMD type 1 instructions (my notations:
+// meaning recognizing a specific contiguous sequence of tokens (bytes)). SIMD type 2 (finding a
+// specific token in a longer string of bytes) can already easily be used with just token pairs (and
 // others).
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 struct StatePair {
@@ -492,36 +497,34 @@ impl <Tok: Sized + PartialEq + Eq + Hash + Clone> PreprocessedGrammar<Tok> {
   }
 }
 
-/// Problem Instance
+/// Problem Instance (optimize for perf later!!!!)
+
+#[derive(Debug, Copy, Clone, PartialEq, Eq)]
+struct InputTokenIndex(usize);
 
 // TODO: List of known stack paths, for both "sides", per input token (sorted lexicographically)!
 // TODO: Lexicographic sorting can be accomplished using a trie (of stack syms!!!!!!!!)! A sparse
-// trie might work too -- can do this with a vec of filled indices alongside the trie vec (when
-// would we want to use this? perhaps so that we don't need to store a Vec<Option<_>>? that's
-// actually pretty reasonable).
-#[derive(Debug, Clone, PartialEq, Eq)]
-struct
+// trie might work too -- can do this with a vec of filled indices alongside the trie vec (probably
+// need two vecs, one with each each character, the other full of the next level of vecs).
+#[derive(Debug, Clone)]
+struct StackTrie {
+  // TODO: can make this a reference to a stack alphabet and keep indices to stack steps as a
+  // Vec<usize> for perf later (maybe).
+  stack_steps: Vec<StackStep>,
+  // NB: Same length as `stack_steps`!
+  subs: Vec<StackTrie>,
+  // NB: Same length as `stack_steps`!
+  terminal_entries: Vec<Vec<InputTokenIndex>>,
+}
 
-#[derive(Debug, Clone, PartialEq, Eq)]
-struct AccumulatedTransitions<Tok: Sized + PartialEq + Eq + Hash + Clone>(
-  VecDeque<TokenTransition<Tok>>);
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-struct KnownPathsToInputToken<Tok: Sized + PartialEq + Eq + Hash + Clone>(
-  Vec<AccumulatedTransitions<Tok>>);
-
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone)]
 struct Parse<Tok: Sized + PartialEq + Eq + Hash + Clone> {
-  // TODO: this could be bound to an external lifetime -- but if it's not, that opens the
-  // possibility of varying the grammar for different parses (which is something you might want to
-  // do if you're /learning/ a grammar) (!!!!!!!!!?!).
-  grammar: PreprocessedGrammar<Tok>,
   // NB: Don't worry too much about this right now. The grammar is idempotent -- the parse can be
   // too (without any modifications??!!??!!!!!!!).
   input: Vec<Tok>,
   // The term "state" is used very loosely here.
   // NB: same length as `input`!
-  state: Vec<KnownPathsToInputToken<Tok>>,
+  state: Vec<StackTrie>,
 }
 
 #[cfg(test)]
