@@ -56,7 +56,7 @@ pub struct SimultaneousProductions<Tok: Sized + PartialEq + Eq + Hash + Copy + C
 /// (I think this is a "model" graph class of some sort, where the model is this "simultaneous
 /// productions" parsing formulation)
 ///
-/// ImplicitRepresentation = [
+/// LoweredProductions = [
 ///   Production([
 ///     Case([CaseEl(Lit("???")), CaseEl(ProdRef(?)), ...]),
 ///     ...,
@@ -74,7 +74,7 @@ pub struct SimultaneousProductions<Tok: Sized + PartialEq + Eq + Hash + Copy + C
 
 // A version of `ProductionReference` which uses a `usize` for speed. We adopt the convention of
 // abbreviated names for things used in algorithms.
-// Points to a particular Production within an ImplicitRepresentation.
+// Points to a particular Production within a LoweredProductions.
 #[derive(Debug, Copy, Clone, PartialOrd, Ord, PartialEq, Eq, Hash)]
 struct ProdRef(usize);
 
@@ -114,13 +114,13 @@ struct CaseImpl(Vec<CaseEl>);
 struct ProductionImpl(Vec<CaseImpl>);
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-struct ImplicitRepresentation(Vec<ProductionImpl>);
+struct LoweredProductions(Vec<ProductionImpl>);
 
 /// Mapping to Tokens
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 struct TokenGrammar<Tok: Sized + PartialEq + Eq + Hash + Copy + Clone> {
-  graph: ImplicitRepresentation,
+  graph: LoweredProductions,
   tokens: Vec<Tok>,
 }
 
@@ -153,7 +153,7 @@ impl <Tok: Sized + PartialEq + Eq + Hash + Copy + Clone> TokenGrammar<Tok> {
       ProductionImpl(cases)
     }).collect();
     TokenGrammar {
-      graph: ImplicitRepresentation(new_prods),
+      graph: LoweredProductions(new_prods),
       tokens: all_tokens.iter().cloned().collect(),
     }
   }
@@ -205,6 +205,7 @@ enum GrammarVertex {
   Epsilon,
 }
 
+// "anonymous" stack symbols are only used in constructing a `PreprocessedGrammar`.
 #[derive(Debug, Copy, Clone, PartialEq, Eq, Hash)]
 struct AnonSym(usize);
 
@@ -502,6 +503,12 @@ impl <Tok: Sized + PartialEq + Eq + Hash + Copy + Clone> PreprocessedGrammar<Tok
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
 struct InputTokenIndex(usize);
 
+#[derive(Debug, Copy, Clone, PartialEq, Eq)]
+struct StackTrieTerminalEntry {
+  input_index: InputTokenIndex,
+  grammar_state: TokenPosition,
+}
+
 // TODO: List of known stack paths, for both "sides", per input token (sorted lexicographically)!
 // TODO: Lexicographic sorting can be accomplished using a trie (of stack syms!!!!!!!!)! A sparse
 // trie might work too -- can do this with a vec of filled indices alongside the trie vec (probably
@@ -514,17 +521,62 @@ struct StackTrie {
   // NB: Same length as `stack_steps`!
   subs: Vec<StackTrie>,
   // NB: Same length as `stack_steps`!
-  terminal_entries: Vec<Vec<InputTokenIndex>>,
+  terminal_entries: Vec<Vec<StackTrieTerminalEntry>>,
+}
+
+impl StackTrie {
+  fn new() -> Self {
+    StackTrie {
+      stack_steps: vec![],
+      subs: vec![],
+      terminal_entries: vec![],
+    }
+  }
 }
 
 #[derive(Debug, Clone)]
 struct Parse<Tok: Sized + PartialEq + Eq + Hash + Copy + Clone> {
+  // TODO: this could be bound to an external lifetime -- but if it's not, that opens the
+  // possibility of varying the grammar for different parses (which is something you might want to
+  // do if you're /learning/ a grammar) (!!!!!!!!!?!). Also, all of the data in it is necessary for
+  // a parse!
+  token_state_mapping: IndexMap<Tok, Vec<TokenPosition>>,
+  pairwise_stack_transitions: IndexMap<StatePair, Vec<StackDiff>>,
   // NB: Don't worry too much about this right now. The grammar is idempotent -- the parse can be
   // too (without any modifications??!!??!!!!!!!).
   input: Vec<Tok>,
   // The term "state" is used very loosely here.
   // NB: same length as `input`!
   state: Vec<StackTrie>,
+}
+
+impl <Tok: Sized + PartialEq + Eq + Hash + Copy + Clone> Parse<Tok> {
+  // The pattern of defining new() methods which consume some inputs is *strictly* better than
+  // generating them in the impl of a previous class with some (&self) method. One, you get to
+  // dispatch on multiple argument types, two, you can use ownership and lifetimes of the arguments
+  // in a meaningful way, instead of requiring that everything be (&self), three, you *very* clearly
+  // separate different phases of lowering from the high-level `SimultaneousProductions`
+  // representation all the way down to the actual parsing. Letting the caller control these also
+  // makes it more clear what transformations are being performed as the lowering occurs, similar to
+  // how the iterate(&mut self) method below helps make the runtime much easier to analyze,
+  // theoretically and on the actual computer.
+  fn new(grammar: PreprocessedGrammar<Tok>, input: Vec<Tok>) -> Self {
+    let PreprocessedGrammar {
+      states,
+      transitions,
+    } = grammar;
+    let initial_state: Vec<StackTrie> = input.iter().map(|_| StackTrie::new()).collect();
+    Parse {
+      token_state_mapping: states,
+      pairwise_stack_transitions: transitions,
+      input,
+      state: initial_state,
+    }
+  }
+
+  fn iterate(&mut self) {
+    
+  }
 }
 
 #[cfg(test)]
@@ -546,7 +598,7 @@ mod tests {
     let grammar = TokenGrammar::new(&prods);
     assert_eq!(grammar.clone(), TokenGrammar {
       tokens: vec!['a', 'b'],
-      graph: ImplicitRepresentation(vec![
+      graph: LoweredProductions(vec![
         ProductionImpl(vec![
           CaseImpl(vec![CaseEl::Tok(TokRef(0)), CaseEl::Tok(TokRef(1))]),
         ]),
