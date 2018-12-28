@@ -11,7 +11,7 @@ use std::collections::{HashMap, VecDeque};
 use std::hash::Hash;
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
-pub struct Literal<Tok: Sized + PartialEq + Eq + Hash + Clone>(Vec<Tok>);
+pub struct Literal<Tok: Sized + PartialEq + Eq + Hash + Copy + Clone>(Vec<Tok>);
 
 // NB: a From impl is usually intended to denote that allocation is /not/ performed, I think: see
 // https://doc.rust-lang.org/std/convert/trait.From.html -- fn new() makes more sense for this use
@@ -35,19 +35,19 @@ impl ProductionReference {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
-pub enum CaseElement<Tok: Sized + PartialEq + Eq + Hash + Clone> {
+pub enum CaseElement<Tok: Sized + PartialEq + Eq + Hash + Copy + Clone> {
   Lit(Literal<Tok>),
   Prod(ProductionReference),
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
-pub struct Case<Tok: Sized + PartialEq + Eq + Hash + Clone>(Vec<CaseElement<Tok>>);
+pub struct Case<Tok: Sized + PartialEq + Eq + Hash + Copy + Clone>(Vec<CaseElement<Tok>>);
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
-pub struct Production<Tok: Sized + PartialEq + Eq + Hash + Clone>(Vec<Case<Tok>>);
+pub struct Production<Tok: Sized + PartialEq + Eq + Hash + Copy + Clone>(Vec<Case<Tok>>);
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct SimultaneousProductions<Tok: Sized + PartialEq + Eq + Hash + Clone>(
+pub struct SimultaneousProductions<Tok: Sized + PartialEq + Eq + Hash + Copy + Clone>(
   IndexMap<ProductionReference, Production<Tok>>);
 
 ///
@@ -119,12 +119,12 @@ struct ImplicitRepresentation(Vec<ProductionImpl>);
 /// Mapping to Tokens
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-struct TokenGrammar<Tok: Sized + PartialEq + Eq + Hash + Clone> {
+struct TokenGrammar<Tok: Sized + PartialEq + Eq + Hash + Copy + Clone> {
   graph: ImplicitRepresentation,
   tokens: Vec<Tok>,
 }
 
-impl <Tok: Sized + PartialEq + Eq + Hash + Clone> TokenGrammar<Tok> {
+impl <Tok: Sized + PartialEq + Eq + Hash + Copy + Clone> TokenGrammar<Tok> {
   fn new(prods: &SimultaneousProductions<Tok>) -> Self {
     // Mapping from strings -> indices (TODO: from a type-indexed map, where each production
     // returns the type!).
@@ -188,7 +188,7 @@ struct StatePair {
 // NB: There is no reference to any `TokenGrammar` -- this is intentional, and I believe makes it
 // easier to have the runtime we want just fall out of the code without too much work.
 #[derive(Debug, Clone, PartialEq, Eq)]
-struct PreprocessedGrammar<Tok: Sized + PartialEq + Eq + Hash + Clone> {
+struct PreprocessedGrammar<Tok: Sized + PartialEq + Eq + Hash + Copy + Clone> {
   // These don't need to be quick to access or otherwise optimized for the algorithm until we create
   // a `Parse` -- these are chosen to reduce redundancy.
   states: IndexMap<Tok, Vec<TokenPosition>>,
@@ -305,7 +305,7 @@ struct GrammarTraversalState {
   prev_stack: VecDeque<GrammarEdgeWeightStep>,
 }
 
-impl <Tok: Sized + PartialEq + Eq + Hash + Clone> PreprocessedGrammar<Tok> {
+impl <Tok: Sized + PartialEq + Eq + Hash + Copy + Clone> PreprocessedGrammar<Tok> {
   fn index_tokens(
     grammar: &TokenGrammar<Tok>,
   ) -> (IndexMap<Tok, Vec<TokenPosition>>, IndexMap<GrammarVertex, Vec<GrammarEdge>>) {
@@ -486,7 +486,7 @@ impl <Tok: Sized + PartialEq + Eq + Hash + Clone> PreprocessedGrammar<Tok> {
   }
 }
 
-impl <Tok: Sized + PartialEq + Eq + Hash + Clone> PreprocessedGrammar<Tok> {
+impl <Tok: Sized + PartialEq + Eq + Hash + Copy + Clone> PreprocessedGrammar<Tok> {
   fn new(grammar: &TokenGrammar<Tok>) -> Self {
     let (states, neighbors) = Self::index_tokens(grammar);
     let transitions = Self::build_pairwise_transitions_table(grammar, &states, &neighbors);
@@ -518,7 +518,7 @@ struct StackTrie {
 }
 
 #[derive(Debug, Clone)]
-struct Parse<Tok: Sized + PartialEq + Eq + Hash + Clone> {
+struct Parse<Tok: Sized + PartialEq + Eq + Hash + Copy + Clone> {
   // NB: Don't worry too much about this right now. The grammar is idempotent -- the parse can be
   // too (without any modifications??!!??!!!!!!!).
   input: Vec<Tok>,
