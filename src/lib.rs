@@ -24,8 +24,7 @@ impl Literal<char> {
 
 // A reference to another production -- the string must match the assigned name of a production in a
 // set of simultaneous productions.
-// NB: The `Ord` derivation lets us reliably hash `SimultaneousProductions<Tok>`.
-#[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct ProductionReference(String);
 
 impl ProductionReference {
@@ -75,15 +74,15 @@ pub struct SimultaneousProductions<Tok: Sized + PartialEq + Eq + Hash + Copy + C
 // A version of `ProductionReference` which uses a `usize` for speed. We adopt the convention of
 // abbreviated names for things used in algorithms.
 // Points to a particular Production within a LoweredProductions.
-#[derive(Debug, Copy, Clone, PartialOrd, Ord, PartialEq, Eq, Hash)]
+#[derive(Debug, Copy, Clone, PartialEq, Eq, Hash)]
 struct ProdRef(usize);
 
 // Points to a particular case within a Production.
-#[derive(Debug, Copy, Clone, PartialOrd, Ord, PartialEq, Eq, Hash)]
+#[derive(Debug, Copy, Clone, PartialEq, Eq, Hash)]
 struct CaseRef(usize);
 
 // Points to an element of a particular Case.
-#[derive(Debug, Copy, Clone, PartialOrd, Ord, PartialEq, Eq, Hash)]
+#[derive(Debug, Copy, Clone, PartialEq, Eq, Hash)]
 struct CaseElRef(usize);
 
 // This refers to a specific token, implying that we must be pointing to a particular index of a
@@ -98,7 +97,7 @@ struct TokenPosition {
 /// Graph Representation
 
 // TODO: describe!
-#[derive(Debug, Copy, Clone, PartialOrd, Ord, PartialEq, Eq)]
+#[derive(Debug, Copy, Clone, PartialEq, Eq)]
 struct TokRef(usize);
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
@@ -159,13 +158,13 @@ impl <Tok: Sized + PartialEq + Eq + Hash + Copy + Clone> TokenGrammar<Tok> {
   }
 }
 
-#[derive(Debug, Copy, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
+#[derive(Debug, Copy, Clone, PartialEq, Eq, Hash)]
 struct StackSym(ProdRef);
 
 // NB: I can't BELIEVE rust can auto-derive PartialOrd and Ord for structs and enums! Note that this
-// orders all of the positive stack symbols first, and /then/ moves on to the negative symbols -- I
-// think all we need is consistency so this is fine.
-#[derive(Debug, Copy, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
+// would order all of the positive stack symbols first, and /then/ moves on to the negative symbols.
+// I also don't think we need ordering here (yet?).
+#[derive(Debug, Copy, Clone, PartialEq, Eq, Hash)]
 enum StackStep {
   Positive(StackSym),
   Negative(StackSym),
@@ -574,14 +573,35 @@ impl <Tok: Sized + PartialEq + Eq + Hash + Copy + Clone> Parse<Tok> {
     }
   }
 
+  // NB: define what one iteration means, and make that definition very flexible, but ensure it is
+  // well-defined at all times.
   fn iterate(&mut self) {
-    
+
   }
 }
 
 #[cfg(test)]
 mod tests {
   use super::*;
+
+  #[test]
+  fn simple_parse() {
+    let prods = SimultaneousProductions([
+      (ProductionReference::new("a"), Production(vec![
+        Case(vec![
+          CaseElement::Lit(Literal::new("ab"))])])),
+      (ProductionReference::new("b"), Production(vec![
+        Case(vec![
+          CaseElement::Lit(Literal::new("ab")),
+          CaseElement::Prod(ProductionReference::new("a")),
+        ])]))
+    ].iter().cloned().collect());
+    let grammar = TokenGrammar::new(&prods);
+    let preprocessed_grammar = PreprocessedGrammar::new(&grammar);
+    let input: Vec<char> = "abab".chars().collect();
+    let mut parse = Parse::new(preprocessed_grammar, input);
+    panic!("call iterate method until we have a full parse!");
+  }
 
   #[test]
   fn preprocessed_state_for_non_cyclic_productions() {
