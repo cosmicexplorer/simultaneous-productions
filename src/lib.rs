@@ -74,7 +74,7 @@ pub struct SimultaneousProductions<Tok: Sized + PartialEq + Eq + Hash + Copy + C
 // A version of `ProductionReference` which uses a `usize` for speed. We adopt the convention of
 // abbreviated names for things used in algorithms.
 // Points to a particular Production within a LoweredProductions.
-#[derive(Debug, Copy, Clone, PartialOrd, Ord, PartialEq, Eq, Hash)]
+#[derive(Debug, Copy, Clone, PartialEq, Eq, Hash)]
 struct ProdRef(usize);
 
 // Points to a particular case within a Production.
@@ -158,18 +158,19 @@ impl <Tok: Sized + PartialEq + Eq + Hash + Copy + Clone> TokenGrammar<Tok> {
   }
 }
 
-#[derive(Debug, Copy, Clone, PartialOrd, Ord, PartialEq, Eq, Hash)]
+#[derive(Debug, Copy, Clone, PartialEq, Eq, Hash)]
 struct StackSym(ProdRef);
 
 // NB: I can't BELIEVE rust can auto-derive PartialOrd and Ord for structs and enums! Note that this
 // would order all of the positive stack symbols first, and /then/ moves on to the negative symbols.
-#[derive(Debug, Copy, Clone, PartialOrd, Ord, PartialEq, Eq, Hash)]
+#[derive(Debug, Copy, Clone, PartialEq, Eq, Hash)]
 enum StackStep {
   Positive(StackSym),
   Negative(StackSym),
 }
 
-#[derive(Debug, Clone, PartialOrd, Ord, PartialEq, Eq, Hash)]
+// Automatically deriving Ord for vectors is incredible.
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
 struct StackDiff(Vec<StackStep>);
 
 // TODO: consider the relationship between populating token transitions in the lookbehind cache to
@@ -515,11 +516,15 @@ struct StackTrieTerminalEntry {
 struct StackTrie {
   // TODO: can make this a reference to a stack alphabet and keep indices to stack steps as a
   // Vec<usize> for perf later (maybe).
-  // NB: Keeping this as a (lexicographically) sorted vec of lists of stack steps is much more
+  // NB: Keeping this as a (lexicographically) sorted vec of stack diffs is much more
   // likely to be efficient than nested trie structs, and should maintain the same runtime if we
   // don't explicitly call .sort() or whatever (making use of the lexicographical ordering at the
   // beginning of one step to produce a lexicographic ordering at the end of that step). It might be
   // appropriate to call it something other than a "trie", however.
+  // TODO(!!!): traverse the list of stack diffs using a separate VecDeque of individual stack
+  // steps, and keep a separate vector of "planned" entries to `stack_steps` and the appropriate
+  // indices, and sort the queue of unions to try (see notebook) by some measure of the length of
+  // the "planned" entries as a fraction (?) of the length of `stack_steps`.
   stack_steps: Vec<StackDiff>,
   // NB: Same length as `stack_steps`!
   terminal_entries: Vec<Vec<StackTrieTerminalEntry>>,
