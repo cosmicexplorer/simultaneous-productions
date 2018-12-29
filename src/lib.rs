@@ -74,7 +74,7 @@ pub struct SimultaneousProductions<Tok: Sized + PartialEq + Eq + Hash + Copy + C
 // A version of `ProductionReference` which uses a `usize` for speed. We adopt the convention of
 // abbreviated names for things used in algorithms.
 // Points to a particular Production within a LoweredProductions.
-#[derive(Debug, Copy, Clone, PartialEq, Eq, Hash)]
+#[derive(Debug, Copy, Clone, PartialOrd, Ord, PartialEq, Eq, Hash)]
 struct ProdRef(usize);
 
 // Points to a particular case within a Production.
@@ -158,19 +158,18 @@ impl <Tok: Sized + PartialEq + Eq + Hash + Copy + Clone> TokenGrammar<Tok> {
   }
 }
 
-#[derive(Debug, Copy, Clone, PartialEq, Eq, Hash)]
+#[derive(Debug, Copy, Clone, PartialOrd, Ord, PartialEq, Eq, Hash)]
 struct StackSym(ProdRef);
 
 // NB: I can't BELIEVE rust can auto-derive PartialOrd and Ord for structs and enums! Note that this
 // would order all of the positive stack symbols first, and /then/ moves on to the negative symbols.
-// I also don't think we need ordering here (yet?).
-#[derive(Debug, Copy, Clone, PartialEq, Eq, Hash)]
+#[derive(Debug, Copy, Clone, PartialOrd, Ord, PartialEq, Eq, Hash)]
 enum StackStep {
   Positive(StackSym),
   Negative(StackSym),
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, PartialOrd, Ord, PartialEq, Eq, Hash)]
 struct StackDiff(Vec<StackStep>);
 
 // TODO: consider the relationship between populating token transitions in the lookbehind cache to
@@ -516,21 +515,14 @@ struct StackTrieTerminalEntry {
 struct StackTrie {
   // TODO: can make this a reference to a stack alphabet and keep indices to stack steps as a
   // Vec<usize> for perf later (maybe).
-  stack_steps: Vec<StackStep>,
-  // NB: Same length as `stack_steps`!
-  subs: Vec<StackTrie>,
+  // NB: Keeping this as a (lexicographically) sorted vec of lists of stack steps is much more
+  // likely to be efficient than nested trie structs, and should maintain the same runtime if we
+  // don't explicitly call .sort() or whatever (making use of the lexicographical ordering at the
+  // beginning of one step to produce a lexicographic ordering at the end of that step). It might be
+  // appropriate to call it something other than a "trie", however.
+  stack_steps: Vec<StackDiff>,
   // NB: Same length as `stack_steps`!
   terminal_entries: Vec<Vec<StackTrieTerminalEntry>>,
-}
-
-impl StackTrie {
-  fn new() -> Self {
-    StackTrie {
-      stack_steps: vec![],
-      subs: vec![],
-      terminal_entries: vec![],
-    }
-  }
 }
 
 #[derive(Debug, Clone)]
@@ -553,20 +545,41 @@ impl <Tok: Sized + PartialEq + Eq + Hash + Copy + Clone> Parse<Tok> {
   // The pattern of defining new() methods which consume some inputs is *strictly* better than
   // generating them in the impl of a previous class with some (&self) method. One, you get to
   // dispatch on multiple argument types, two, you can use ownership and lifetimes of the arguments
-  // in a meaningful way, instead of requiring that everything be (&self), three, you *very* clearly
-  // separate different phases of lowering from the high-level `SimultaneousProductions`
-  // representation all the way down to the actual parsing. Letting the caller control these also
-  // makes it more clear what transformations are being performed as the lowering occurs, similar to
-  // how the iterate(&mut self) method below helps make the runtime much easier to analyze,
-  // theoretically and on the actual computer.
+  // in a meaningful way, instead of requiring that everything be (&self) (this may be possible with
+  // (self) args, unsure), three, you *very* clearly separate different phases of lowering from the
+  // high-level `SimultaneousProductions` representation all the way down to the actual
+  // parsing. Letting the caller control these also makes it more clear what transformations are
+  // being performed as the lowering occurs, similar to how the iterate(&mut self) method below
+  // helps make the runtime much easier to analyze, theoretically and on the actual computer.
   fn new(grammar: PreprocessedGrammar<Tok>, input: Vec<Tok>) -> Self {
     let PreprocessedGrammar {
       states,
       transitions,
     } = grammar;
-    let initial_state: Vec<StackTrie> = input.iter().map(|_| StackTrie::new()).collect();
+    let initial_state: Vec<StackTrie> = input.iter().enumerate().map(|(tok_ind, tok)| {
+      let input_index = InputTokenIndex(tok_ind);
+      let possible_states: Vec<TokenPosition> = states.get(tok)
+        // TODO: make this into a Result!
+        // TODO: specialize this error message when a Debug implementation is available!
+        .expect(&format!("unrecognized token at index {:?} in input", tok_ind))
+        .clone();
+      // The Vec<Vec<_>>s are a little confusing right now, but this reduces to "there is one
+      // possible stack diff at this token (empty), which can map to any of several possible states,
+      // all at this one input token". As we compare input elements we will begin populating
+      // terminal entries from other indices into this trie.
+      StackTrie {
+        stack_steps: vec![StackDiff(Vec::new())],
+        terminal_entries: vec![possible_states.into_iter().map(|tok_pos_in_grammar| {
+          StackTrieTerminalEntry {
+            input_index: input_index.clone(),
+            grammar_state: tok_pos_in_grammar,
+          }
+        }).collect::<Vec<_>>()],
+      }
+    }).collect();
     Parse {
       token_state_mapping: states,
+      // TODO: this shouldn't be pairs, this should be a list of lists.
       pairwise_stack_transitions: transitions,
       input,
       state: initial_state,
@@ -586,6 +599,8 @@ mod tests {
 
   #[test]
   fn simple_parse() {
+    // TODO: figure out more complex parsing such as stack cycles/etc before doing type-indexed
+    // maps, as well as syntax sugar for defining cases.
     let prods = SimultaneousProductions([
       (ProductionReference::new("a"), Production(vec![
         Case(vec![
