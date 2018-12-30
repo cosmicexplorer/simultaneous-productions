@@ -173,6 +173,14 @@ enum StackStep {
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 struct StackDiff(Vec<StackStep>);
 
+impl StackDiff {
+  fn sequence(&self, other: &Self) -> Self {
+    // TODO: are there perf concerns with .iter().cloned() vs .clone().iter()?
+    let combined: Vec<StackStep> = self.0.iter().chain(other.0.iter()).cloned().collect();
+    StackDiff(combined)
+  }
+}
+
 // TODO: consider the relationship between populating token transitions in the lookbehind cache to
 // some specific depth (e.g. strings of 3, 4, 5 tokens) and SIMD type 1 instructions (my notations:
 // meaning recognizing a specific contiguous sequence of tokens (bytes)). SIMD type 2 (finding a
@@ -484,9 +492,7 @@ impl <Tok: Sized + PartialEq + Eq + Hash + Copy + Clone> PreprocessedGrammar<Tok
     }
     transitions
   }
-}
 
-impl <Tok: Sized + PartialEq + Eq + Hash + Copy + Clone> PreprocessedGrammar<Tok> {
   fn new(grammar: &TokenGrammar<Tok>) -> Self {
     let (states, neighbors) = Self::index_tokens(grammar);
     let transitions = Self::build_pairwise_transitions_table(grammar, &states, &neighbors);
@@ -502,10 +508,21 @@ impl <Tok: Sized + PartialEq + Eq + Hash + Copy + Clone> PreprocessedGrammar<Tok
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
 struct InputTokenIndex(usize);
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct StackTrieTerminalEntry(Vec<UnionRange>);
+
+// This isn't a lot of information, but I'm actually pretty sure it can be walked backwards to
+// reconstruct the sequence of states in the input upon completion of a parse pretty
+// easily/efficiently. This begins as both pointing to the same input index/state -- see
+// Parse::initial_state(). This is the root of a tree. I think this traversal can be easily
+// integrated with the aforementioned type-safe parse API with "collect" methods which accept tuples
+// of arguments (or something) corresponding to the hierarchical reconstruction (and the stack diffs
+// might be useful for that as well, or they might be just for bookkeeping during the parse).
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
-struct StackTrieTerminalEntry {
-  input_index: InputTokenIndex,
-  grammar_state: TokenPosition,
+struct UnionRange {
+  this_grammar_state: TokenPosition,
+  other_input_index: InputTokenIndex,
+  other_grammar_state: TokenPosition,
 }
 
 // TODO: List of known stack paths, for both "sides", per input token (sorted lexicographically)!
@@ -527,74 +544,179 @@ struct StackTrie {
   // the "planned" entries as a fraction (?) of the length of `stack_steps`.
   stack_steps: Vec<StackDiff>,
   // NB: Same length as `stack_steps`!
-  terminal_entries: Vec<Vec<StackTrieTerminalEntry>>,
+  terminal_entries: Vec<StackTrieTerminalEntry>,
 }
 
 #[derive(Debug, Clone)]
-struct Parse<Tok: Sized + PartialEq + Eq + Hash + Copy + Clone> {
-  // TODO: this could be bound to an external lifetime -- but if it's not, that opens the
-  // possibility of varying the grammar for different parses (which is something you might want to
-  // do if you're /learning/ a grammar) (!!!!!!!!!?!). Also, all of the data in it is necessary for
-  // a parse!
-  token_state_mapping: IndexMap<Tok, Vec<TokenPosition>>,
-  pairwise_stack_transitions: IndexMap<StatePair, Vec<StackDiff>>,
-  // NB: Don't worry too much about this right now. The grammar is idempotent -- the parse can be
-  // too (without any modifications??!!??!!!!!!!).
-  input: Vec<Tok>,
-  // The term "state" is used very loosely here.
-  // NB: same length as `input`!
-  state: Vec<StackTrie>,
+struct Parse(Vec<StackTrie>);
+
+#[derive(Debug, Clone)]
+struct SlowStackTrieForSetup(IndexMap<StackDiff, Vec<UnionRange>>);
+
+impl SlowStackTrieForSetup {
+  fn new() -> Self {
+    SlowStackTrieForSetup(IndexMap::new())
+  }
+
+  // A valid stack trie may return true for this at any point, hence "probably" -- this is just
+  // paranoia.
+  fn is_probably_newly_initialized(&self) -> bool {
+    let has_exactly_one_entry = 1 == self.0.len();
+    // The .unwrap() is part of the assertion here.
+    let entry_for_zero_diff = self.0.get(&StackDiff(vec![])).unwrap();
+    let has_nonempty_terminal_entry_set = !entry_for_zero_diff.is_empty();
+    has_exactly_one_entry && has_nonempty_terminal_entry_set
+  }
+
+  fn apply_to_following_token(
+    left_index: InputTokenIndex,
+    right_index: InputTokenIndex,
+    cur_state: &mut Vec<SlowStackTrieForSetup>,
+    transitions: &IndexMap<StatePair, Vec<StackDiff>>,
+  ) {
+    // Call .drain(..) so we can use the state and then update the objects without interference.
+    let all_right_terminal_entries: Vec<UnionRange> = cur_state.get_mut(right_index.0).unwrap().0
+      .drain(..)
+      .flat_map(|(_, es)| es)
+      .collect();
+    let left_state_unrolled: Vec<(StackDiff, Vec<UnionRange>)> = cur_state
+      .get_mut(left_index.0).unwrap().0
+      .drain(..)
+      .collect();
+    for (cur_left_diff, cur_left_terminal_entry) in left_state_unrolled.into_iter() {
+        for cur_left_union_range in cur_left_terminal_entry.into_iter() {
+          for cur_right_union_range in all_right_terminal_entries.iter().cloned() {
+            // TODO: using the StatePair map here is "cheating" in that it doesn't represent the
+            // walking we have to do in the actual parsing -- this can be fixed later.
+            let cur_pair = StatePair {
+              left: cur_left_union_range.this_grammar_state.clone(),
+              right: cur_right_union_range.this_grammar_state.clone(),
+            };
+            // Some (most?) state pairs don't exist in the grammar. We can cull these at this start
+            // phase before getting into parsing.
+            // TODO: see if this is relevant for good error messaging on a failed parse -- I think
+            // this isn't relevant for the error that would be useful to a user.
+            if let Some(ref all_cur_diffs) = transitions.get(&cur_pair) {
+              for right_diff in all_cur_diffs.iter() {
+                let joined_diff = cur_left_diff.sequence(&right_diff);
+                (*cur_state.get_mut(left_index.0).unwrap().0.entry(joined_diff.clone())
+                 .or_insert(vec![]))
+                  .push(UnionRange {
+                    this_grammar_state: cur_pair.left,
+                    other_input_index: right_index,
+                    other_grammar_state: cur_pair.right,
+                  });
+                (*cur_state.get_mut(right_index.0).unwrap().0.entry(joined_diff.clone())
+                 .or_insert(vec![]))
+                  .push(UnionRange {
+                    this_grammar_state: cur_pair.right,
+                    other_input_index: left_index,
+                    other_grammar_state: cur_pair.left,
+                  });
+              }
+            }
+          }
+        }
+      }
+  }
+
+  fn build(self) -> StackTrie {
+    let mut stack_steps: Vec<StackDiff> = vec![];
+    let mut terminal_entries: Vec<StackTrieTerminalEntry> = vec![];
+    for (cur_diff, cur_entries) in self.0.into_iter() {
+      stack_steps.push(cur_diff);
+      terminal_entries.push(StackTrieTerminalEntry(cur_entries));
+    }
+    StackTrie {
+      stack_steps,
+      terminal_entries,
+    }
+  }
 }
 
-impl <Tok: Sized + PartialEq + Eq + Hash + Copy + Clone> Parse<Tok> {
-  // The pattern of defining new() methods which consume some inputs is *strictly* better than
-  // generating them in the impl of a previous class with some (&self) method. One, you get to
-  // dispatch on multiple argument types, two, you can use ownership and lifetimes of the arguments
-  // in a meaningful way, instead of requiring that everything be (&self) (this may be possible with
-  // (self) args, unsure), three, you *very* clearly separate different phases of lowering from the
-  // high-level `SimultaneousProductions` representation all the way down to the actual
-  // parsing. Letting the caller control these also makes it more clear what transformations are
-  // being performed as the lowering occurs, similar to how the iterate(&mut self) method below
-  // helps make the runtime much easier to analyze, theoretically and on the actual computer.
-  fn new(grammar: PreprocessedGrammar<Tok>, input: Vec<Tok>) -> Self {
-    let PreprocessedGrammar {
-      states,
-      transitions,
-    } = grammar;
-    let initial_state: Vec<StackTrie> = input.iter().enumerate().map(|(tok_ind, tok)| {
-      let input_index = InputTokenIndex(tok_ind);
+impl Parse {
+  fn initial_state<Tok: Sized + PartialEq + Eq + Hash + Copy + Clone>(
+    states: &IndexMap<Tok, Vec<TokenPosition>>,
+    input: Vec<Tok>,
+  ) -> Vec<SlowStackTrieForSetup> {
+    input.iter().enumerate().map(|(tok_ind, tok)| {
       let possible_states: Vec<TokenPosition> = states.get(tok)
         // TODO: make this into a Result!
-        // TODO: specialize this error message when a Debug implementation is available!
+        // TODO: specialize this error message for the case when Tok: Debug somehow!
         .expect(&format!("unrecognized token at index {:?} in input", tok_ind))
         .clone();
+      (tok_ind, possible_states)
+    }).map(|(tok_ind, possible_states)| {
+      let input_index = InputTokenIndex(tok_ind);
       // The Vec<Vec<_>>s are a little confusing right now, but this reduces to "there is one
       // possible stack diff at this token (empty), which can map to any of several possible states,
       // all at this one input token". As we compare input elements we will begin populating
       // terminal entries from other indices into this trie.
-      StackTrie {
-        stack_steps: vec![StackDiff(Vec::new())],
-        terminal_entries: vec![possible_states.into_iter().map(|tok_pos_in_grammar| {
-          StackTrieTerminalEntry {
-            input_index: input_index.clone(),
-            grammar_state: tok_pos_in_grammar,
-          }
-        }).collect::<Vec<_>>()],
-      }
-    }).collect();
-    Parse {
-      token_state_mapping: states,
-      // TODO: this shouldn't be pairs, this should be a list of lists.
-      pairwise_stack_transitions: transitions,
-      input,
-      state: initial_state,
+      let union_ranges: Vec<UnionRange> = possible_states.into_iter().map(|tok_pos_in_grammar| {
+        UnionRange {
+          this_grammar_state: tok_pos_in_grammar.clone(),
+          other_input_index: input_index.clone(),
+          other_grammar_state: tok_pos_in_grammar.clone(),
+        }
+      }).collect();
+      let mut map: IndexMap<StackDiff, Vec<UnionRange>> = IndexMap::new();
+      map.insert(StackDiff(vec![]), union_ranges);
+      SlowStackTrieForSetup(map)
+    }).collect::<Vec<_>>()
+  }
+
+  // This method exists so we can drop all references to the original grammar when actually parsing.
+  fn apply_initial_pairwise_transitions(
+    // NB: `initial_state` is assumed to be what is returned by `initial_state()` above!
+    initial_state: &mut Vec<SlowStackTrieForSetup>,
+    transitions: &IndexMap<StatePair, Vec<StackDiff>>,
+  ) {
+    assert!(initial_state.get(0).unwrap().is_probably_newly_initialized());
+    // I'm pretty sure iterating over pairs left to right gives us the same result as any other
+    // order in this stage.
+    // NB: Up to .len() - 1 because we are iterating over pairs.
+    // TODO: after doing the pairwise transitions, we can "throw away" the initial (trivial)
+    // `UnionRange`s -- these are necessary for reconstructing the final parse tree, but they are no
+    // longer necessary for the actual algorithm (I think???) -- we should represent this in the
+    // `StackTrie` struct somehow (...and this might be how we get lexicographic sorting without
+    // doing anything with partially sorted lists at all......)!
+    for left_ind in 0..(initial_state.len() - 1) {
+      let right_ind = left_ind + 1;
+      assert!(initial_state.get(right_ind).unwrap().is_probably_newly_initialized());
+      SlowStackTrieForSetup::apply_to_following_token(
+        InputTokenIndex(left_ind),
+        InputTokenIndex(right_ind),
+        initial_state,
+        transitions,
+      )
     }
   }
 
   // NB: define what one iteration means, and make that definition very flexible, but ensure it is
   // well-defined at all times.
   fn iterate(&mut self) {
+    
+  }
 
+  // The pattern of defining new() methods which consume some inputs is *strictly* better than
+  // generating them in the impl of a previous class with some (&self) method. One, you get to
+  // dispatch on multiple argument types, two, you can use ownership and lifetimes of the arguments
+  // in a meaningful way, instead of requiring that everything be (&self) (this is possible with
+  // (self) args, but not in C++), three, you *very* clearly separate different phases of lowering
+  // from the high-level `SimultaneousProductions` representation all the way down to the actual
+  // parsing. Letting the caller control these also makes it more clear what transformations are
+  // being performed as the lowering occurs, similar to how the iterate(&mut self) method below
+  // helps make the runtime much easier to analyze, theoretically and on the actual computer.
+  fn new<Tok: Sized + PartialEq + Eq + Hash + Copy + Clone>(
+    grammar: &PreprocessedGrammar<Tok>,
+    input: Vec<Tok>,
+  ) -> Self {
+    let mut initial_state: Vec<SlowStackTrieForSetup> = Self::initial_state(&grammar.states, input);
+    Self::apply_initial_pairwise_transitions(&mut initial_state, &grammar.transitions);
+    let real_tries: Vec<StackTrie> = initial_state.into_iter()
+      .map(|slow_trie| slow_trie.build())
+      .collect();
+    Parse(real_tries)
   }
 }
 
@@ -619,7 +741,7 @@ mod tests {
     let grammar = TokenGrammar::new(&prods);
     let preprocessed_grammar = PreprocessedGrammar::new(&grammar);
     let input: Vec<char> = "abab".chars().collect();
-    let mut parse = Parse::new(preprocessed_grammar, input);
+    let mut parse = Parse::new(&preprocessed_grammar, input);
     panic!("call iterate method until we have a full parse!");
   }
 
