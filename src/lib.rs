@@ -178,7 +178,7 @@ impl StackDiff {
   }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+#[derive(Debug, Copy, Clone, PartialEq, Eq, Hash)]
 enum LoweredState {
   Start,
   End,
@@ -190,7 +190,7 @@ enum LoweredState {
 // meaning recognizing a specific contiguous sequence of tokens (bytes)). SIMD type 2 (finding a
 // specific token in a longer string of bytes) can already easily be used with just token pairs (and
 // others).
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+#[derive(Debug, Copy, Clone, PartialEq, Eq, Hash)]
 struct StatePair {
   left: LoweredState,
   right: LoweredState,
@@ -312,17 +312,23 @@ struct GrammarEdge {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
+enum TraversalVertex {
+  Vertex(GrammarVertex),
+  Start,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
 struct GrammarTraversalState {
-  traversal_target: GrammarVertex,
+  traversal_target: TraversalVertex,
   prev_stack: VecDeque<GrammarEdgeWeightStep>,
 }
 
 impl <Tok: PartialEq + Eq + Hash + Copy + Clone> PreprocessedGrammar<Tok> {
   fn index_tokens(
     grammar: &TokenGrammar<Tok>,
-  ) -> (IndexMap<Tok, Vec<TokenPosition>>, IndexMap<GrammarVertex, Vec<GrammarEdge>>) {
+  ) -> (IndexMap<Tok, Vec<TokenPosition>>, IndexMap<TraversalVertex, Vec<GrammarEdge>>) {
     let mut toks_with_locs: IndexMap<Tok, Vec<TokenPosition>> = IndexMap::new();
-    let mut neighbors: IndexMap<GrammarVertex, Vec<GrammarEdge>> = IndexMap::new();
+    let mut neighbors: IndexMap<TraversalVertex, Vec<GrammarEdge>> = IndexMap::new();
     let mut cur_anon_sym = AnonSym(0);
     // Map all the tokens to states (`TokenPosition`s) which reference them, and build up a graph in
     // `neighbors` of the elements in each case.
@@ -381,7 +387,8 @@ impl <Tok: PartialEq + Eq + Hash + Copy + Clone> PreprocessedGrammar<Tok> {
             weight: weight_steps,
             target: cur_vtx,
           };
-          let prev_neighborhood = neighbors.entry(prev_vtx).or_insert(vec![]);
+          let prev_neighborhood = neighbors.entry(TraversalVertex::Vertex(prev_vtx))
+            .or_insert(vec![]);
           (*prev_neighborhood).push(edge);
           is_start_of_case = false;
           prev_vtx = cur_vtx;
@@ -404,17 +411,30 @@ impl <Tok: PartialEq + Eq + Hash + Copy + Clone> PreprocessedGrammar<Tok> {
           weight: epsilon_edge_weight,
           target: GrammarVertex::Epsilon,
         };
-        let final_case_el_neighborhood = neighbors.entry(prev_vtx).or_insert(vec![]);
+        let final_case_el_neighborhood = neighbors.entry(TraversalVertex::Vertex(prev_vtx))
+          .or_insert(vec![]);
         (*final_case_el_neighborhood).push(epsilon_edge);
       }
     }
+    // Insert edges to all productions from a placeholder "start of string" vertex.
+    assert!(neighbors.get(&TraversalVertex::Start).is_none());
+    let init_prod_edges: Vec<GrammarEdge> = (0..grammar.graph.len()).map(|ind| {
+      let init_prod_ref = ProdRef(ind);
+      GrammarEdge {
+        weight: vec![GrammarEdgeWeightStep::Named(
+          StackStep::Positive(StackSym(init_prod_ref))),
+        ],
+        target: GrammarVertex::Prod(init_prod_ref),
+      }
+    }).collect();
+    neighbors.insert(TraversalVertex::Start, init_prod_edges);
     (toks_with_locs, neighbors)
   }
 
   fn build_pairwise_transitions_table(
     grammar: &TokenGrammar<Tok>,
     toks_with_locs: &IndexMap<Tok, Vec<TokenPosition>>,
-    neighbors: &IndexMap<GrammarVertex, Vec<GrammarEdge>>,
+    neighbors: &IndexMap<TraversalVertex, Vec<GrammarEdge>>,
   ) -> IndexMap<StatePair, Vec<StackDiff>> {
     eprintln!("neighbors: {:?}", neighbors);
     // Crawl `neighbors` to get the `StackDiff` between each pair of states.
@@ -424,14 +444,20 @@ impl <Tok: PartialEq + Eq + Hash + Copy + Clone> PreprocessedGrammar<Tok> {
     // iteration of the cycle), and in matching, remember that any instance of a cycling `ProdRef`
     // can have an indefinite number of iterations of its cycle)!
     let mut transitions: IndexMap<StatePair, Vec<StackDiff>> = IndexMap::new();
-    for left_tok_pos in toks_with_locs.values().flatten() {
-      eprintln!("left_tok_pos: {:?}", left_tok_pos);
+    let init_vertices: Vec<TraversalVertex> = toks_with_locs.values().flatten().map(|tok_pos| {
+      TraversalVertex::Vertex(GrammarVertex::State(*tok_pos))
+    })
+      // Also find the tokens that could form the beginning of a string.
+      .chain(vec![TraversalVertex::Start].into_iter())
+      .collect();
+    for traversal_start_vertex in init_vertices.into_iter() {
+      eprintln!("traversal_start_vertex: {:?}", traversal_start_vertex);
       let mut queue: VecDeque<GrammarTraversalState> = VecDeque::new();
       // TODO: Store not just productions we've found, but the different paths taken to them (don't
       // try to do anything with cycles here, though)!
       let mut seen_productions: IndexSet<ProdRef> = IndexSet::new();
       queue.push_back(GrammarTraversalState {
-        traversal_target: GrammarVertex::State(*left_tok_pos),
+        traversal_target: traversal_start_vertex.clone(),
         prev_stack: VecDeque::new(),
       });
       while !queue.is_empty() {
@@ -462,8 +488,15 @@ impl <Tok: PartialEq + Eq + Hash + Copy + Clone> PreprocessedGrammar<Tok> {
                   _ => None,
                 }).collect();
                 eprintln!("diff: {:?}", diff);
+                let left_lowered_state: LoweredState = match traversal_start_vertex.clone()  {
+                  Start => LoweredState::Start,
+                  TraversalVertex::Vertex(left_vertex) => match left_vertex {
+                    GrammarVertex::State(left_tok_pos) => LoweredState::Within(left_tok_pos),
+                    _ => panic!("should only see a state vertex here: {:?}"),
+                  },
+                };
                 let transitions_for_pair = transitions.entry(StatePair {
-                  left: LoweredState::Within(*left_tok_pos),
+                  left: left_lowered_state,
                   right: LoweredState::Within(right_tok_pos),
                 }).or_insert(vec![]);
                 eprintln!("transitions_for_pair: {:?}", transitions_for_pair);
@@ -475,19 +508,40 @@ impl <Tok: PartialEq + Eq + Hash + Copy + Clone> PreprocessedGrammar<Tok> {
                 let (_, was_not_previously_seen) = seen_productions.insert_full(next_prod_ref);
                 if was_not_previously_seen {
                   queue.push_back(GrammarTraversalState {
-                    traversal_target: GrammarVertex::Prod(next_prod_ref),
+                    traversal_target: TraversalVertex::Vertex(
+                      GrammarVertex::Prod(next_prod_ref)),
                     prev_stack: new_stack,
                   });
                 }
               },
               // The epsilon vertex has a zero-weight edge to all productions.
               GrammarVertex::Epsilon => {
-                for next_prod_ind in 0..grammar.graph.len() {
-                  queue.push_back(GrammarTraversalState {
-                    traversal_target: GrammarVertex::Prod(ProdRef(next_prod_ind)),
+                queue.extend((0..grammar.graph.len()).map(|next_prod_ind| {
+                  GrammarTraversalState {
+                    traversal_target: TraversalVertex::Vertex(
+                      GrammarVertex::Prod(ProdRef(next_prod_ind))),
                     prev_stack: new_stack.clone(),
-                  });
-                }
+                  }
+                }));
+                // This token could potentially form the end of a string -- note the stack diff
+                // which would allow this to occur for some input.
+                let diff: Vec<StackStep> = new_stack.into_iter().filter_map(|step| match step {
+                  GrammarEdgeWeightStep::Named(s) => Some(s),
+                  _ => None,
+                }).collect();
+                eprintln!("diff: {:?}", diff);
+                let left_lowered_state: LoweredState = match traversal_start_vertex.clone()  {
+                  Start => LoweredState::Start,
+                  TraversalVertex::Vertex(left_vertex) => match left_vertex {
+                    GrammarVertex::State(left_tok_pos) => LoweredState::Within(left_tok_pos),
+                    _ => panic!("should only see a state vertex here: {:?}"),
+                  },
+                };
+                let transitions_for_end_of_string = transitions.entry(StatePair {
+                  left: left_lowered_state,
+                  right: LoweredState::End,
+                }).or_insert(vec![]);
+                (*transitions_for_end_of_string).push(StackDiff(diff));
               },
             }
           }
@@ -817,6 +871,12 @@ mod tests {
       ],
     });
     let preprocessed_grammar = PreprocessedGrammar::new(&grammar);
+    let first_a = LoweredState::Within(TokenPosition { prod: ProdRef(0), case: CaseRef(0), case_el: CaseElRef(0) });
+    let first_b = LoweredState::Within(TokenPosition { prod: ProdRef(0), case: CaseRef(0), case_el: CaseElRef(1) });
+    let second_a = LoweredState::Within(TokenPosition { prod: ProdRef(1), case: CaseRef(0), case_el: CaseElRef(0) });
+    let second_b = LoweredState::Within(TokenPosition { prod: ProdRef(1), case: CaseRef(0), case_el: CaseElRef(1) });
+    let a_prod = StackSym(ProdRef(0));
+    let b_prod = StackSym(ProdRef(1));
     assert_eq!(preprocessed_grammar.clone(), PreprocessedGrammar {
       states: vec![
         ('a', vec![
@@ -830,25 +890,40 @@ mod tests {
       ].iter().cloned().collect::<IndexMap<char, Vec<TokenPosition>>>(),
       transitions: vec![
         (StatePair {
-          left: LoweredState::Within(TokenPosition { prod: ProdRef(0), case: CaseRef(0), case_el: CaseElRef(0) }),
-          right: LoweredState::Within(TokenPosition { prod: ProdRef(0), case: CaseRef(0), case_el: CaseElRef(1) }),
+          left: LoweredState::Start,
+          right: first_a,
+        }, vec![StackDiff(vec![StackStep::Positive(a_prod)])]),
+        (StatePair {
+          left: LoweredState::Start,
+          right: first_b,
+        }, vec![StackDiff(vec![StackStep::Positive(b_prod)])]),
+        (StatePair {
+          left: first_b,
+          right: LoweredState::End,
+        }, vec![
+          StackDiff(vec![StackStep::Negative(a_prod)]),
+          StackDiff(vec![StackStep::Negative(a_prod), StackStep::Negative(b_prod)]),
+        ]),
+        (StatePair {
+          left: first_a,
+          right: first_b,
         }, vec![StackDiff(vec![])]),
         (StatePair {
-          left: LoweredState::Within(TokenPosition { prod: ProdRef(1), case: CaseRef(0), case_el: CaseElRef(0) }),
-          right: LoweredState::Within(TokenPosition { prod: ProdRef(1), case: CaseRef(0), case_el: CaseElRef(1) }),
+          left: second_a,
+          right: second_b,
         }, vec![StackDiff(vec![])]),
         (StatePair {
-          left: LoweredState::Within(TokenPosition { prod: ProdRef(1), case: CaseRef(0), case_el: CaseElRef(1) }),
-          right: LoweredState::Within(TokenPosition { prod: ProdRef(0), case: CaseRef(0), case_el: CaseElRef(0) }),
-        }, vec![StackDiff(vec![StackStep::Positive(StackSym(ProdRef(0)))])]),
+          left: second_b,
+          right: first_a,
+        }, vec![StackDiff(vec![StackStep::Positive(a_prod)])]),
         (StatePair {
-          left: LoweredState::Within(TokenPosition { prod: ProdRef(0), case: CaseRef(0), case_el: CaseElRef(1) }),
-          right: LoweredState::Within(TokenPosition { prod: ProdRef(1), case: CaseRef(0), case_el: CaseElRef(0) }),
-        }, vec![StackDiff(vec![StackStep::Negative(StackSym(ProdRef(0)))])]),
+          left: first_b,
+          right: second_a,
+        }, vec![StackDiff(vec![StackStep::Negative(a_prod)])]),
         (StatePair {
-          left: LoweredState::Within(TokenPosition { prod: ProdRef(0), case: CaseRef(0), case_el: CaseElRef(1) }),
-          right: LoweredState::Within(TokenPosition { prod: ProdRef(0), case: CaseRef(0), case_el: CaseElRef(0) }),
-        }, vec![StackDiff(vec![StackStep::Negative(StackSym(ProdRef(0)))])]),
+          left: first_b,
+          right: first_a,
+        }, vec![StackDiff(vec![StackStep::Negative(a_prod)])]),
       ].iter().cloned().collect::<IndexMap<StatePair, Vec<StackDiff>>>(),
     });
   }
