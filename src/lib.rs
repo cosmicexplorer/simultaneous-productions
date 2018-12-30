@@ -11,7 +11,7 @@ use std::collections::{HashMap, VecDeque};
 use std::hash::Hash;
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
-pub struct Literal<Tok: Sized + PartialEq + Eq + Hash + Copy + Clone>(Vec<Tok>);
+pub struct Literal<Tok: PartialEq + Eq + Hash + Copy + Clone>(Vec<Tok>);
 
 // NB: a From impl is usually intended to denote that allocation is /not/ performed, I think: see
 // https://doc.rust-lang.org/std/convert/trait.From.html -- fn new() makes more sense for this use
@@ -34,19 +34,19 @@ impl ProductionReference {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
-pub enum CaseElement<Tok: Sized + PartialEq + Eq + Hash + Copy + Clone> {
+pub enum CaseElement<Tok: PartialEq + Eq + Hash + Copy + Clone> {
   Lit(Literal<Tok>),
   Prod(ProductionReference),
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
-pub struct Case<Tok: Sized + PartialEq + Eq + Hash + Copy + Clone>(Vec<CaseElement<Tok>>);
+pub struct Case<Tok: PartialEq + Eq + Hash + Copy + Clone>(Vec<CaseElement<Tok>>);
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
-pub struct Production<Tok: Sized + PartialEq + Eq + Hash + Copy + Clone>(Vec<Case<Tok>>);
+pub struct Production<Tok: PartialEq + Eq + Hash + Copy + Clone>(Vec<Case<Tok>>);
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct SimultaneousProductions<Tok: Sized + PartialEq + Eq + Hash + Copy + Clone>(
+pub struct SimultaneousProductions<Tok: PartialEq + Eq + Hash + Copy + Clone>(
   IndexMap<ProductionReference, Production<Tok>>);
 
 ///
@@ -55,7 +55,7 @@ pub struct SimultaneousProductions<Tok: Sized + PartialEq + Eq + Hash + Copy + C
 /// (I think this is a "model" graph class of some sort, where the model is this "simultaneous
 /// productions" parsing formulation)
 ///
-/// LoweredProductions = [
+/// Vec<ProductionImpl> = [
 ///   Production([
 ///     Case([CaseEl(Lit("???")), CaseEl(ProdRef(?)), ...]),
 ///     ...,
@@ -73,7 +73,7 @@ pub struct SimultaneousProductions<Tok: Sized + PartialEq + Eq + Hash + Copy + C
 
 // A version of `ProductionReference` which uses a `usize` for speed. We adopt the convention of
 // abbreviated names for things used in algorithms.
-// Points to a particular Production within a LoweredProductions.
+// Points to a particular Production within a Vec<ProductionImpl>.
 #[derive(Debug, Copy, Clone, PartialEq, Eq, Hash)]
 struct ProdRef(usize);
 
@@ -112,18 +112,15 @@ struct CaseImpl(Vec<CaseEl>);
 #[derive(Debug, Clone, PartialEq, Eq)]
 struct ProductionImpl(Vec<CaseImpl>);
 
-#[derive(Debug, Clone, PartialEq, Eq)]
-struct LoweredProductions(Vec<ProductionImpl>);
-
 /// Mapping to Tokens
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-struct TokenGrammar<Tok: Sized + PartialEq + Eq + Hash + Copy + Clone> {
-  graph: LoweredProductions,
+struct TokenGrammar<Tok: PartialEq + Eq + Hash + Copy + Clone> {
+  graph: Vec<ProductionImpl>,
   tokens: Vec<Tok>,
 }
 
-impl <Tok: Sized + PartialEq + Eq + Hash + Copy + Clone> TokenGrammar<Tok> {
+impl <Tok: PartialEq + Eq + Hash + Copy + Clone> TokenGrammar<Tok> {
   fn new(prods: &SimultaneousProductions<Tok>) -> Self {
     // Mapping from strings -> indices (TODO: from a type-indexed map, where each production
     // returns the type!).
@@ -152,7 +149,7 @@ impl <Tok: Sized + PartialEq + Eq + Hash + Copy + Clone> TokenGrammar<Tok> {
       ProductionImpl(cases)
     }).collect();
     TokenGrammar {
-      graph: LoweredProductions(new_prods),
+      graph: new_prods,
       tokens: all_tokens.iter().cloned().collect(),
     }
   }
@@ -181,6 +178,13 @@ impl StackDiff {
   }
 }
 
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+enum LoweredState {
+  Start,
+  End,
+  Within(TokenPosition),
+}
+
 // TODO: consider the relationship between populating token transitions in the lookbehind cache to
 // some specific depth (e.g. strings of 3, 4, 5 tokens) and SIMD type 1 instructions (my notations:
 // meaning recognizing a specific contiguous sequence of tokens (bytes)). SIMD type 2 (finding a
@@ -188,14 +192,14 @@ impl StackDiff {
 // others).
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 struct StatePair {
-  left: TokenPosition,
-  right: TokenPosition,
+  left: LoweredState,
+  right: LoweredState,
 }
 
 // NB: There is no reference to any `TokenGrammar` -- this is intentional, and I believe makes it
 // easier to have the runtime we want just fall out of the code without too much work.
 #[derive(Debug, Clone, PartialEq, Eq)]
-struct PreprocessedGrammar<Tok: Sized + PartialEq + Eq + Hash + Copy + Clone> {
+struct PreprocessedGrammar<Tok: PartialEq + Eq + Hash + Copy + Clone> {
   // These don't need to be quick to access or otherwise optimized for the algorithm until we create
   // a `Parse` -- these are chosen to reduce redundancy.
   states: IndexMap<Tok, Vec<TokenPosition>>,
@@ -313,7 +317,7 @@ struct GrammarTraversalState {
   prev_stack: VecDeque<GrammarEdgeWeightStep>,
 }
 
-impl <Tok: Sized + PartialEq + Eq + Hash + Copy + Clone> PreprocessedGrammar<Tok> {
+impl <Tok: PartialEq + Eq + Hash + Copy + Clone> PreprocessedGrammar<Tok> {
   fn index_tokens(
     grammar: &TokenGrammar<Tok>,
   ) -> (IndexMap<Tok, Vec<TokenPosition>>, IndexMap<GrammarVertex, Vec<GrammarEdge>>) {
@@ -322,7 +326,7 @@ impl <Tok: Sized + PartialEq + Eq + Hash + Copy + Clone> PreprocessedGrammar<Tok
     let mut cur_anon_sym = AnonSym(0);
     // Map all the tokens to states (`TokenPosition`s) which reference them, and build up a graph in
     // `neighbors` of the elements in each case.
-    for (prod_ind, prod) in grammar.graph.0.iter().cloned().enumerate() {
+    for (prod_ind, prod) in grammar.graph.iter().cloned().enumerate() {
       let prod_ref = ProdRef(prod_ind);
       for (case_ind, case) in prod.0.iter().cloned().enumerate() {
         let case_ref = CaseRef(case_ind);
@@ -459,8 +463,8 @@ impl <Tok: Sized + PartialEq + Eq + Hash + Copy + Clone> PreprocessedGrammar<Tok
                 }).collect();
                 eprintln!("diff: {:?}", diff);
                 let transitions_for_pair = transitions.entry(StatePair {
-                  left: *left_tok_pos,
-                  right: right_tok_pos,
+                  left: LoweredState::Within(*left_tok_pos),
+                  right: LoweredState::Within(right_tok_pos),
                 }).or_insert(vec![]);
                 eprintln!("transitions_for_pair: {:?}", transitions_for_pair);
                 (*transitions_for_pair).push(StackDiff(diff));
@@ -478,7 +482,7 @@ impl <Tok: Sized + PartialEq + Eq + Hash + Copy + Clone> PreprocessedGrammar<Tok
               },
               // The epsilon vertex has a zero-weight edge to all productions.
               GrammarVertex::Epsilon => {
-                for next_prod_ind in 0..grammar.graph.0.len() {
+                for next_prod_ind in 0..grammar.graph.len() {
                   queue.push_back(GrammarTraversalState {
                     traversal_target: GrammarVertex::Prod(ProdRef(next_prod_ind)),
                     prev_stack: new_stack.clone(),
@@ -508,6 +512,7 @@ impl <Tok: Sized + PartialEq + Eq + Hash + Copy + Clone> PreprocessedGrammar<Tok
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
 struct InputTokenIndex(usize);
 
+// This struct exists so it's harder to mix up our union ranges.
 #[derive(Debug, Clone, PartialEq, Eq)]
 struct StackTrieTerminalEntry(Vec<UnionRange>);
 
@@ -525,11 +530,22 @@ struct UnionRange {
   other_grammar_state: TokenPosition,
 }
 
+#[cfg(test)]
+impl UnionRange {
+  fn new(a: TokenPosition, j: InputTokenIndex, b: TokenPosition) -> Self {
+    UnionRange {
+      this_grammar_state: a,
+      other_input_index: j,
+      other_grammar_state: b,
+    }
+  }
+}
+
 // TODO: List of known stack paths, for both "sides", per input token (sorted lexicographically)!
 // TODO: Lexicographic sorting can be accomplished using a trie (of stack syms!!!!!!!!)! A sparse
 // trie might work too -- can do this with a vec of filled indices alongside the trie vec (probably
 // need two vecs, one with each each character, the other full of the next level of vecs).
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 struct StackTrie {
   // TODO: can make this a reference to a stack alphabet and keep indices to stack steps as a
   // Vec<usize> for perf later (maybe).
@@ -547,7 +563,7 @@ struct StackTrie {
   terminal_entries: Vec<StackTrieTerminalEntry>,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 struct Parse(Vec<StackTrie>);
 
 #[derive(Debug, Clone)]
@@ -588,9 +604,11 @@ impl SlowStackTrieForSetup {
           for cur_right_union_range in all_right_terminal_entries.iter().cloned() {
             // TODO: using the StatePair map here is "cheating" in that it doesn't represent the
             // walking we have to do in the actual parsing -- this can be fixed later.
+            let cur_left_state = cur_left_union_range.this_grammar_state.clone();
+            let cur_right_state = cur_right_union_range.this_grammar_state.clone();
             let cur_pair = StatePair {
-              left: cur_left_union_range.this_grammar_state.clone(),
-              right: cur_right_union_range.this_grammar_state.clone(),
+              left: LoweredState::Within(cur_left_state.clone()),
+              right: LoweredState::Within(cur_right_state.clone()),
             };
             // Some (most?) state pairs don't exist in the grammar. We can cull these at this start
             // phase before getting into parsing.
@@ -602,16 +620,16 @@ impl SlowStackTrieForSetup {
                 (*cur_state.get_mut(left_index.0).unwrap().0.entry(joined_diff.clone())
                  .or_insert(vec![]))
                   .push(UnionRange {
-                    this_grammar_state: cur_pair.left,
+                    this_grammar_state: cur_left_state.clone(),
                     other_input_index: right_index,
-                    other_grammar_state: cur_pair.right,
+                    other_grammar_state: cur_right_state.clone(),
                   });
                 (*cur_state.get_mut(right_index.0).unwrap().0.entry(joined_diff.clone())
                  .or_insert(vec![]))
                   .push(UnionRange {
-                    this_grammar_state: cur_pair.right,
+                    this_grammar_state: cur_right_state.clone(),
                     other_input_index: left_index,
-                    other_grammar_state: cur_pair.left,
+                    other_grammar_state: cur_left_state.clone(),
                   });
               }
             }
@@ -635,7 +653,7 @@ impl SlowStackTrieForSetup {
 }
 
 impl Parse {
-  fn initial_state<Tok: Sized + PartialEq + Eq + Hash + Copy + Clone>(
+  fn initial_state<Tok: PartialEq + Eq + Hash + Copy + Clone>(
     states: &IndexMap<Tok, Vec<TokenPosition>>,
     input: Vec<Tok>,
   ) -> Vec<SlowStackTrieForSetup> {
@@ -695,7 +713,7 @@ impl Parse {
   // NB: define what one iteration means, and make that definition very flexible, but ensure it is
   // well-defined at all times.
   fn iterate(&mut self) {
-    
+
   }
 
   // The pattern of defining new() methods which consume some inputs is *strictly* better than
@@ -707,7 +725,7 @@ impl Parse {
   // parsing. Letting the caller control these also makes it more clear what transformations are
   // being performed as the lowering occurs, similar to how the iterate(&mut self) method below
   // helps make the runtime much easier to analyze, theoretically and on the actual computer.
-  fn new<Tok: Sized + PartialEq + Eq + Hash + Copy + Clone>(
+  fn new<Tok: PartialEq + Eq + Hash + Copy + Clone>(
     grammar: &PreprocessedGrammar<Tok>,
     input: Vec<Tok>,
   ) -> Self {
@@ -725,7 +743,7 @@ mod tests {
   use super::*;
 
   #[test]
-  fn simple_parse() {
+  fn initialize_parse_state() {
     // TODO: figure out more complex parsing such as stack cycles/etc before doing type-indexed
     // maps, as well as syntax sugar for defining cases.
     let prods = SimultaneousProductions([
@@ -741,8 +759,33 @@ mod tests {
     let grammar = TokenGrammar::new(&prods);
     let preprocessed_grammar = PreprocessedGrammar::new(&grammar);
     let input: Vec<char> = "abab".chars().collect();
-    let mut parse = Parse::new(&preprocessed_grammar, input);
-    panic!("call iterate method until we have a full parse!");
+    let parse = Parse::new(&preprocessed_grammar, input);
+    let first_a = TokenPosition { prod: ProdRef(0), case: CaseRef(0), case_el: CaseElRef(0) };
+    let second_a = TokenPosition { prod: ProdRef(1), case: CaseRef(0), case_el: CaseElRef(0) };
+    let first_b = TokenPosition { prod: ProdRef(0), case: CaseRef(0), case_el: CaseElRef(1) };
+    let second_b = TokenPosition { prod: ProdRef(1), case: CaseRef(0), case_el: CaseElRef(1) };
+    let into_a_prod = StackStep::Positive(StackSym(ProdRef(0)));
+    let out_of_a_prod = StackStep::Negative(StackSym(ProdRef(0)));
+    assert_eq!(parse, Parse(vec![
+      StackTrie {
+        stack_steps: vec![StackDiff(vec![])],
+        terminal_entries: vec![
+          StackTrieTerminalEntry(vec![
+            UnionRange::new(first_a, InputTokenIndex(1), first_b),
+            UnionRange::new(second_a, InputTokenIndex(1), second_b)
+          ])],
+      },
+      // StackTrie {},
+      StackTrie {
+        stack_steps: vec![StackDiff(vec![]), StackDiff(vec![into_a_prod])],
+        terminal_entries: vec![
+          StackTrieTerminalEntry(vec![
+            UnionRange::new(first_a, InputTokenIndex(3), first_b),
+            UnionRange::new(second_a, InputTokenIndex(3), second_b)
+          ])],
+      },
+      // StackTrie {},
+    ]));
   }
 
   #[test]
@@ -760,7 +803,7 @@ mod tests {
     let grammar = TokenGrammar::new(&prods);
     assert_eq!(grammar.clone(), TokenGrammar {
       tokens: vec!['a', 'b'],
-      graph: LoweredProductions(vec![
+      graph: vec![
         ProductionImpl(vec![
           CaseImpl(vec![CaseEl::Tok(TokRef(0)), CaseEl::Tok(TokRef(1))]),
         ]),
@@ -771,7 +814,7 @@ mod tests {
             CaseEl::Prod(ProdRef(0)),
           ]),
         ]),
-      ]),
+      ],
     });
     let preprocessed_grammar = PreprocessedGrammar::new(&grammar);
     assert_eq!(preprocessed_grammar.clone(), PreprocessedGrammar {
@@ -787,24 +830,24 @@ mod tests {
       ].iter().cloned().collect::<IndexMap<char, Vec<TokenPosition>>>(),
       transitions: vec![
         (StatePair {
-          left: TokenPosition { prod: ProdRef(0), case: CaseRef(0), case_el: CaseElRef(0) },
-          right: TokenPosition { prod: ProdRef(0), case: CaseRef(0), case_el: CaseElRef(1) },
+          left: LoweredState::Within(TokenPosition { prod: ProdRef(0), case: CaseRef(0), case_el: CaseElRef(0) }),
+          right: LoweredState::Within(TokenPosition { prod: ProdRef(0), case: CaseRef(0), case_el: CaseElRef(1) }),
         }, vec![StackDiff(vec![])]),
         (StatePair {
-          left: TokenPosition { prod: ProdRef(1), case: CaseRef(0), case_el: CaseElRef(0) },
-          right: TokenPosition { prod: ProdRef(1), case: CaseRef(0), case_el: CaseElRef(1) },
+          left: LoweredState::Within(TokenPosition { prod: ProdRef(1), case: CaseRef(0), case_el: CaseElRef(0) }),
+          right: LoweredState::Within(TokenPosition { prod: ProdRef(1), case: CaseRef(0), case_el: CaseElRef(1) }),
         }, vec![StackDiff(vec![])]),
         (StatePair {
-          left: TokenPosition { prod: ProdRef(1), case: CaseRef(0), case_el: CaseElRef(1) },
-          right: TokenPosition { prod: ProdRef(0), case: CaseRef(0), case_el: CaseElRef(0) },
+          left: LoweredState::Within(TokenPosition { prod: ProdRef(1), case: CaseRef(0), case_el: CaseElRef(1) }),
+          right: LoweredState::Within(TokenPosition { prod: ProdRef(0), case: CaseRef(0), case_el: CaseElRef(0) }),
         }, vec![StackDiff(vec![StackStep::Positive(StackSym(ProdRef(0)))])]),
         (StatePair {
-          left: TokenPosition { prod: ProdRef(0), case: CaseRef(0), case_el: CaseElRef(1) },
-          right: TokenPosition { prod: ProdRef(1), case: CaseRef(0), case_el: CaseElRef(0) },
+          left: LoweredState::Within(TokenPosition { prod: ProdRef(0), case: CaseRef(0), case_el: CaseElRef(1) }),
+          right: LoweredState::Within(TokenPosition { prod: ProdRef(1), case: CaseRef(0), case_el: CaseElRef(0) }),
         }, vec![StackDiff(vec![StackStep::Negative(StackSym(ProdRef(0)))])]),
         (StatePair {
-          left: TokenPosition { prod: ProdRef(0), case: CaseRef(0), case_el: CaseElRef(1) },
-          right: TokenPosition { prod: ProdRef(0), case: CaseRef(0), case_el: CaseElRef(0) },
+          left: LoweredState::Within(TokenPosition { prod: ProdRef(0), case: CaseRef(0), case_el: CaseElRef(1) }),
+          right: LoweredState::Within(TokenPosition { prod: ProdRef(0), case: CaseRef(0), case_el: CaseElRef(0) }),
         }, vec![StackDiff(vec![StackStep::Negative(StackSym(ProdRef(0)))])]),
       ].iter().cloned().collect::<IndexMap<StatePair, Vec<StackDiff>>>(),
     });
