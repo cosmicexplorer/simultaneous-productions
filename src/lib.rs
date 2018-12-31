@@ -489,7 +489,7 @@ impl <Tok: PartialEq + Eq + Hash + Copy + Clone> PreprocessedGrammar<Tok> {
                 }).collect();
                 eprintln!("diff: {:?}", diff);
                 let left_lowered_state: LoweredState = match traversal_start_vertex.clone()  {
-                  Start => LoweredState::Start,
+                  TraversalVertex::Start => LoweredState::Start,
                   TraversalVertex::Vertex(left_vertex) => match left_vertex {
                     GrammarVertex::State(left_tok_pos) => LoweredState::Within(left_tok_pos),
                     _ => panic!("should only see a state vertex here: {:?}"),
@@ -531,7 +531,7 @@ impl <Tok: PartialEq + Eq + Hash + Copy + Clone> PreprocessedGrammar<Tok> {
                 }).collect();
                 eprintln!("diff: {:?}", diff);
                 let left_lowered_state: LoweredState = match traversal_start_vertex.clone()  {
-                  Start => LoweredState::Start,
+                  TraversalVertex::Start => LoweredState::Start,
                   TraversalVertex::Vertex(left_vertex) => match left_vertex {
                     GrammarVertex::State(left_tok_pos) => LoweredState::Within(left_tok_pos),
                     _ => panic!("should only see a state vertex here: {:?}"),
@@ -752,6 +752,8 @@ impl Parse {
     // longer necessary for the actual algorithm (I think???) -- we should represent this in the
     // `StackTrie` struct somehow (...and this might be how we get lexicographic sorting without
     // doing anything with partially sorted lists at all......)!
+    // TODO: for first and last of input, remove all states that aren't adjacent to Start/End? Then
+    // we can drop the LoweredState wrapper and use less space storing states!!!
     for left_ind in 0..(initial_state.len() - 1) {
       let right_ind = left_ind + 1;
       assert!(initial_state.get(right_ind).unwrap().is_probably_newly_initialized());
@@ -890,21 +892,6 @@ mod tests {
       ].iter().cloned().collect::<IndexMap<char, Vec<TokenPosition>>>(),
       transitions: vec![
         (StatePair {
-          left: LoweredState::Start,
-          right: first_a,
-        }, vec![StackDiff(vec![StackStep::Positive(a_prod)])]),
-        (StatePair {
-          left: LoweredState::Start,
-          right: first_b,
-        }, vec![StackDiff(vec![StackStep::Positive(b_prod)])]),
-        (StatePair {
-          left: first_b,
-          right: LoweredState::End,
-        }, vec![
-          StackDiff(vec![StackStep::Negative(a_prod)]),
-          StackDiff(vec![StackStep::Negative(a_prod), StackStep::Negative(b_prod)]),
-        ]),
-        (StatePair {
           left: first_a,
           right: first_b,
         }, vec![StackDiff(vec![])]),
@@ -913,17 +900,36 @@ mod tests {
           right: second_b,
         }, vec![StackDiff(vec![])]),
         (StatePair {
-          left: second_b,
+          left: first_b,
+          right: LoweredState::End,
+        }, vec![
+          StackDiff(vec![StackStep::Negative(a_prod)]),
+          // TODO: this is currently missing! this happens because a prod ref to "a" is at the end
+          // of the single case of the "b" production -- we can recognize this case in
+          // index_tokens() (ugh) and propagate it (probably not that hard, could be done by adding
+          // an "end" case to the `TraversalVertex` enum!)!
+          StackDiff(vec![StackStep::Negative(a_prod), StackStep::Negative(b_prod)]),
+        ]),
+        (StatePair {
+          left: first_b,
           right: first_a,
-        }, vec![StackDiff(vec![StackStep::Positive(a_prod)])]),
+        }, vec![StackDiff(vec![StackStep::Negative(a_prod)])]),
         (StatePair {
           left: first_b,
           right: second_a,
         }, vec![StackDiff(vec![StackStep::Negative(a_prod)])]),
         (StatePair {
-          left: first_b,
+          left: second_b,
           right: first_a,
-        }, vec![StackDiff(vec![StackStep::Negative(a_prod)])]),
+        }, vec![StackDiff(vec![StackStep::Positive(a_prod)])]),
+        (StatePair {
+          left: LoweredState::Start,
+          right: first_a,
+        }, vec![StackDiff(vec![StackStep::Positive(a_prod)])]),
+        (StatePair {
+          left: LoweredState::Start,
+          right: second_a,
+        }, vec![StackDiff(vec![StackStep::Positive(b_prod)])]),
       ].iter().cloned().collect::<IndexMap<StatePair, Vec<StackDiff>>>(),
     });
   }
