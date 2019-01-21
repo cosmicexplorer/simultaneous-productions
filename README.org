@@ -1,51 +1,154 @@
 #+TITLE: simultaneous-productions
 #+STARTUP: showall
 
+# this README is /the paper/ exactly!
+
+* abstract
+
+* grammar specification
+** motivation
+- with some basic example(s), without introducing new notation
+- <<eureka>> realization that this nice interface that i'd been looking for happened to be highly amenable to parallelizable/incremental parsing
+  - and that i was starting off looking for something totally different!
+  - not too much into depth
+** usage
+- introduce notation for describing the grammar, ellipses, etc
+- delve a little into [[eureka]]
+
+* parsing algorithm description
+** describe the input
+- the input is a ~SimultaneousProductions~ instance
+- make sure to make it clear how this generalizes to arbitrary tokens, not just text
+  - and try to go into why
+** the lowering steps, eventually into PreprocessedGrammar
+- /to be figured out in code/
+** applying parsing
+- /to be figured out in code/
+
+* analysis
+** runtime
+- this is where you can show people how everyone has always been wrong. this should be the first section. no games.
+** reduction from SAT
+- don't even need to mention this except in the abstract maybe? it can be a fun surprise and make the reader go "huh, i guess that's where the runtime comes from"
+  - make it clear how this /doesn't/ become a nondeterministic turing machine
+    - /maybe this has something to do with the fact that it only processes straight line input? this might be wrong/
+** differences from "formal grammars"
+- but don't even go into this too much, just enough to explain how we can have better performance with a better interface
+- make sure to explain what has been wrong about parsing and not get caught up in why
+
+* implementation
+- talk a little about how rust is a truly fantastic language to implement algorithms in
+  - move construction by default and lifetimes are amazing for /correctness/
+- benchmarks
+  - what use cases does it do better or worse on?
+  - what's holding it back?
+- *PARALLELISM*
+  - this needs some intense thought, because this is how we can demonstrate massive speedups over other methods
+
+* unknown / future work
+- simd or other stuff
+  - enough to show i've thought about how to implement it on a microprocessor level as well
+  - gives people who know what they're talking about enough of a ladder to almost immediately do that
+
+* TODO [0/3] running it in reverse to guess grammars *YES, BEFORE PUBLISHING! (BUT AFTER THE FORWARD ALGORITHM)*
+- this is a good idea because we have proven the model can be reduced from SAT
+  - /and therefore capable of arbitrary computation, or that's the idea/
+  - so if you figure out how to tweak the knobs you can maybe assume it'll be a <<perfectly general inference method>>
+    - (the idea of this is completely bonkers to me)
+- *IF YOU DON'T PUBLISH THIS ALONG WITH THE ORIGINAL PAPER, SOMEONE ELSE WHO IS MORE FAMOUS WILL, SO YES, IT NEEDS TO BE IN HERE, AND IT NEEDS TO BE DEVELOPED*
+  - this is a sad but unfortunate reality
+  - if you do this right though, then you /really/ have you choice of <<phd>> locked in
+    - /so in that case, no need to rush/
+- *this should be a separate paper*
+  - but it would need to be posted at the /exact/ same time thanks to lack of [[trust]]
+  - should cite the first paper
+- [ ] find a good example of a nondeterministic sequentual input which /isn't/ necessarily hierarchical
+  - <<DNA/RNA>>
+    - there may be /many/ strong examples of this throughout bio which are not related to genes
+      - alternative: guessing chaotic models based off of readings taken at regular intervals
+        - e.g. heartbeat, see "Does God Play Dice?" *CITE THAT BOOK!!!*
+  - <<natural language>>
+    - *[[tweet translation]]!!!!!!*
+- [ ] determine a good statistical model to tweak
+  - honestly, i would be very surprised if the answer wasn't "hook up a monte carlo tree search and call it a day"
+- [ ] get a good result
+  - this is /maybe/ going to be easier with [[natural language]] than with [[DNA/RNA]] due to data availability, however:
+    1. i care about bio
+    2. the natural language field is oversaturated and it'll be hard to get a unique result
+    3. i don't think anyone is doing anything like this in bioinformatics (and i think they should be)
+       - /and i want that [[phd]]/
+  - patience is key, i have forever
+  - *we definitely want a good result, but we don't need to go as hard as on the initial algorithm*
+    - i would love to take on a collaborator, but i don't <<trust>> anyone enough
+    - so we want something here that:
+      1. is pretty significant
+         - demonstrates clear advancement of the state of the art
+         - could be considered a founding paper of a field
+      2. shows i know what i'm talking about
+      3. shows the idea was mine
+- *this work is likely to spark ideas about the original algorithm!*
+
+** tweet translation
+- a hell of a shower thought <2019-01-21 Mon 13:23:24> (MLK day)
+*** why this is the best idea ever
+- allows me to stay at twitter (forever?)
+- gives me ML hardware, expertise, and guidance
+- provides a FANTASTIC, maybe the BEST example of why "S.P in reverse" ("P.S."?) is a great idea
+  - tweets are <<small bits of language>>, UNLIKE what other machine translation services train on (presumably)
+    - S.P. allows for cross-serial dependencies and is a [[perfectly general inference method]] (?)
+    - S.P. works in parallel by default as opposed to running sequentially across a long string of text
+- /allows twitter to do its own translation/
+  - can't tell if this is immediately a win for cost/maintainability/flexibility reasons
+    - it probably is, though, just because we don't have to ship our text to an external service
+      - and if the external service only knows about the individual tweet it's asked to translate?
+        - then the fact that tweets are [[small bits of language]] /that twitter alone can train on at scale/ might mean we can achieve domain-specific accuracy that would be /impossible/ for an external service to achieve
+
+* old
 A Scala parser combinator library efficiently implementing "simultaneous productions", a model equivalent to a Turing Machine (I think). The method of simultaneous productions allows specifying languages extremely naturally, and maps perfectly to the parser combinator operations I have in mind. It can also be implemented with a linear (?) partitioning algorithm.
 
-* Ideal Code
+** Ideal Code
 
-#+BEGIN_SRC rust
+ #+BEGIN_SRC rust
 
-#+END_SRC
+ #+END_SRC
 
-#+BEGIN_SRC scala
-val FloatingPointLiteral = sp.productions(
-  ("float-signed" -> Cases(Parser(Tok("-") * Ref("float-unsigned"), { - _._2 }),
-                           Parser(Tok("+") * Ref("float-unsigned"), { _._2 }))),
-  // NB: should make sure sp.NumberLiterals returns 0 for an empty string
-  ("float-base" -> SingleCase(sp.NumberLiterals)),
-  ("float-mantissa" -> SingleCase(sp.NumberLiterals)),
-  ("float-unsigned" -> Cases(Parser(Ref("float-base"), { toFloat(sp.parseIntegral(_._1)) }),
-                             Parser(Ref("float-base") * Tok(".") * Ref("float-mantissa"), {
-                               // glossing over the details of converting e.g. ".123" to 1/10 + 2/10 + 3/10
-                               case (base, _, mantissa) => toFloat(sp.parseIntegral(base)) + sp.parseFloat(mantissa)
-                             }))),
-  ("exponent" -> Cases(Parser(Tok("e") * Ref("exponent-negated")),
-                       Parser(Tok("e") * Ref("exponent-unsigned")))),
-  ("exponent-negated" -> SingleCase(Parser(Tok("-") * Ref("exponent-unsigned")))),
-  // sp.NumberLiterals is a whole Parser, and should probably return a string
-  ("exponent-unsigned" -> SingleCase(sp.NumberLiterals)),
-)
+ #+BEGIN_SRC scala
+ val FloatingPointLiteral = sp.productions(
+   ("float-signed" -> Cases(Parser(Tok("-") * Ref("float-unsigned"), { - _._2 }),
+                            Parser(Tok("+") * Ref("float-unsigned"), { _._2 }))),
+   // NB: should make sure sp.NumberLiterals returns 0 for an empty string
+   ("float-base" -> SingleCase(sp.NumberLiterals)),
+   ("float-mantissa" -> SingleCase(sp.NumberLiterals)),
+   ("float-unsigned" -> Cases(Parser(Ref("float-base"), { toFloat(sp.parseIntegral(_._1)) }),
+                              Parser(Ref("float-base") * Tok(".") * Ref("float-mantissa"), {
+                                // glossing over the details of converting e.g. ".123" to 1/10 + 2/10 + 3/10
+                                case (base, _, mantissa) => toFloat(sp.parseIntegral(base)) + sp.parseFloat(mantissa)
+                              }))),
+   ("exponent" -> Cases(Parser(Tok("e") * Ref("exponent-negated")),
+                        Parser(Tok("e") * Ref("exponent-unsigned")))),
+   ("exponent-negated" -> SingleCase(Parser(Tok("-") * Ref("exponent-unsigned")))),
+   // sp.NumberLiterals is a whole Parser, and should probably return a string
+   ("exponent-unsigned" -> SingleCase(sp.NumberLiterals)),
+ )
 
-val WithWeirdIntegerLiterals = Grammars.C.productions.entry[IntegerLiteral] // Use a type-indexed map!
-  .replaceCases
-  .addCase(('A', SomeSubProductionType, 'C') ~> { (a: Token, inner: SomeSubProductionType, c: Token) =>
-    IntegerLiteral(s"${a}${inner.toString}${c}")
-  }.build() // This could be hidden behind an implicit.
-)
-#+END_SRC
+ val WithWeirdIntegerLiterals = Grammars.C.productions.entry[IntegerLiteral] // Use a type-indexed map!
+   .replaceCases
+   .addCase(('A', SomeSubProductionType, 'C') ~> { (a: Token, inner: SomeSubProductionType, c: Token) =>
+     IntegerLiteral(s"${a}${inner.toString}${c}")
+   }.build() // This could be hidden behind an implicit.
+ )
+ #+END_SRC
 
-* TODO [0/6]
-- [ ] specify a simple language so that it compiles
-  - use fixed strings instead of regex for now
-  - use strings instead of type-indexing the productions for now
-- [ ] implement the simple language so that it can be parsed
-- [ ] figure out how to allow productions to be type-indexed and require type-checking for that type in all the cases of the production
-- [ ] make a simple language that is usable for some simple task
-  - csv parsing? /or at least a simple subset of it/
-- [ ] develop benchmarking and (fuzz)? testing methods
-- [ ] parse C and C++
+** TODO [0/6]
+ - [ ] specify a simple language so that it compiles
+   - use fixed strings instead of regex for now
+   - use strings instead of type-indexing the productions for now
+ - [ ] implement the simple language so that it can be parsed
+ - [ ] figure out how to allow productions to be type-indexed and require type-checking for that type in all the cases of the production
+ - [ ] make a simple language that is usable for some simple task
+   - csv parsing? /or at least a simple subset of it/
+ - [ ] develop benchmarking and (fuzz)? testing methods
+ - [ ] parse C and C++
 
 * LICENSE
 [[file:./LICENSE][GPL 3.0+]]
