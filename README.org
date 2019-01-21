@@ -99,6 +99,7 @@
 ** why this is the best idea ever
 - allows me to stay at twitter (forever?)
   - twitter likes using patents /defensively/ (has taken a pledge to do so? *FIND THE WORDING OF THIS PLEDGE*)
+  - if the [[rsc]] pitch works, then i can even remain on the build team, which would be incredible
 - gives me ML hardware, expertise, and guidance
 - provides a FANTASTIC, maybe the BEST example of why "S.P in reverse" ("P.S."?) is a great idea
   - tweets are <<small bits of language>>, UNLIKE what other machine translation services train on (presumably)
