@@ -1,56 +1,62 @@
 #+TITLE: simultaneous-productions
 #+STARTUP: showall
 
+* TODO [0/3] overall timeline
+- [ ] implement S.P.
+- [ ] begin [[S.P. real benchmarking]], potentially alongside [[rsc]] pre-parsing
+- [ ] hack up a [[P.S. prototype]] and develop a pitch
+  - the pitch should explain that i haven't published yet because i didn't want to get scooped on [[the real prize]]
+
+* S.P. paper
+** abstract
 # this README is /the paper/ exactly!
+** grammar specification
+*** motivation
+ - with some basic example(s), without introducing new notation
+ - <<eureka>> realization that this nice interface that i'd been looking for happened to be highly amenable to parallelizable/incremental parsing
+   - and that i was starting off looking for something totally different!
+   - not too much into depth
+*** usage
+ - introduce notation for describing the grammar, ellipses, etc
+ - delve a little into [[eureka]]
 
-* abstract
+** parsing algorithm description
+*** describe the input
+ - the input is a ~SimultaneousProductions~ instance
+ - make sure to make it clear how this generalizes to arbitrary tokens, not just text
+   - and try to go into why
+*** the lowering steps, eventually into PreprocessedGrammar
+ - /to be figured out in code/
+*** applying parsing
+ - /to be figured out in code/
 
-* grammar specification
-** motivation
-- with some basic example(s), without introducing new notation
-- <<eureka>> realization that this nice interface that i'd been looking for happened to be highly amenable to parallelizable/incremental parsing
-  - and that i was starting off looking for something totally different!
-  - not too much into depth
-** usage
-- introduce notation for describing the grammar, ellipses, etc
-- delve a little into [[eureka]]
+** analysis
+*** runtime
+ - this is where you can show people how everyone has always been wrong. this should be the first section. no games.
+*** reduction from SAT
+ - don't even need to mention this except in the abstract maybe? it can be a fun surprise and make the reader go "huh, i guess that's where the runtime comes from"
+   - make it clear how this /doesn't/ become a nondeterministic turing machine
+     - /maybe this has something to do with the fact that it only processes straight line input? this might be wrong/
+*** differences from "formal grammars"
+ - but don't even go into this too much, just enough to explain how we can have better performance with a better interface
+ - make sure to explain what has been wrong about parsing and not get caught up in why
 
-* parsing algorithm description
-** describe the input
-- the input is a ~SimultaneousProductions~ instance
-- make sure to make it clear how this generalizes to arbitrary tokens, not just text
-  - and try to go into why
-** the lowering steps, eventually into PreprocessedGrammar
-- /to be figured out in code/
-** applying parsing
-- /to be figured out in code/
+** implementation
+ - talk a little about how rust is a truly fantastic language to implement algorithms in
+   - move construction by default and lifetimes are amazing for /correctness/
+ - benchmarks
+   - what use cases does it do better or worse on?
+   - what's holding it back?
+ - *PARALLELISM*
+   - this needs some intense thought, because this is how we can demonstrate massive speedups over other methods
 
-* analysis
-** runtime
-- this is where you can show people how everyone has always been wrong. this should be the first section. no games.
-** reduction from SAT
-- don't even need to mention this except in the abstract maybe? it can be a fun surprise and make the reader go "huh, i guess that's where the runtime comes from"
-  - make it clear how this /doesn't/ become a nondeterministic turing machine
-    - /maybe this has something to do with the fact that it only processes straight line input? this might be wrong/
-** differences from "formal grammars"
-- but don't even go into this too much, just enough to explain how we can have better performance with a better interface
-- make sure to explain what has been wrong about parsing and not get caught up in why
-
-* implementation
-- talk a little about how rust is a truly fantastic language to implement algorithms in
-  - move construction by default and lifetimes are amazing for /correctness/
-- benchmarks
-  - what use cases does it do better or worse on?
-  - what's holding it back?
-- *PARALLELISM*
-  - this needs some intense thought, because this is how we can demonstrate massive speedups over other methods
-
-* unknown / future work
-- simd or other stuff
-  - enough to show i've thought about how to implement it on a microprocessor level as well
-  - gives people who know what they're talking about enough of a ladder to almost immediately do that
+** unknown / future work
+ - simd or other stuff
+   - enough to show i've thought about how to implement it on a microprocessor level as well
+   - gives people who know what they're talking about enough of a ladder to almost immediately do that
 
 * TODO [0/3] running it in reverse to guess grammars *YES, BEFORE PUBLISHING! (BUT AFTER THE FORWARD ALGORITHM)*
+- /this may all be invalidated by [[tweet translation]]/
 - this is a good idea because we have proven the model can be reduced from SAT
   - /and therefore capable of arbitrary computation, or that's the idea/
   - so if you figure out how to tweak the knobs you can maybe assume it'll be a <<perfectly general inference method>>
@@ -88,10 +94,11 @@
       3. shows the idea was mine
 - *this work is likely to spark ideas about the original algorithm!*
 
-** tweet translation
+* tweet translation
 - a hell of a shower thought <2019-01-21 Mon 13:23:24> (MLK day)
-*** why this is the best idea ever
+** why this is the best idea ever
 - allows me to stay at twitter (forever?)
+  - twitter likes using patents /defensively/ (has taken a pledge to do so? *FIND THE WORDING OF THIS PLEDGE*)
 - gives me ML hardware, expertise, and guidance
 - provides a FANTASTIC, maybe the BEST example of why "S.P in reverse" ("P.S."?) is a great idea
   - tweets are <<small bits of language>>, UNLIKE what other machine translation services train on (presumably)
@@ -102,6 +109,29 @@
     - it probably is, though, just because we don't have to ship our text to an external service
       - and if the external service only knows about the individual tweet it's asked to translate?
         - then the fact that tweets are [[small bits of language]] /that twitter alone can train on at scale/ might mean we can achieve domain-specific accuracy that would be /impossible/ for an external service to achieve
+** TODO [0/2] rollout / pitch inside twitter
+- [ ] <<S.P. real benchmarking>> :: start off with S.P. and showing there is some nontrivial speedup against at least lex/bison
+  - <<rsc>>: *this continues the investment in tooling performance as per rsc and expands the already-unprecedented mindshare we have for making compilers fast and easy to use*
+    - (i think this is a very good pitch line)
+  - start off with either of the following, to demonstrate some /nontrivial/ speedup in /specific/ scenarios:
+    1. implementing rsc pre-parsing to decouple file ingestion from compilation
+    2. implementing rsc pre-parsing /along with S.P. at the same time/
+  - it may not be necessary to do it along with pre-parsing for rsc, but pre-parsing may be a good way for me to become familiar enough with the performance characteristics and benchmarking so that i can know whether to make the S.P. proposal
+- [ ] <<P.S. prototype>> :: demonstrate some prototype of P.S. (reverse) working
+  - this might be hard without asking for help
+  - people are /going/ to assume i think this is a good idea because it's my pet project
+    - that can be fine, if we make part of the pitch "give me time to develop this P.S. concept" /along with S.P/
+      - find clear success criteria to propose
+      - iterate on the application
+      - might be possible to get someone else excited about trying this *or showing it doesn't work*
+        - "showing it doesn't work" would be an acceptable end goal for me, because i can then know for a fact it is ok to publish S.P. by itself, and be sure that i'm not missing out on <<the real prize>>
+          - "the real prize" part can be a good pitch line
+            - it explains why /i myself/ really want to investigate it, and /why i really wanted to work with twitter for this/
+              - (along with the relationship of S.P to [[rsc]] work)
+            - in the contex of "i am a compiler person who wants to write compilers" (easy to show), this is believable
+            - it also might excite someone else
+  - "P.S." also sounds like "post script", and if i put that in the proposal, people will think it is funny and also maybe see more how it is the /secondary/ goal
+  - in pitch, can ask for "second half of the year" to work on P.S. (or something)
 
 * old
 A Scala parser combinator library efficiently implementing "simultaneous productions", a model equivalent to a Turing Machine (I think). The method of simultaneous productions allows specifying languages extremely naturally, and maps perfectly to the parser combinator operations I have in mind. It can also be implemented with a linear (?) partitioning algorithm.
