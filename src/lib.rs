@@ -297,8 +297,8 @@ pub mod grammar_indexing {
   // TODO: consider GPU parsing before the above!
   #[derive(Debug, Copy, Clone, PartialEq, Eq, Hash)]
   pub struct StatePair {
-    left: LoweredState,
-    right: LoweredState,
+    pub left: LoweredState,
+    pub right: LoweredState,
   }
 
   #[derive(Debug, Copy, Clone, PartialEq, Eq, Hash)]
@@ -334,13 +334,13 @@ pub mod grammar_indexing {
     // These don't need to be quick to access or otherwise optimized for the algorithm until we
     // create a `Parse` -- these are chosen to reduce redundancy.
     // `M: T -> {Q}`, where `{Q}` is sets of states!
-    token_states_mapping: IndexMap<Tok, Vec<TokenPosition>>,
+    pub token_states_mapping: IndexMap<Tok, Vec<TokenPosition>>,
     // TODO: we don't yet support stack cycles (ignored), or multiple stack paths to the same
     // succeeding state from an initial state (also ignored) -- details in
     // build_pairwise_transitions_table().
     // `A: T x T -> {S}^+_-`, where `{S}^+_-` (LaTeX formatting) is ordered sequences of signed
     // stack symbols!
-    pairwise_state_transition_table: IndexMap<StatePair, Vec<StackDiff>>,
+    pub pairwise_state_transition_table: IndexMap<StatePair, Vec<StackDiff>>,
   }
 
   impl<Tok: PartialEq+Eq+Hash+Copy+Clone> PreprocessedGrammar<Tok> {
@@ -362,9 +362,10 @@ pub mod grammar_indexing {
         ..
       } = grammar;
       let LoweredProductions(prods) = production_graph;
-      /* We would really like to use .flat_map()s here, but it's not clear how to do that while
-       * mutating the global `cur_anon_sym_index` value. When `move` is used on the inner loop, the
-       * value of `cur_anon_sym_index` mysteriously gets reset, even if `move` is also used on the
+      /* We would really like to use .flat_map()s here, but it's not clear how to
+       * do that while mutating the global `cur_anon_sym_index` value. When
+       * `move` is used on the inner loop, the value of `cur_anon_sym_index`
+       * mysteriously gets reset, even if `move` is also used on the
        * outer loop. */
       let mut cur_anon_sym_index: usize = 0;
       let mut really_all_intervals: Vec<ContiguousNonterminalInterval> = vec![];
@@ -444,16 +445,13 @@ pub mod grammar_indexing {
 
     fn produce_token_transition_graph(
       interval_graph: &EpsilonIntervalGraph,
-      alphabet: &Vec<Tok>,
-    ) -> IndexMap<StatePair, Vec<StackDiff>>
-    {
-      panic!("not implemented yet!");
+    ) -> IndexMap<StatePair, Vec<StackDiff>> {
+      panic!("not yet implemented!");
     }
 
     pub fn new(grammar: &TokenGrammar<Tok>) -> Self {
       let terminals_interval_graph = Self::produce_terminals_interval_graph(&grammar);
-      let token_transition_graph =
-        Self::produce_token_transition_graph(&terminals_interval_graph, &grammar.alphabet);
+      let token_transition_graph = Self::produce_token_transition_graph(&terminals_interval_graph);
       PreprocessedGrammar {
         token_states_mapping: grammar.index_token_states(),
         pairwise_state_transition_table: token_transition_graph,
@@ -686,173 +684,178 @@ mod tests {
         ]),
       ])
     );
+  }
 
-    /* TODO: uncomment! */
-    /* let preprocessed_grammar = PreprocessedGrammar::new(&grammar); */
-    /* let first_a = LoweredState::Within(TokenPosition { */
-    /* prod: ProdRef(0), */
-    /* case: CaseRef(0), */
-    /* case_el: CaseElRef(0), */
-    /* }); */
-    /* let first_b = LoweredState::Within(TokenPosition { */
-    /* prod: ProdRef(0), */
-    /* case: CaseRef(0), */
-    /* case_el: CaseElRef(1), */
-    /* }); */
-    /* let second_a = LoweredState::Within(TokenPosition { */
-    /* prod: ProdRef(1), */
-    /* case: CaseRef(0), */
-    /* case_el: CaseElRef(0), */
-    /* }); */
-    /* let second_b = LoweredState::Within(TokenPosition { */
-    /* prod: ProdRef(1), */
-    /* case: CaseRef(0), */
-    /* case_el: CaseElRef(1), */
-    /* }); */
-    /* let third_a = LoweredState::Within(TokenPosition { */
-    /* prod: ProdRef(1), */
-    /* case: CaseRef(1), */
-    /* case_el: CaseElRef(1), */
-    /* }); */
-    /* let a_prod = StackSym(ProdRef(0)); */
-    /* let b_prod = StackSym(ProdRef(1)); */
-    /* assert_eq!( */
-    /* preprocessed_grammar.clone(), */
-    /* PreprocessedGrammar { */
-    /* states: vec![ */
-    /* ( */
-    /* 'a', */
-    /* vec![ */
-    /* TokenPosition { */
-    /* prod: ProdRef(0), */
-    /* case: CaseRef(0), */
-    /* case_el: CaseElRef(0), */
-    /* }, */
-    /* TokenPosition { */
-    /* prod: ProdRef(1), */
-    /* case: CaseRef(0), */
-    /* case_el: CaseElRef(0), */
-    /* }, */
-    /* ], */
-    /* ), */
-    /* ( */
-    /* 'b', */
-    /* vec![ */
-    /* TokenPosition { */
-    /* prod: ProdRef(0), */
-    /* case: CaseRef(0), */
-    /* case_el: CaseElRef(1), */
-    /* }, */
-    /* TokenPosition { */
-    /* prod: ProdRef(1), */
-    /* case: CaseRef(0), */
-    /* case_el: CaseElRef(1), */
-    /* }, */
-    /* ], */
-    /* ), */
-    /* ].iter() */
-    /* .cloned() */
-    /* .collect::<IndexMap<char, Vec<TokenPosition>>>(), */
-    /* transitions: vec![ */
-    /* ( */
-    /* StatePair { */
-    /* left: first_a, */
-    /* right: first_b, */
-    /* }, */
-    /* vec![StackDiff(vec![])], */
-    /* ), */
-    /* ( */
-    /* StatePair { */
-    /* left: second_a, */
-    /* right: second_b, */
-    /* }, */
-    /* vec![StackDiff(vec![])], */
-    /* ), */
-    /* ( */
-    /* StatePair { */
-    /* left: first_b, */
-    /* right: LoweredState::End, */
-    /* }, */
-    /* vec![ */
-    /* StackDiff(vec![StackStep::Negative(a_prod)]), */
-    /* // TODO: this is currently missing! this happens because a prod ref to
-     * "a" is at the */
-    /* // end of the single case of the "b" production -- we can recognize */
-    /* // this case in index_tokens() (ugh) and propagate it (probably not */
-    /* // that hard, could be done by adding an "end" case to the */
-    /* // `GrammarVertex` enum!)! */
-    /* StackDiff(vec![ */
-    /* StackStep::Negative(a_prod), */
-    /* StackStep::Negative(b_prod), */
-    /* ]), */
-    /* ], */
-    /* ), */
-    /* ( */
-    /* StatePair { */
-    /* left: third_a, */
-    /* right: LoweredState::End, */
-    /* }, */
-    /* vec![StackDiff(vec![StackStep::Negative(b_prod)])], */
-    /* ), */
-    /* ( */
-    /* StatePair { */
-    /* left: first_b, */
-    /* right: first_a, */
-    /* }, */
-    /* vec![StackDiff(vec![ */
-    /* StackStep::Negative(a_prod), */
-    /* StackStep::Positive(a_prod), */
-    /* ])], */
-    /* ), */
-    /* ( */
-    /* StatePair { */
-    /* left: first_b, */
-    /* right: second_a, */
-    /* }, */
-    /* vec![StackDiff(vec![ */
-    /* StackStep::Negative(a_prod), */
-    /* StackStep::Positive(b_prod), */
-    /* ])], */
-    /* ), */
-    /* ( */
-    /* StatePair { */
-    /* left: first_b, */
-    /* right: third_a, */
-    /* }, */
-    /* vec![StackDiff(vec![StackStep::Negative(a_prod)])], */
-    /* ), */
-    /* ( */
-    /* StatePair { */
-    /* left: second_b, */
-    /* right: first_a, */
-    /* }, */
-    /* vec![StackDiff(vec![StackStep::Positive(a_prod)])], */
-    /* ), */
-    /* ( */
-    /* StatePair { */
-    /* left: LoweredState::Start, */
-    /* right: first_a, */
-    /* }, */
-    /* vec![ */
-    /* StackDiff(vec![StackStep::Positive(a_prod)]), */
-    /* StackDiff(vec![ */
-    /* StackStep::Positive(b_prod), */
-    /* StackStep::Positive(a_prod), */
-    /* ]), */
-    /* ], */
-    /* ), */
-    /* ( */
-    /* StatePair { */
-    /* left: LoweredState::Start, */
-    /* right: second_a, */
-    /* }, */
-    /* vec![StackDiff(vec![StackStep::Positive(b_prod)])], */
-    /* ), */
-    /* ].iter() */
-    /* .cloned() */
-    /* .collect::<IndexMap<StatePair, Vec<StackDiff>>>(), */
-    /* } */
-    /* ); */
+
+  #[test]
+  fn noncyclic_token_transition_graph() {
+    let prods = non_cyclic_productions();
+    let grammar = TokenGrammar::new(&prods);
+    let preprocessed_grammar = PreprocessedGrammar::new(&grammar);
+    let first_a = LoweredState::Within(TokenPosition {
+      prod: ProdRef(0),
+      case: CaseRef(0),
+      case_el: CaseElRef(0),
+    });
+    let first_b = LoweredState::Within(TokenPosition {
+      prod: ProdRef(0),
+      case: CaseRef(0),
+      case_el: CaseElRef(1),
+    });
+    let second_a = LoweredState::Within(TokenPosition {
+      prod: ProdRef(1),
+      case: CaseRef(0),
+      case_el: CaseElRef(0),
+    });
+    let second_b = LoweredState::Within(TokenPosition {
+      prod: ProdRef(1),
+      case: CaseRef(0),
+      case_el: CaseElRef(1),
+    });
+    let third_a = LoweredState::Within(TokenPosition {
+      prod: ProdRef(1),
+      case: CaseRef(1),
+      case_el: CaseElRef(1),
+    });
+    let a_prod = StackSym(ProdRef(0));
+    let b_prod = StackSym(ProdRef(1));
+    assert_eq!(
+      preprocessed_grammar.clone(),
+      PreprocessedGrammar {
+        token_states_mapping: vec![
+          (
+            'a',
+            vec![
+              TokenPosition {
+                prod: ProdRef(0),
+                case: CaseRef(0),
+                case_el: CaseElRef(0),
+              },
+              TokenPosition {
+                prod: ProdRef(1),
+                case: CaseRef(0),
+                case_el: CaseElRef(0),
+              },
+            ],
+          ),
+          (
+            'b',
+            vec![
+              TokenPosition {
+                prod: ProdRef(0),
+                case: CaseRef(0),
+                case_el: CaseElRef(1),
+              },
+              TokenPosition {
+                prod: ProdRef(1),
+                case: CaseRef(0),
+                case_el: CaseElRef(1),
+              },
+            ],
+          ),
+        ].iter()
+          .cloned()
+          .collect::<IndexMap<char, Vec<TokenPosition>>>(),
+        pairwise_state_transition_table: vec![
+          (
+            StatePair {
+              left: first_a,
+              right: first_b,
+            },
+            vec![StackDiff(vec![])],
+          ),
+          (
+            StatePair {
+              left: second_a,
+              right: second_b,
+            },
+            vec![StackDiff(vec![])],
+          ),
+          (
+            StatePair {
+              left: first_b,
+              right: LoweredState::End,
+            },
+            vec![
+              StackDiff(vec![StackStep::Negative(a_prod)]),
+              // TODO: this is currently missing! this happens because a prod ref to
+              // "a" is at the
+              // end of the single case of the "b" production -- we can recognize
+              // this case in index_tokens() (ugh) and propagate it (probably not
+              // that hard, could be done by adding an "end" case to the
+              // `GrammarVertex` enum!)!
+              StackDiff(vec![
+                StackStep::Negative(a_prod),
+                StackStep::Negative(b_prod),
+              ]),
+            ],
+          ),
+          (
+            StatePair {
+              left: third_a,
+              right: LoweredState::End,
+            },
+            vec![StackDiff(vec![StackStep::Negative(b_prod)])],
+          ),
+          (
+            StatePair {
+              left: first_b,
+              right: first_a,
+            },
+            vec![StackDiff(vec![
+              StackStep::Negative(a_prod),
+              StackStep::Positive(a_prod),
+            ])],
+          ),
+          (
+            StatePair {
+              left: first_b,
+              right: second_a,
+            },
+            vec![StackDiff(vec![
+              StackStep::Negative(a_prod),
+              StackStep::Positive(b_prod),
+            ])],
+          ),
+          (
+            StatePair {
+              left: first_b,
+              right: third_a,
+            },
+            vec![StackDiff(vec![StackStep::Negative(a_prod)])],
+          ),
+          (
+            StatePair {
+              left: second_b,
+              right: first_a,
+            },
+            vec![StackDiff(vec![StackStep::Positive(a_prod)])],
+          ),
+          (
+            StatePair {
+              left: LoweredState::Start,
+              right: first_a,
+            },
+            vec![
+              StackDiff(vec![StackStep::Positive(a_prod)]),
+              StackDiff(vec![
+                StackStep::Positive(b_prod),
+                StackStep::Positive(a_prod),
+              ]),
+            ],
+          ),
+          (
+            StatePair {
+              left: LoweredState::Start,
+              right: second_a,
+            },
+            vec![StackDiff(vec![StackStep::Positive(b_prod)])],
+          ),
+        ].iter()
+          .cloned()
+          .collect::<IndexMap<StatePair, Vec<StackDiff>>>(),
+      }
+    );
   }
 
   #[test]
