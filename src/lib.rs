@@ -109,6 +109,17 @@ pub mod lowering_to_indices {
     pub case_el: CaseElRef,
   }
 
+  #[cfg(test)]
+  impl TokenPosition {
+    pub fn new(prod_ind: usize, case_ind: usize, case_el_ind: usize) -> Self {
+      TokenPosition {
+        prod: ProdRef(prod_ind),
+        case: CaseRef(case_ind),
+        case_el: CaseElRef(case_el_ind),
+      }
+    }
+  }
+
   /// Graph Representation
 
   // TODO: describe!
@@ -210,6 +221,8 @@ pub mod lowering_to_indices {
         graph: LoweredProductions(prods),
         alphabet,
       } = self;
+      /* TODO: consider making the iteration over the productions into a helper
+       * method! */
       for (prod_ind, the_prod) in prods.iter().enumerate() {
         let cur_prod_ref = ProdRef(prod_ind);
         let ProductionImpl(cases) = the_prod;
@@ -297,21 +310,24 @@ pub mod grammar_indexing {
     Negative(AnonSym),
   }
 
+  #[derive(Debug, Copy, Clone, PartialEq, Eq, Hash)]
+  struct StateRef(usize);
+
   /* Fun fact: I'm pretty sure this /is/ actually an interval graph,
    * describing the continuous strings of terminals in a TokenGrammar! */
   #[derive(Debug, Copy, Clone, PartialEq, Eq, Hash)]
-  enum EpsilonIntervalGraphVertex {
+  enum EpsilonGraphVertex {
     Start(ProdRef),
     End(ProdRef),
     Anon(AnonStepVertex),
-    State(TokRef),
+    State(TokenPosition),
   }
 
   #[derive(Debug, Clone, PartialEq, Eq, Hash)]
-  struct SingleEpsilonInterval(Vec<EpsilonIntervalGraphVertex>);
+  struct ContiguousNonterminalInterval(Vec<EpsilonGraphVertex>);
 
   #[derive(Debug, Clone, PartialEq, Eq, Hash)]
-  struct EpsilonIntervalGraph(Vec<SingleEpsilonInterval>);
+  struct EpsilonIntervalGraph(Vec<ContiguousNonterminalInterval>);
 
   // NB: There is no reference to any `TokenGrammar` -- this is intentional, and
   // I believe makes it easier to have the runtime we want just fall out of the
@@ -330,11 +346,98 @@ pub mod grammar_indexing {
     pairwise_state_transition_table: IndexMap<StatePair, Vec<StackDiff>>,
   }
 
+  /* Intended to reduce visual clutter in the implementation of interval
+   * production. */
+  fn increment_anon_step(cur_sym: &mut AnonSym) -> (EpsilonGraphVertex, EpsilonGraphVertex) {
+    let AnonSym(prev_anon_index) = cur_sym.clone();
+    let new_anon_sym = AnonSym(prev_anon_index + 1);
+    *cur_sym = new_anon_sym;
+    (
+      EpsilonGraphVertex::Anon(AnonStepVertex::Positive(AnonSym(prev_anon_index))),
+      EpsilonGraphVertex::Anon(AnonStepVertex::Negative(AnonSym(prev_anon_index))),
+    )
+  }
+
   impl<Tok: PartialEq+Eq+Hash+Copy+Clone> PreprocessedGrammar<Tok> {
     fn produce_terminals_interval_graph(
       production_graph: &LoweredProductions,
     ) -> EpsilonIntervalGraph {
-      panic!("not implemented yet!")
+      let LoweredProductions(prods) = production_graph;
+      let mut cur_anon_sym = AnonSym(0);
+      let all_intervals: Vec<ContiguousNonterminalInterval> = prods
+        .iter()
+        .enumerate()
+        .flat_map(|(prod_ind, the_prod)| {
+          let cur_prod_ref = ProdRef(prod_ind);
+          let ProductionImpl(cases) = the_prod;
+          cases.iter().enumerate().flat_map(move |(case_ind, the_case)| {
+            let cur_case_ref = CaseRef(case_ind);
+            let CaseImpl(elements_of_case) = the_case;
+            let mut all_intervals_from_this_case: Vec<ContiguousNonterminalInterval> = vec![];
+            let mut cur_elements: Vec<EpsilonGraphVertex> =
+              vec![EpsilonGraphVertex::Start(cur_prod_ref)];
+            for (element_of_case_ind, el) in elements_of_case.iter().enumerate() {
+              let cur_el_ref = CaseElRef(element_of_case_ind);
+              let cur_pos = TokenPosition {
+                prod: cur_prod_ref,
+                case: cur_case_ref,
+                case_el: cur_el_ref,
+              };
+              match el {
+                /* Continue the current interval of nonterminals. */
+                CaseEl::Tok(_) => cur_elements.push(EpsilonGraphVertex::State(cur_pos)),
+                /* The current case invokes a subproduction, so is split into two intervals here,
+                 * using anonymous symbols to keep track of where in this case we jumped off of
+                 * and where we can jump back onto to satisfy this case of this
+                 * production. */
+                CaseEl::Prod(target_subprod_ref) => {
+                  /* Generate anonymous steps for the current subprod split. */
+                  let (pos_anon, neg_anon) = increment_anon_step(&mut cur_anon_sym);
+                  /* Generate the interval terminating at the current subprod split. */
+                  let suffix_for_subprod_split = vec![
+                    pos_anon,
+                    /* We /end/ this interval with a "start" vertex because this is going
+                     * /into/ a subproduction! */
+                    EpsilonGraphVertex::Start(*target_subprod_ref),
+                  ];
+                  /* NB: we empty `cur_elements` here! */
+                  let interval_upto_subprod = ContiguousNonterminalInterval(
+                    cur_elements
+                      .drain(..)
+                      .chain(suffix_for_subprod_split.into_iter())
+                      .collect(),
+                  );
+                  /* NB: Mutate the loop state! */
+                  /* Start a new interval of nonterminals which must come after the current
+                   * subprod split. */
+                  cur_elements.extend(vec![
+                    /* We /start/ with an "end" vertex because this comes /out/ of a
+                     * subproduction! */
+                    EpsilonGraphVertex::End(*target_subprod_ref),
+                    neg_anon,
+                  ]);
+                  /* Register the interval we just cut off in the results list. */
+                  all_intervals_from_this_case.push(interval_upto_subprod);
+                },
+              }
+            }
+            /* Construct the interval of all remaining nonterminals to the end of the
+             * production. */
+            let suffix_for_end_of_case = vec![EpsilonGraphVertex::End(cur_prod_ref)];
+            let final_interval = ContiguousNonterminalInterval(
+              cur_elements
+                .into_iter()
+                .chain(suffix_for_end_of_case.into_iter())
+                .collect(),
+            );
+            /* Register the interval of all remaining nonterminals in the results list. */
+            all_intervals_from_this_case.push(final_interval);
+            /* Return all the intervals from this case. */
+            all_intervals_from_this_case.into_iter()
+          })
+        })
+        .collect();
+      EpsilonIntervalGraph(all_intervals)
     }
 
     fn produce_token_transition_graph(
@@ -434,30 +537,32 @@ mod tests {
   /* } */
 
   #[test]
-  fn preprocessed_state_for_non_cyclic_productions() {
-    let prods = SimultaneousProductions(
-      [
-        (
-          ProductionReference::new("a"),
-          Production(vec![Case(vec![CaseElement::Lit(Literal::new("ab"))])]),
-        ),
-        (
-          ProductionReference::new("b"),
-          Production(vec![
-            Case(vec![
-              CaseElement::Lit(Literal::new("ab")),
-              CaseElement::Prod(ProductionReference::new("a")),
-            ]),
-            Case(vec![
-              CaseElement::Prod(ProductionReference::new("a")),
-              CaseElement::Lit(Literal::new("a")),
-            ]),
-          ]),
-        ),
-      ].iter()
-        .cloned()
-        .collect(),
+  fn token_grammar_unsorted_alphabet() {
+    let prods = SimultaneousProductions([
+      (ProductionReference::new("xxx"),
+       Production(vec![
+         Case(vec![CaseElement::Lit(Literal::new("cab"))])
+       ])),
+    ].iter().cloned().collect());
+    let grammar = TokenGrammar::new(&prods);
+    assert_eq!(
+      grammar.clone(),
+      TokenGrammar {
+        alphabet: vec!['c', 'a', 'b'],
+        graph: LoweredProductions(vec![
+          ProductionImpl(vec![CaseImpl(vec![
+            CaseEl::Tok(TokRef(0)),
+            CaseEl::Tok(TokRef(1)),
+            CaseEl::Tok(TokRef(2)),
+          ])]),
+        ])
+      }
     );
+  }
+
+  #[test]
+  fn token_grammar_construction() {
+    let prods = non_cyclic_productions();
     let grammar = TokenGrammar::new(&prods);
     assert_eq!(
       grammar.clone(),
@@ -479,32 +584,79 @@ mod tests {
         ]),
       }
     );
+  }
+
+  #[test]
+  fn token_grammar_state_indexing() {
+    let prods = non_cyclic_productions();
+    let grammar = TokenGrammar::new(&prods);
+    assert_eq!(
+      grammar.index_token_states(),
+      [
+        (
+          'a',
+          vec![
+            TokenPosition::new(0, 0, 0),
+            TokenPosition::new(1, 0, 0),
+            TokenPosition::new(1, 1, 1),
+          ]
+        ),
+        (
+          'b',
+          vec![
+            TokenPosition::new(0, 0, 1),
+            TokenPosition::new(1, 0, 1),
+          ],
+        ),
+      ].iter()
+        .cloned()
+        .collect::<IndexMap<_, _>>(),
+    )
+  }
+
+  #[test]
+  fn terminals_interval_graph() {
+    /* let prods = basic_productions(); */
+    /* let grammar = TokenGrammar::new(&prods); */
+    /* let interval_graph = PreprocessedGrammar::produce_terminals_interval_graph(&grammar.graph); */
+    /* assert_eq!( */
+    /*   interval_graph.clone(), */
+    /*   EpsilonIntervalGraph(vec![ */
+    /*     ContiguousNonterminalInterval(vec![ */
+    /*       EpsilonGraphVertex::Start(ProdRef("P_1")), */
+    /*       EpsilonGraphVertex::State(TokenPosition { */
+
+    /*       }), */
+    /*     ]), */
+    /*   ]) */
+    /* ); */
+
     /* TODO: uncomment! */
     /* let preprocessed_grammar = PreprocessedGrammar::new(&grammar); */
     /* let first_a = LoweredState::Within(TokenPosition { */
-    /*   prod: ProdRef(0), */
-    /*   case: CaseRef(0), */
-    /*   case_el: CaseElRef(0), */
+    /* prod: ProdRef(0), */
+    /* case: CaseRef(0), */
+    /* case_el: CaseElRef(0), */
     /* }); */
     /* let first_b = LoweredState::Within(TokenPosition { */
-    /*   prod: ProdRef(0), */
-    /*   case: CaseRef(0), */
-    /*   case_el: CaseElRef(1), */
+    /* prod: ProdRef(0), */
+    /* case: CaseRef(0), */
+    /* case_el: CaseElRef(1), */
     /* }); */
     /* let second_a = LoweredState::Within(TokenPosition { */
-    /*   prod: ProdRef(1), */
-    /*   case: CaseRef(0), */
-    /*   case_el: CaseElRef(0), */
+    /* prod: ProdRef(1), */
+    /* case: CaseRef(0), */
+    /* case_el: CaseElRef(0), */
     /* }); */
     /* let second_b = LoweredState::Within(TokenPosition { */
-    /*   prod: ProdRef(1), */
-    /*   case: CaseRef(0), */
-    /*   case_el: CaseElRef(1), */
+    /* prod: ProdRef(1), */
+    /* case: CaseRef(0), */
+    /* case_el: CaseElRef(1), */
     /* }); */
     /* let third_a = LoweredState::Within(TokenPosition { */
-    /*   prod: ProdRef(1), */
-    /*   case: CaseRef(1), */
-    /*   case_el: CaseElRef(1), */
+    /* prod: ProdRef(1), */
+    /* case: CaseRef(1), */
+    /* case_el: CaseElRef(1), */
     /* }); */
     /* let a_prod = StackSym(ProdRef(0)); */
     /* let b_prod = StackSym(ProdRef(1)); */
@@ -662,5 +814,70 @@ mod tests {
         .collect(),
     );
     TokenGrammar::new(&prods);
+  }
+
+  fn non_cyclic_productions() -> SimultaneousProductions<char> {
+    SimultaneousProductions(
+      [
+        (
+          ProductionReference::new("a"),
+          Production(vec![Case(vec![CaseElement::Lit(Literal::new("ab"))])]),
+        ),
+        (
+          ProductionReference::new("b"),
+          Production(vec![
+            Case(vec![
+              CaseElement::Lit(Literal::new("ab")),
+              CaseElement::Prod(ProductionReference::new("a")),
+            ]),
+            Case(vec![
+              CaseElement::Prod(ProductionReference::new("a")),
+              CaseElement::Lit(Literal::new("a")),
+            ]),
+          ]),
+        ),
+      ].iter()
+        .cloned()
+        .collect(),
+    )
+  }
+
+  fn basic_productions() -> SimultaneousProductions<char> {
+    SimultaneousProductions(
+      [
+        (
+          ProductionReference::new("P_1"),
+          Production(vec![
+            Case(vec![CaseElement::Lit(Literal::new("abc"))]),
+            Case(vec![
+              CaseElement::Lit(Literal::new("a")),
+              CaseElement::Prod(ProductionReference::new("P_1")),
+              CaseElement::Lit(Literal::new("c")),
+            ]),
+            Case(vec![
+              CaseElement::Lit(Literal::new("bc")),
+              CaseElement::Prod(ProductionReference::new("P_2")),
+            ])
+          ]),
+        ),
+        (
+          ProductionReference::new("P_2"),
+          Production(vec![
+            Case(vec![
+              CaseElement::Prod(ProductionReference::new("P_1")),
+            ]),
+            Case(vec![
+              CaseElement::Prod(ProductionReference::new("P_2")),
+            ]),
+            Case(vec![
+              CaseElement::Prod(ProductionReference::new("P_1")),
+              CaseElement::Lit(Literal::new("bc")),
+            ]),
+          ]),
+        ),
+      ].iter()
+        .cloned()
+        .collect(),
+    )
   }
 }
