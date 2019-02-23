@@ -302,21 +302,18 @@ pub mod grammar_indexing {
   }
 
   #[derive(Debug, Copy, Clone, PartialEq, Eq, Hash)]
-  struct AnonSym(usize);
+  pub struct AnonSym(pub usize);
 
   #[derive(Debug, Copy, Clone, PartialEq, Eq, Hash)]
-  enum AnonStepVertex {
+  pub enum AnonStepVertex {
     Positive(AnonSym),
     Negative(AnonSym),
   }
 
-  #[derive(Debug, Copy, Clone, PartialEq, Eq, Hash)]
-  struct StateRef(usize);
-
   /* Fun fact: I'm pretty sure this /is/ actually an interval graph,
    * describing the continuous strings of terminals in a TokenGrammar! */
   #[derive(Debug, Copy, Clone, PartialEq, Eq, Hash)]
-  enum EpsilonGraphVertex {
+  pub enum EpsilonGraphVertex {
     Start(ProdRef),
     End(ProdRef),
     Anon(AnonStepVertex),
@@ -324,10 +321,10 @@ pub mod grammar_indexing {
   }
 
   #[derive(Debug, Clone, PartialEq, Eq, Hash)]
-  struct ContiguousNonterminalInterval(Vec<EpsilonGraphVertex>);
+  pub struct ContiguousNonterminalInterval(pub Vec<EpsilonGraphVertex>);
 
   #[derive(Debug, Clone, PartialEq, Eq, Hash)]
-  struct EpsilonIntervalGraph(Vec<ContiguousNonterminalInterval>);
+  pub struct EpsilonIntervalGraph(pub Vec<ContiguousNonterminalInterval>);
 
   // NB: There is no reference to any `TokenGrammar` -- this is intentional, and
   // I believe makes it easier to have the runtime we want just fall out of the
@@ -346,98 +343,103 @@ pub mod grammar_indexing {
     pairwise_state_transition_table: IndexMap<StatePair, Vec<StackDiff>>,
   }
 
-  /* Intended to reduce visual clutter in the implementation of interval
-   * production. */
-  fn increment_anon_step(cur_sym: &mut AnonSym) -> (EpsilonGraphVertex, EpsilonGraphVertex) {
-    let AnonSym(prev_anon_index) = cur_sym.clone();
-    let new_anon_sym = AnonSym(prev_anon_index + 1);
-    *cur_sym = new_anon_sym;
-    (
-      EpsilonGraphVertex::Anon(AnonStepVertex::Positive(AnonSym(prev_anon_index))),
-      EpsilonGraphVertex::Anon(AnonStepVertex::Negative(AnonSym(prev_anon_index))),
-    )
-  }
-
   impl<Tok: PartialEq+Eq+Hash+Copy+Clone> PreprocessedGrammar<Tok> {
-    fn produce_terminals_interval_graph(
-      production_graph: &LoweredProductions,
-    ) -> EpsilonIntervalGraph {
+    /* Intended to reduce visual clutter in the implementation of interval
+     * production. */
+    fn make_pos_neg_anon_steps(cur_index: usize) -> (EpsilonGraphVertex, EpsilonGraphVertex) {
+      (
+        EpsilonGraphVertex::Anon(AnonStepVertex::Positive(AnonSym(cur_index))),
+        EpsilonGraphVertex::Anon(AnonStepVertex::Negative(AnonSym(cur_index))),
+      )
+    }
+
+    pub fn produce_terminals_interval_graph(grammar: &TokenGrammar<Tok>) -> EpsilonIntervalGraph {
+      /* We would like to just accept a LoweredProductions here, but we call this
+       * method directly in testing, and without the whole grammar object
+       * the type ascription is ambiguous. */
+      let TokenGrammar {
+        graph: production_graph,
+        ..
+      } = grammar;
       let LoweredProductions(prods) = production_graph;
-      let mut cur_anon_sym = AnonSym(0);
-      let all_intervals: Vec<ContiguousNonterminalInterval> = prods
-        .iter()
-        .enumerate()
-        .flat_map(|(prod_ind, the_prod)| {
-          let cur_prod_ref = ProdRef(prod_ind);
-          let ProductionImpl(cases) = the_prod;
-          cases.iter().enumerate().flat_map(move |(case_ind, the_case)| {
-            let cur_case_ref = CaseRef(case_ind);
-            let CaseImpl(elements_of_case) = the_case;
-            let mut all_intervals_from_this_case: Vec<ContiguousNonterminalInterval> = vec![];
-            let mut cur_elements: Vec<EpsilonGraphVertex> =
-              vec![EpsilonGraphVertex::Start(cur_prod_ref)];
-            for (element_of_case_ind, el) in elements_of_case.iter().enumerate() {
-              let cur_el_ref = CaseElRef(element_of_case_ind);
-              let cur_pos = TokenPosition {
-                prod: cur_prod_ref,
-                case: cur_case_ref,
-                case_el: cur_el_ref,
-              };
-              match el {
-                /* Continue the current interval of nonterminals. */
-                CaseEl::Tok(_) => cur_elements.push(EpsilonGraphVertex::State(cur_pos)),
-                /* The current case invokes a subproduction, so is split into two intervals here,
-                 * using anonymous symbols to keep track of where in this case we jumped off of
-                 * and where we can jump back onto to satisfy this case of this
-                 * production. */
-                CaseEl::Prod(target_subprod_ref) => {
-                  /* Generate anonymous steps for the current subprod split. */
-                  let (pos_anon, neg_anon) = increment_anon_step(&mut cur_anon_sym);
-                  /* Generate the interval terminating at the current subprod split. */
-                  let suffix_for_subprod_split = vec![
-                    pos_anon,
-                    /* We /end/ this interval with a "start" vertex because this is going
-                     * /into/ a subproduction! */
-                    EpsilonGraphVertex::Start(*target_subprod_ref),
-                  ];
-                  /* NB: we empty `cur_elements` here! */
-                  let interval_upto_subprod = ContiguousNonterminalInterval(
-                    cur_elements
-                      .drain(..)
-                      .chain(suffix_for_subprod_split.into_iter())
-                      .collect(),
-                  );
-                  /* NB: Mutate the loop state! */
-                  /* Start a new interval of nonterminals which must come after the current
-                   * subprod split. */
-                  cur_elements.extend(vec![
-                    /* We /start/ with an "end" vertex because this comes /out/ of a
-                     * subproduction! */
-                    EpsilonGraphVertex::End(*target_subprod_ref),
-                    neg_anon,
-                  ]);
-                  /* Register the interval we just cut off in the results list. */
-                  all_intervals_from_this_case.push(interval_upto_subprod);
-                },
-              }
+      /* We would really like to use .flat_map()s here, but it's not clear how to do that while
+       * mutating the global `cur_anon_sym_index` value. When `move` is used on the inner loop, the
+       * value of `cur_anon_sym_index` mysteriously gets reset, even if `move` is also used on the
+       * outer loop. */
+      let mut cur_anon_sym_index: usize = 0;
+      let mut really_all_intervals: Vec<ContiguousNonterminalInterval> = vec![];
+      for (prod_ind, the_prod) in prods.iter().enumerate() {
+        let cur_prod_ref = ProdRef(prod_ind);
+        let ProductionImpl(cases) = the_prod;
+        for (case_ind, the_case) in cases.iter().enumerate() {
+          let cur_case_ref = CaseRef(case_ind);
+          let CaseImpl(elements_of_case) = the_case;
+          let mut all_intervals_from_this_case: Vec<ContiguousNonterminalInterval> = vec![];
+          let mut cur_elements: Vec<EpsilonGraphVertex> =
+            vec![EpsilonGraphVertex::Start(cur_prod_ref)];
+          for (element_of_case_ind, el) in elements_of_case.iter().enumerate() {
+            let cur_el_ref = CaseElRef(element_of_case_ind);
+            let cur_pos = TokenPosition {
+              prod: cur_prod_ref,
+              case: cur_case_ref,
+              case_el: cur_el_ref,
+            };
+            match el {
+              /* Continue the current interval of nonterminals. */
+              CaseEl::Tok(_) => cur_elements.push(EpsilonGraphVertex::State(cur_pos)),
+              /* The current case invokes a subproduction, so is split into two intervals
+               * here, using anonymous symbols to keep track of where in
+               * this case we jumped off of and where we can jump back
+               * onto to satisfy this case of this production. */
+              CaseEl::Prod(target_subprod_ref) => {
+                /* Generate anonymous steps for the current subprod split. */
+                let (pos_anon, neg_anon) = Self::make_pos_neg_anon_steps(cur_anon_sym_index);
+                /* Generate the interval terminating at the current subprod split. */
+                let suffix_for_subprod_split = vec![
+                  pos_anon,
+                  /* We /end/ this interval with a "start" vertex because this is going
+                   * /into/ a subproduction! */
+                  EpsilonGraphVertex::Start(*target_subprod_ref),
+                ];
+                /* NB: we empty `cur_elements` here! */
+                let interval_upto_subprod = ContiguousNonterminalInterval(
+                  cur_elements
+                    .drain(..)
+                    .chain(suffix_for_subprod_split.into_iter())
+                    .collect(),
+                );
+                /* NB: Mutate the loop state! */
+                /* Start a new interval of nonterminals which must come after the current
+                 * subprod split. */
+                cur_elements.extend(vec![
+                  /* We /start/ with an "end" vertex because this comes /out/ of a
+                   * subproduction! */
+                  EpsilonGraphVertex::End(*target_subprod_ref),
+                  neg_anon,
+                ]);
+                /* Bump the loop-global anonymous symbol index! */
+                cur_anon_sym_index = cur_anon_sym_index + 1;
+                /* Register the interval we just cut off in the results list. */
+                all_intervals_from_this_case.push(interval_upto_subprod);
+              },
             }
-            /* Construct the interval of all remaining nonterminals to the end of the
-             * production. */
-            let suffix_for_end_of_case = vec![EpsilonGraphVertex::End(cur_prod_ref)];
-            let final_interval = ContiguousNonterminalInterval(
-              cur_elements
-                .into_iter()
-                .chain(suffix_for_end_of_case.into_iter())
-                .collect(),
-            );
-            /* Register the interval of all remaining nonterminals in the results list. */
-            all_intervals_from_this_case.push(final_interval);
-            /* Return all the intervals from this case. */
-            all_intervals_from_this_case.into_iter()
-          })
-        })
-        .collect();
-      EpsilonIntervalGraph(all_intervals)
+          }
+          /* Construct the interval of all remaining nonterminals to the end of the
+           * production. */
+          let suffix_for_end_of_case = vec![EpsilonGraphVertex::End(cur_prod_ref)];
+          let final_interval = ContiguousNonterminalInterval(
+            cur_elements
+              .into_iter()
+              .chain(suffix_for_end_of_case.into_iter())
+              .collect(),
+          );
+          /* Register the interval of all remaining nonterminals in the results list. */
+          all_intervals_from_this_case.push(final_interval);
+          /* Return all the intervals from this case. */
+          really_all_intervals.extend(all_intervals_from_this_case);
+        }
+      }
+      EpsilonIntervalGraph(really_all_intervals)
     }
 
     fn produce_token_transition_graph(
@@ -449,7 +451,7 @@ pub mod grammar_indexing {
     }
 
     pub fn new(grammar: &TokenGrammar<Tok>) -> Self {
-      let terminals_interval_graph = Self::produce_terminals_interval_graph(&grammar.graph);
+      let terminals_interval_graph = Self::produce_terminals_interval_graph(&grammar);
       let token_transition_graph =
         Self::produce_token_transition_graph(&terminals_interval_graph, &grammar.alphabet);
       PreprocessedGrammar {
@@ -538,24 +540,24 @@ mod tests {
 
   #[test]
   fn token_grammar_unsorted_alphabet() {
-    let prods = SimultaneousProductions([
-      (ProductionReference::new("xxx"),
-       Production(vec![
-         Case(vec![CaseElement::Lit(Literal::new("cab"))])
-       ])),
-    ].iter().cloned().collect());
+    let prods = SimultaneousProductions(
+      [(
+        ProductionReference::new("xxx"),
+        Production(vec![Case(vec![CaseElement::Lit(Literal::new("cab"))])]),
+      )].iter()
+        .cloned()
+        .collect(),
+    );
     let grammar = TokenGrammar::new(&prods);
     assert_eq!(
       grammar.clone(),
       TokenGrammar {
         alphabet: vec!['c', 'a', 'b'],
-        graph: LoweredProductions(vec![
-          ProductionImpl(vec![CaseImpl(vec![
-            CaseEl::Tok(TokRef(0)),
-            CaseEl::Tok(TokRef(1)),
-            CaseEl::Tok(TokRef(2)),
-          ])]),
-        ])
+        graph: LoweredProductions(vec![ProductionImpl(vec![CaseImpl(vec![
+          CaseEl::Tok(TokRef(0)),
+          CaseEl::Tok(TokRef(1)),
+          CaseEl::Tok(TokRef(2)),
+        ])])]),
       }
     );
   }
@@ -603,10 +605,7 @@ mod tests {
         ),
         (
           'b',
-          vec![
-            TokenPosition::new(0, 0, 1),
-            TokenPosition::new(1, 0, 1),
-          ],
+          vec![TokenPosition::new(0, 0, 1), TokenPosition::new(1, 0, 1)],
         ),
       ].iter()
         .cloned()
@@ -616,20 +615,77 @@ mod tests {
 
   #[test]
   fn terminals_interval_graph() {
-    /* let prods = basic_productions(); */
-    /* let grammar = TokenGrammar::new(&prods); */
-    /* let interval_graph = PreprocessedGrammar::produce_terminals_interval_graph(&grammar.graph); */
-    /* assert_eq!( */
-    /*   interval_graph.clone(), */
-    /*   EpsilonIntervalGraph(vec![ */
-    /*     ContiguousNonterminalInterval(vec![ */
-    /*       EpsilonGraphVertex::Start(ProdRef("P_1")), */
-    /*       EpsilonGraphVertex::State(TokenPosition { */
-
-    /*       }), */
-    /*     ]), */
-    /*   ]) */
-    /* ); */
+    let prods = basic_productions();
+    let grammar = TokenGrammar::new(&prods);
+    let interval_graph = PreprocessedGrammar::produce_terminals_interval_graph(&grammar);
+    assert_eq!(
+      interval_graph.clone(),
+      EpsilonIntervalGraph(vec![
+        ContiguousNonterminalInterval(vec![
+          EpsilonGraphVertex::Start(ProdRef(0)),
+          EpsilonGraphVertex::State(TokenPosition::new(0, 0, 0)),
+          EpsilonGraphVertex::State(TokenPosition::new(0, 0, 1)),
+          EpsilonGraphVertex::State(TokenPosition::new(0, 0, 2)),
+          EpsilonGraphVertex::End(ProdRef(0)),
+        ]),
+        ContiguousNonterminalInterval(vec![
+          EpsilonGraphVertex::Start(ProdRef(0)),
+          EpsilonGraphVertex::State(TokenPosition::new(0, 1, 0)),
+          EpsilonGraphVertex::Anon(AnonStepVertex::Positive(AnonSym(0))),
+          EpsilonGraphVertex::Start(ProdRef(0)),
+        ]),
+        ContiguousNonterminalInterval(vec![
+          EpsilonGraphVertex::End(ProdRef(0)),
+          EpsilonGraphVertex::Anon(AnonStepVertex::Negative(AnonSym(0))),
+          EpsilonGraphVertex::State(TokenPosition::new(0, 1, 2)),
+          EpsilonGraphVertex::End(ProdRef(0)),
+        ]),
+        ContiguousNonterminalInterval(vec![
+          EpsilonGraphVertex::Start(ProdRef(0)),
+          EpsilonGraphVertex::State(TokenPosition::new(0, 2, 0)),
+          EpsilonGraphVertex::State(TokenPosition::new(0, 2, 1)),
+          EpsilonGraphVertex::Anon(AnonStepVertex::Positive(AnonSym(1))),
+          EpsilonGraphVertex::Start(ProdRef(1)),
+        ]),
+        ContiguousNonterminalInterval(vec![
+          EpsilonGraphVertex::End(ProdRef(1)),
+          EpsilonGraphVertex::Anon(AnonStepVertex::Negative(AnonSym(1))),
+          EpsilonGraphVertex::End(ProdRef(0)),
+        ]),
+        ContiguousNonterminalInterval(vec![
+          EpsilonGraphVertex::Start(ProdRef(1)),
+          EpsilonGraphVertex::Anon(AnonStepVertex::Positive(AnonSym(2))),
+          EpsilonGraphVertex::Start(ProdRef(0)),
+        ]),
+        ContiguousNonterminalInterval(vec![
+          EpsilonGraphVertex::End(ProdRef(0)),
+          EpsilonGraphVertex::Anon(AnonStepVertex::Negative(AnonSym(2))),
+          EpsilonGraphVertex::End(ProdRef(1)),
+        ]),
+        ContiguousNonterminalInterval(vec![
+          EpsilonGraphVertex::Start(ProdRef(1)),
+          EpsilonGraphVertex::Anon(AnonStepVertex::Positive(AnonSym(3))),
+          EpsilonGraphVertex::Start(ProdRef(1)),
+        ]),
+        ContiguousNonterminalInterval(vec![
+          EpsilonGraphVertex::End(ProdRef(1)),
+          EpsilonGraphVertex::Anon(AnonStepVertex::Negative(AnonSym(3))),
+          EpsilonGraphVertex::End(ProdRef(1)),
+        ]),
+        ContiguousNonterminalInterval(vec![
+          EpsilonGraphVertex::Start(ProdRef(1)),
+          EpsilonGraphVertex::Anon(AnonStepVertex::Positive(AnonSym(4))),
+          EpsilonGraphVertex::Start(ProdRef(0)),
+        ]),
+        ContiguousNonterminalInterval(vec![
+          EpsilonGraphVertex::End(ProdRef(0)),
+          EpsilonGraphVertex::Anon(AnonStepVertex::Negative(AnonSym(4))),
+          EpsilonGraphVertex::State(TokenPosition::new(1, 2, 1)),
+          EpsilonGraphVertex::State(TokenPosition::new(1, 2, 2)),
+          EpsilonGraphVertex::End(ProdRef(1)),
+        ]),
+      ])
+    );
 
     /* TODO: uncomment! */
     /* let preprocessed_grammar = PreprocessedGrammar::new(&grammar); */
@@ -857,18 +913,14 @@ mod tests {
             Case(vec![
               CaseElement::Lit(Literal::new("bc")),
               CaseElement::Prod(ProductionReference::new("P_2")),
-            ])
+            ]),
           ]),
         ),
         (
           ProductionReference::new("P_2"),
           Production(vec![
-            Case(vec![
-              CaseElement::Prod(ProductionReference::new("P_1")),
-            ]),
-            Case(vec![
-              CaseElement::Prod(ProductionReference::new("P_2")),
-            ]),
+            Case(vec![CaseElement::Prod(ProductionReference::new("P_1"))]),
+            Case(vec![CaseElement::Prod(ProductionReference::new("P_2"))]),
             Case(vec![
               CaseElement::Prod(ProductionReference::new("P_1")),
               CaseElement::Lit(Literal::new("bc")),
