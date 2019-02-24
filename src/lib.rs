@@ -20,10 +20,15 @@
 #![feature(fn_traits)]
 
 extern crate indexmap;
+extern crate itertools;
 
 use indexmap::{IndexMap, IndexSet};
+use itertools::Itertools;
 
-use std::{collections::HashMap, hash::Hash};
+use std::{
+  collections::{HashMap, VecDeque},
+  hash::Hash,
+};
 
 pub mod user_api {
   use super::*;
@@ -271,12 +276,18 @@ pub mod grammar_indexing {
     Negative(StackSym),
   }
 
+  #[derive(Debug, Copy, Clone, PartialEq, Eq, Hash)]
+  pub enum NamedOrAnonStep {
+    Named(StackStep),
+    Anon(AnonStep),
+  }
+
   #[derive(Debug, Clone, PartialEq, Eq, Hash)]
-  pub struct StackDiff(pub Vec<StackStep>);
+  pub struct StackDiff(pub Vec<NamedOrAnonStep>);
 
   impl StackDiff {
     fn sequence(&self, other: &Self) -> Self {
-      let combined: Vec<StackStep> = self.0.iter().chain(other.0.iter()).cloned().collect();
+      let combined: Vec<NamedOrAnonStep> = self.0.iter().chain(other.0.iter()).cloned().collect();
       StackDiff(combined)
     }
   }
@@ -286,6 +297,17 @@ pub mod grammar_indexing {
     Start,
     End,
     Within(TokenPosition),
+  }
+
+  impl LoweredState {
+    fn from_vertex(vtx: EpsilonGraphVertex) -> Self {
+      match vtx {
+        EpsilonGraphVertex::Start(_) => LoweredState::Start,
+        EpsilonGraphVertex::End(_) => LoweredState::End,
+        EpsilonGraphVertex::State(pos) => LoweredState::Within(pos),
+        EpsilonGraphVertex::Anon(_) => panic!("an anonymous vertex cannot start an interval!"),
+      }
+    }
   }
 
   // TODO: consider the relationship between populating token transitions in the
@@ -305,7 +327,7 @@ pub mod grammar_indexing {
   pub struct AnonSym(pub usize);
 
   #[derive(Debug, Copy, Clone, PartialEq, Eq, Hash)]
-  pub enum AnonStepVertex {
+  pub enum AnonStep {
     Positive(AnonSym),
     Negative(AnonSym),
   }
@@ -316,7 +338,7 @@ pub mod grammar_indexing {
   pub enum EpsilonGraphVertex {
     Start(ProdRef),
     End(ProdRef),
-    Anon(AnonStepVertex),
+    Anon(AnonStep),
     State(TokenPosition),
   }
 
@@ -325,6 +347,318 @@ pub mod grammar_indexing {
 
   #[derive(Debug, Clone, PartialEq, Eq, Hash)]
   pub struct EpsilonIntervalGraph(pub Vec<ContiguousNonterminalInterval>);
+
+  impl EpsilonIntervalGraph {
+    pub fn find_start_end_indices(&self) -> IndexMap<ProdRef, StartEndEpsilonIntervals> {
+      let mut epsilon_subscripts_index: IndexMap<ProdRef, StartEndEpsilonIntervals> =
+        IndexMap::new();
+      let EpsilonIntervalGraph(all_intervals) = self;
+      for interval in all_intervals.iter() {
+        let ContiguousNonterminalInterval(vertices) = interval.clone();
+        /* We should always have a start and end node. */
+        assert!(vertices.len() >= 2);
+        let first = vertices.get(0).unwrap();
+        match first {
+          EpsilonGraphVertex::Start(start_prod_ref) => {
+            let intervals_for_this_prod = epsilon_subscripts_index.entry(*start_prod_ref)
+              .or_insert(StartEndEpsilonIntervals::new());
+            (*intervals_for_this_prod).start_epsilons.push(interval.clone());
+          },
+          EpsilonGraphVertex::End(end_prod_ref) => {
+            let intervals_for_this_prod = epsilon_subscripts_index.entry(*end_prod_ref)
+              .or_insert(StartEndEpsilonIntervals::new());
+            (*intervals_for_this_prod).end_epsilons.push(interval.clone());
+          },
+          _ => panic!("the beginning of an interval should always be a start (epsilon) or end (epsilon prime) vertex"),
+        }
+      }
+      epsilon_subscripts_index
+    }
+
+    pub fn produce_token_transition_graph(&self) -> IndexMap<StatePair, Vec<StackDiff>> {
+      let intervals_indexed_by_start_and_end = self.find_start_end_indices();
+      let EpsilonIntervalGraph(all_intervals) = self;
+      let mut all_completed_pairs_with_vertices: Vec<CompletedStatePairWithVertices> = vec![];
+      let mut traversal_queue: VecDeque<IntermediateTokenTransition> = all_intervals
+        .iter()
+        .map(IntermediateTokenTransition::new)
+        .collect();
+      /* TODO: this doesn't handle cycles yet! */
+      while !traversal_queue.is_empty() {
+        let cur_transition = traversal_queue.pop_front().unwrap();
+        let TransitionIterationResult { completed, todo } =
+          cur_transition.iterate_and_maybe_complete(&intervals_indexed_by_start_and_end);
+        all_completed_pairs_with_vertices.extend(completed);
+        traversal_queue.extend(todo);
+      }
+      /* TODO: collect completed pairs with vertices into stack diffs! */
+      let grouped_nonterminal_strings: IndexMap<
+          StatePair,
+        Vec<ContiguousNonterminalInterval>,
+        > = all_completed_pairs_with_vertices
+        .iter()
+        .group_by(|CompletedStatePairWithVertices { state_pair, .. }| state_pair)
+        .into_iter()
+        .map(|(pair, grouped)| {
+          let intervals: Vec<ContiguousNonterminalInterval> = grouped
+            .map(|CompletedStatePairWithVertices { interval, .. }| interval)
+            .cloned()
+            .collect();
+          (pair.clone(), intervals)
+        })
+        .collect();
+      let converted_into_transitions: IndexMap<StatePair, Vec<StackDiff>> =
+        grouped_nonterminal_strings
+        .into_iter()
+        .map(|(pair, intervals)| {
+          let stack_diffs: Vec<StackDiff> = intervals
+            .iter()
+            .map(|ContiguousNonterminalInterval(nonterminals)| {
+              let cur_stack_steps: Vec<NamedOrAnonStep> = nonterminals
+                .iter()
+                .flat_map(|vtx| match vtx {
+                  EpsilonGraphVertex::Start(prod_ref) => vec![NamedOrAnonStep::Named(
+                    StackStep::Positive(StackSym(*prod_ref)),
+                  )],
+                  EpsilonGraphVertex::End(prod_ref) => vec![NamedOrAnonStep::Named(
+                    StackStep::Negative(StackSym(*prod_ref)),
+                  )],
+                  EpsilonGraphVertex::Anon(anon_step) => vec![NamedOrAnonStep::Anon(*anon_step)],
+                  EpsilonGraphVertex::State(_) => {
+                    /* NB: This should always be at the end of the "nonterminals"! */
+                    vec![]
+                  },
+                })
+                .collect();
+              StackDiff(cur_stack_steps)
+            })
+            .collect();
+          (pair, stack_diffs)
+        })
+        .collect();
+      converted_into_transitions
+    }
+  }
+
+  /* For some given ProdRef, the intervals of nonterminals which begin at
+   * epsilon (start) or epsilon prime (end) for the given ProdRef. This is
+   * only a concept in the interval graph and is flattened to a single
+   * epsilon/epsilon prime when the PreprocessedGrammar is finally
+   * constructed. */
+  #[derive(Debug, Clone, PartialEq, Eq, Hash)]
+  pub struct StartEndEpsilonIntervals {
+    pub start_epsilons: Vec<ContiguousNonterminalInterval>,
+    pub end_epsilons: Vec<ContiguousNonterminalInterval>,
+  }
+
+  impl StartEndEpsilonIntervals {
+    fn new() -> Self {
+      StartEndEpsilonIntervals {
+        start_epsilons: vec![],
+        end_epsilons: vec![],
+      }
+    }
+  }
+
+  struct CompletedStatePairWithVertices {
+    state_pair: StatePair,
+    interval: ContiguousNonterminalInterval,
+  }
+
+  struct TransitionIterationResult {
+    completed: Vec<CompletedStatePairWithVertices>,
+    todo: Vec<IntermediateTokenTransition>,
+  }
+
+  struct IntermediateTokenTransition {
+    start: EpsilonGraphVertex,
+    cur_traversal_intermediate_nonterminals: Vec<EpsilonGraphVertex>,
+    rest_of_interval: Vec<EpsilonGraphVertex>,
+  }
+
+  impl IntermediateTokenTransition {
+    fn new(wrapped_interval: &ContiguousNonterminalInterval) -> Self {
+      let ContiguousNonterminalInterval(interval) = wrapped_interval;
+      /* All intervals have a start and end node. */
+      assert!(interval.len() >= 2);
+      let start = interval.get(0).unwrap();
+      let rest_of_interval = interval.get(1..).unwrap().to_vec();
+      IntermediateTokenTransition {
+        start: *start,
+        cur_traversal_intermediate_nonterminals: vec![],
+        rest_of_interval,
+      }
+    }
+
+    fn iterate_and_maybe_complete(
+      &self,
+      indexed_intervals: &IndexMap<ProdRef, StartEndEpsilonIntervals>,
+    ) -> TransitionIterationResult
+    {
+      assert!(self.rest_of_interval.len() > 0);
+      let next = self.rest_of_interval.get(0).unwrap();
+      match next {
+        /* Complete a transition, but also add more continuing from the start vertex. */
+        EpsilonGraphVertex::Start(start_prod_ref) => {
+          /* We only have this single next node, since we always start or end at a
+           * start or end. */
+          assert_eq!(self.rest_of_interval.len(), 1);
+          let completed_path_makes_sense = match self.start {
+            EpsilonGraphVertex::State(_) => true,
+            EpsilonGraphVertex::Start(_) => false,
+            EpsilonGraphVertex::End(_) => false,
+            EpsilonGraphVertex::Anon(_) => {
+              panic!("an anonymous vertex should not be at the start of an interval!")
+            },
+          };
+          let completed = if completed_path_makes_sense {
+            let completed_state_pair = StatePair {
+              left: LoweredState::from_vertex(self.start),
+              right: LoweredState::Start,
+            };
+            let relevant_interval_with_terminals: Vec<EpsilonGraphVertex> = vec![
+              self.start.clone(),
+            ].iter()
+              .chain(self.cur_traversal_intermediate_nonterminals.clone().iter())
+              .chain(vec![next.clone()].iter())
+              .cloned()
+              .collect();
+            let single_completion = CompletedStatePairWithVertices {
+              state_pair: completed_state_pair,
+              interval: ContiguousNonterminalInterval(relevant_interval_with_terminals),
+            };
+            vec![single_completion]
+          } else {
+            vec![]
+          };
+          let passthrough_intermediates: Vec<IntermediateTokenTransition> = indexed_intervals
+            .get(start_prod_ref)
+            .expect("all `ProdRef`s should have been accounted for when grouping by start and end intervals")
+            .start_epsilons
+            .iter()
+            .map(|ContiguousNonterminalInterval(next_vertices)| {
+              IntermediateTokenTransition {
+                start: self.start,
+                cur_traversal_intermediate_nonterminals: self.cur_traversal_intermediate_nonterminals.clone(),
+                /* Get the rest of the interval without the epsilon node that it starts with. */
+                rest_of_interval: next_vertices.get(1..).unwrap().to_vec(),
+              }
+            })
+            .collect();
+          TransitionIterationResult {
+            completed,
+            todo: passthrough_intermediates,
+          }
+        },
+        /* Very similary to ending on a Start vertex. */
+        EpsilonGraphVertex::End(end_prod_ref) => {
+          /* We only have this single next node, since we always start or end at a
+           * start or end. */
+          assert_eq!(self.rest_of_interval.len(), 1);
+          let completed_path_makes_sense = match self.start {
+            EpsilonGraphVertex::State(_) => true,
+            EpsilonGraphVertex::Start(_) => true,
+            EpsilonGraphVertex::End(_) => false,
+            EpsilonGraphVertex::Anon(_) => {
+              panic!("an anonymous vertex should not be at the start of an interval!")
+            },
+          };
+          let completed = if completed_path_makes_sense {
+            let completed_state_pair = StatePair {
+              left: LoweredState::from_vertex(self.start),
+              right: LoweredState::End,
+            };
+            let relevant_interval_with_terminals: Vec<EpsilonGraphVertex> = vec![
+              self.start.clone(),
+            ].iter()
+              .chain(self.cur_traversal_intermediate_nonterminals.clone().iter())
+              .chain(vec![next.clone()].iter())
+              .cloned()
+              .collect();
+            let single_completion = CompletedStatePairWithVertices {
+              state_pair: completed_state_pair,
+              interval: ContiguousNonterminalInterval(relevant_interval_with_terminals),
+            };
+            vec![single_completion]
+          } else {
+            vec![]
+          };
+          let passthrough_intermediates: Vec<IntermediateTokenTransition> = indexed_intervals
+            .get(end_prod_ref)
+            .expect("all `ProdRef`s should have been accounted for when grouping by start and end intervals")
+            .end_epsilons
+            .iter()
+            .map(|ContiguousNonterminalInterval(next_vertices)| {
+              IntermediateTokenTransition {
+                start: self.start,
+                cur_traversal_intermediate_nonterminals: self.cur_traversal_intermediate_nonterminals.clone(),
+                /* Get the rest of the interval without the epsilon node that it starts with. */
+                rest_of_interval: next_vertices.get(1..).unwrap().to_vec(),
+              }
+            })
+            .collect();
+          TransitionIterationResult {
+            completed,
+            todo: passthrough_intermediates,
+          }
+        },
+        /* `next` is the anonymous vertex, which is all we need it for. */
+        EpsilonGraphVertex::Anon(_) => TransitionIterationResult {
+          completed: vec![],
+          todo: vec![IntermediateTokenTransition {
+            start: self.start,
+            cur_traversal_intermediate_nonterminals: self
+              .cur_traversal_intermediate_nonterminals
+              .iter()
+              .chain(vec![next.clone()].iter())
+              .cloned()
+              .collect(),
+            rest_of_interval: self.rest_of_interval.get(1..).unwrap().to_vec(),
+          }],
+        },
+        /* Similar to start and end, but the `todo` starts off at the state. */
+        EpsilonGraphVertex::State(state_pos) => {
+          let completed_state_pair = StatePair {
+            left: LoweredState::from_vertex(self.start),
+            right: LoweredState::Within(*state_pos),
+          };
+          let completed_path_makes_sense = match self.start {
+            EpsilonGraphVertex::State(_) => true,
+            EpsilonGraphVertex::Start(_) => true,
+            EpsilonGraphVertex::End(_) => false,
+            EpsilonGraphVertex::Anon(_) => {
+              panic!("an anonymous vertex should not be at the start of an interval!")
+            },
+          };
+          let completed = if completed_path_makes_sense {
+            let relevant_interval_with_terminals: Vec<EpsilonGraphVertex> = vec![
+              self.start.clone(),
+            ].iter()
+              .chain(self.cur_traversal_intermediate_nonterminals.clone().iter())
+              .chain(vec![next.clone()].iter())
+              .cloned()
+              .collect();
+            let single_completion = CompletedStatePairWithVertices {
+              state_pair: completed_state_pair,
+              interval: ContiguousNonterminalInterval(relevant_interval_with_terminals),
+            };
+            vec![single_completion]
+          } else {
+            vec![]
+          };
+          TransitionIterationResult {
+            completed,
+            todo: vec![IntermediateTokenTransition {
+              /* NB: starting off /at/ the current state vertex! */
+              start: next.clone(),
+              cur_traversal_intermediate_nonterminals: vec![],
+              rest_of_interval: self.rest_of_interval.get(1..).unwrap().to_vec(),
+            }],
+          }
+        },
+      }
+    }
+  }
 
   // NB: There is no reference to any `TokenGrammar` -- this is intentional, and
   // I believe makes it easier to have the runtime we want just fall out of the
@@ -348,8 +682,8 @@ pub mod grammar_indexing {
      * production. */
     fn make_pos_neg_anon_steps(cur_index: usize) -> (EpsilonGraphVertex, EpsilonGraphVertex) {
       (
-        EpsilonGraphVertex::Anon(AnonStepVertex::Positive(AnonSym(cur_index))),
-        EpsilonGraphVertex::Anon(AnonStepVertex::Negative(AnonSym(cur_index))),
+        EpsilonGraphVertex::Anon(AnonStep::Positive(AnonSym(cur_index))),
+        EpsilonGraphVertex::Anon(AnonStep::Negative(AnonSym(cur_index))),
       )
     }
 
@@ -443,15 +777,9 @@ pub mod grammar_indexing {
       EpsilonIntervalGraph(really_all_intervals)
     }
 
-    fn produce_token_transition_graph(
-      interval_graph: &EpsilonIntervalGraph,
-    ) -> IndexMap<StatePair, Vec<StackDiff>> {
-      panic!("not yet implemented!");
-    }
-
     pub fn new(grammar: &TokenGrammar<Tok>) -> Self {
       let terminals_interval_graph = Self::produce_terminals_interval_graph(&grammar);
-      let token_transition_graph = Self::produce_token_transition_graph(&terminals_interval_graph);
+      let token_transition_graph = terminals_interval_graph.produce_token_transition_graph();
       PreprocessedGrammar {
         token_states_mapping: grammar.index_token_states(),
         pairwise_state_transition_table: token_transition_graph,
@@ -613,6 +941,45 @@ mod tests {
 
   #[test]
   fn terminals_interval_graph() {
+    let noncyclic_prods = non_cyclic_productions();
+    let noncyclic_grammar = TokenGrammar::new(&noncyclic_prods);
+    let noncyclic_interval_graph =
+      PreprocessedGrammar::produce_terminals_interval_graph(&noncyclic_grammar);
+    assert_eq!(
+      noncyclic_interval_graph,
+      EpsilonIntervalGraph(vec![
+        ContiguousNonterminalInterval(vec![
+          EpsilonGraphVertex::Start(ProdRef(0)),
+          EpsilonGraphVertex::State(TokenPosition::new(0, 0, 0)),
+          EpsilonGraphVertex::State(TokenPosition::new(0, 0, 1)),
+          EpsilonGraphVertex::End(ProdRef(0)),
+        ]),
+        ContiguousNonterminalInterval(vec![
+          EpsilonGraphVertex::Start(ProdRef(1)),
+          EpsilonGraphVertex::State(TokenPosition::new(1, 0, 0)),
+          EpsilonGraphVertex::State(TokenPosition::new(1, 0, 1)),
+          EpsilonGraphVertex::Anon(AnonStep::Positive(AnonSym(0))),
+          EpsilonGraphVertex::Start(ProdRef(0)),
+        ]),
+        ContiguousNonterminalInterval(vec![
+          EpsilonGraphVertex::End(ProdRef(0)),
+          EpsilonGraphVertex::Anon(AnonStep::Negative(AnonSym(0))),
+          EpsilonGraphVertex::End(ProdRef(1)),
+        ]),
+        ContiguousNonterminalInterval(vec![
+          EpsilonGraphVertex::Start(ProdRef(1)),
+          EpsilonGraphVertex::Anon(AnonStep::Positive(AnonSym(1))),
+          EpsilonGraphVertex::Start(ProdRef(0)),
+        ]),
+        ContiguousNonterminalInterval(vec![
+          EpsilonGraphVertex::End(ProdRef(0)),
+          EpsilonGraphVertex::Anon(AnonStep::Negative(AnonSym(1))),
+          EpsilonGraphVertex::State(TokenPosition::new(1, 1, 1)),
+          EpsilonGraphVertex::End(ProdRef(1)),
+        ]),
+      ])
+    );
+
     let prods = basic_productions();
     let grammar = TokenGrammar::new(&prods);
     let interval_graph = PreprocessedGrammar::produce_terminals_interval_graph(&grammar);
@@ -629,12 +996,12 @@ mod tests {
         ContiguousNonterminalInterval(vec![
           EpsilonGraphVertex::Start(ProdRef(0)),
           EpsilonGraphVertex::State(TokenPosition::new(0, 1, 0)),
-          EpsilonGraphVertex::Anon(AnonStepVertex::Positive(AnonSym(0))),
+          EpsilonGraphVertex::Anon(AnonStep::Positive(AnonSym(0))),
           EpsilonGraphVertex::Start(ProdRef(0)),
         ]),
         ContiguousNonterminalInterval(vec![
           EpsilonGraphVertex::End(ProdRef(0)),
-          EpsilonGraphVertex::Anon(AnonStepVertex::Negative(AnonSym(0))),
+          EpsilonGraphVertex::Anon(AnonStep::Negative(AnonSym(0))),
           EpsilonGraphVertex::State(TokenPosition::new(0, 1, 2)),
           EpsilonGraphVertex::End(ProdRef(0)),
         ]),
@@ -642,47 +1009,100 @@ mod tests {
           EpsilonGraphVertex::Start(ProdRef(0)),
           EpsilonGraphVertex::State(TokenPosition::new(0, 2, 0)),
           EpsilonGraphVertex::State(TokenPosition::new(0, 2, 1)),
-          EpsilonGraphVertex::Anon(AnonStepVertex::Positive(AnonSym(1))),
+          EpsilonGraphVertex::Anon(AnonStep::Positive(AnonSym(1))),
           EpsilonGraphVertex::Start(ProdRef(1)),
         ]),
         ContiguousNonterminalInterval(vec![
           EpsilonGraphVertex::End(ProdRef(1)),
-          EpsilonGraphVertex::Anon(AnonStepVertex::Negative(AnonSym(1))),
+          EpsilonGraphVertex::Anon(AnonStep::Negative(AnonSym(1))),
           EpsilonGraphVertex::End(ProdRef(0)),
         ]),
         ContiguousNonterminalInterval(vec![
           EpsilonGraphVertex::Start(ProdRef(1)),
-          EpsilonGraphVertex::Anon(AnonStepVertex::Positive(AnonSym(2))),
+          EpsilonGraphVertex::Anon(AnonStep::Positive(AnonSym(2))),
           EpsilonGraphVertex::Start(ProdRef(0)),
         ]),
         ContiguousNonterminalInterval(vec![
           EpsilonGraphVertex::End(ProdRef(0)),
-          EpsilonGraphVertex::Anon(AnonStepVertex::Negative(AnonSym(2))),
+          EpsilonGraphVertex::Anon(AnonStep::Negative(AnonSym(2))),
           EpsilonGraphVertex::End(ProdRef(1)),
         ]),
         ContiguousNonterminalInterval(vec![
           EpsilonGraphVertex::Start(ProdRef(1)),
-          EpsilonGraphVertex::Anon(AnonStepVertex::Positive(AnonSym(3))),
+          EpsilonGraphVertex::Anon(AnonStep::Positive(AnonSym(3))),
           EpsilonGraphVertex::Start(ProdRef(1)),
         ]),
         ContiguousNonterminalInterval(vec![
           EpsilonGraphVertex::End(ProdRef(1)),
-          EpsilonGraphVertex::Anon(AnonStepVertex::Negative(AnonSym(3))),
+          EpsilonGraphVertex::Anon(AnonStep::Negative(AnonSym(3))),
           EpsilonGraphVertex::End(ProdRef(1)),
         ]),
         ContiguousNonterminalInterval(vec![
           EpsilonGraphVertex::Start(ProdRef(1)),
-          EpsilonGraphVertex::Anon(AnonStepVertex::Positive(AnonSym(4))),
+          EpsilonGraphVertex::Anon(AnonStep::Positive(AnonSym(4))),
           EpsilonGraphVertex::Start(ProdRef(0)),
         ]),
         ContiguousNonterminalInterval(vec![
           EpsilonGraphVertex::End(ProdRef(0)),
-          EpsilonGraphVertex::Anon(AnonStepVertex::Negative(AnonSym(4))),
+          EpsilonGraphVertex::Anon(AnonStep::Negative(AnonSym(4))),
           EpsilonGraphVertex::State(TokenPosition::new(1, 2, 1)),
           EpsilonGraphVertex::State(TokenPosition::new(1, 2, 2)),
           EpsilonGraphVertex::End(ProdRef(1)),
         ]),
       ])
+    );
+  }
+
+  #[test]
+  fn terminals_interval_graph_start_end_indices() {
+    let noncyclic_prods = non_cyclic_productions();
+    let noncyclic_grammar = TokenGrammar::new(&noncyclic_prods);
+    let noncyclic_interval_graph =
+      PreprocessedGrammar::produce_terminals_interval_graph(&noncyclic_grammar);
+    let intervals_by_start_and_end = noncyclic_interval_graph.find_start_end_indices();
+    assert_eq!(
+      intervals_by_start_and_end,
+      vec![
+        (ProdRef(0), StartEndEpsilonIntervals {
+          start_epsilons: vec![ContiguousNonterminalInterval(vec![
+            EpsilonGraphVertex::Start(ProdRef(0)),
+            EpsilonGraphVertex::State(TokenPosition::new(0, 0, 0)),
+            EpsilonGraphVertex::State(TokenPosition::new(0, 0, 1)),
+            EpsilonGraphVertex::End(ProdRef(0)),
+          ]),
+          ],
+          end_epsilons: vec![
+            ContiguousNonterminalInterval(vec![
+              EpsilonGraphVertex::End(ProdRef(0)),
+              EpsilonGraphVertex::Anon(AnonStep::Negative(AnonSym(0))),
+              EpsilonGraphVertex::End(ProdRef(1)),
+            ]),
+            ContiguousNonterminalInterval(vec![
+              EpsilonGraphVertex::End(ProdRef(0)),
+              EpsilonGraphVertex::Anon(AnonStep::Negative(AnonSym(1))),
+              EpsilonGraphVertex::State(TokenPosition::new(1, 1, 1)),
+              EpsilonGraphVertex::End(ProdRef(1)),
+            ]),
+          ]
+        }),
+        (ProdRef(1), StartEndEpsilonIntervals {
+          start_epsilons: vec![
+            ContiguousNonterminalInterval(vec![
+              EpsilonGraphVertex::Start(ProdRef(1)),
+              EpsilonGraphVertex::State(TokenPosition::new(1, 0, 0)),
+              EpsilonGraphVertex::State(TokenPosition::new(1, 0, 1)),
+              EpsilonGraphVertex::Anon(AnonStep::Positive(AnonSym(0))),
+              EpsilonGraphVertex::Start(ProdRef(0)),
+            ]),
+            ContiguousNonterminalInterval(vec![
+              EpsilonGraphVertex::Start(ProdRef(1)),
+              EpsilonGraphVertex::Anon(AnonStep::Positive(AnonSym(1))),
+              EpsilonGraphVertex::Start(ProdRef(0)),
+            ]),
+          ],
+          end_epsilons: vec![],
+        }),
+      ].iter().cloned().collect::<IndexMap<ProdRef, StartEndEpsilonIntervals>>()
     );
   }
 
@@ -692,31 +1112,11 @@ mod tests {
     let prods = non_cyclic_productions();
     let grammar = TokenGrammar::new(&prods);
     let preprocessed_grammar = PreprocessedGrammar::new(&grammar);
-    let first_a = LoweredState::Within(TokenPosition {
-      prod: ProdRef(0),
-      case: CaseRef(0),
-      case_el: CaseElRef(0),
-    });
-    let first_b = LoweredState::Within(TokenPosition {
-      prod: ProdRef(0),
-      case: CaseRef(0),
-      case_el: CaseElRef(1),
-    });
-    let second_a = LoweredState::Within(TokenPosition {
-      prod: ProdRef(1),
-      case: CaseRef(0),
-      case_el: CaseElRef(0),
-    });
-    let second_b = LoweredState::Within(TokenPosition {
-      prod: ProdRef(1),
-      case: CaseRef(0),
-      case_el: CaseElRef(1),
-    });
-    let third_a = LoweredState::Within(TokenPosition {
-      prod: ProdRef(1),
-      case: CaseRef(1),
-      case_el: CaseElRef(1),
-    });
+    let first_a = LoweredState::Within(TokenPosition::new(0, 0, 0));
+    let first_b = LoweredState::Within(TokenPosition::new(0, 0, 1));
+    let second_a = LoweredState::Within(TokenPosition::new(1, 0, 0));
+    let second_b = LoweredState::Within(TokenPosition::new(1, 0, 1));
+    let third_a = LoweredState::Within(TokenPosition::new(1, 1, 1));
     let a_prod = StackSym(ProdRef(0));
     let b_prod = StackSym(ProdRef(1));
     assert_eq!(
@@ -726,32 +1126,14 @@ mod tests {
           (
             'a',
             vec![
-              TokenPosition {
-                prod: ProdRef(0),
-                case: CaseRef(0),
-                case_el: CaseElRef(0),
-              },
-              TokenPosition {
-                prod: ProdRef(1),
-                case: CaseRef(0),
-                case_el: CaseElRef(0),
-              },
+              TokenPosition::new(0, 0, 0),
+              TokenPosition::new(1, 0, 0),
+              TokenPosition::new(1, 1, 1),
             ],
           ),
           (
             'b',
-            vec![
-              TokenPosition {
-                prod: ProdRef(0),
-                case: CaseRef(0),
-                case_el: CaseElRef(1),
-              },
-              TokenPosition {
-                prod: ProdRef(1),
-                case: CaseRef(0),
-                case_el: CaseElRef(1),
-              },
-            ],
+            vec![TokenPosition::new(0, 0, 1), TokenPosition::new(1, 0, 1)],
           ),
         ].iter()
           .cloned()
@@ -777,7 +1159,7 @@ mod tests {
               right: LoweredState::End,
             },
             vec![
-              StackDiff(vec![StackStep::Negative(a_prod)]),
+              StackDiff(vec![NamedOrAnonStep::Named(StackStep::Negative(a_prod))]),
               // TODO: this is currently missing! this happens because a prod ref to
               // "a" is at the
               // end of the single case of the "b" production -- we can recognize
@@ -785,8 +1167,8 @@ mod tests {
               // that hard, could be done by adding an "end" case to the
               // `GrammarVertex` enum!)!
               StackDiff(vec![
-                StackStep::Negative(a_prod),
-                StackStep::Negative(b_prod),
+                NamedOrAnonStep::Named(StackStep::Negative(a_prod)),
+                NamedOrAnonStep::Named(StackStep::Negative(b_prod)),
               ]),
             ],
           ),
@@ -795,7 +1177,9 @@ mod tests {
               left: third_a,
               right: LoweredState::End,
             },
-            vec![StackDiff(vec![StackStep::Negative(b_prod)])],
+            vec![StackDiff(vec![NamedOrAnonStep::Named(
+              StackStep::Negative(b_prod),
+            )])],
           ),
           (
             StatePair {
@@ -803,8 +1187,8 @@ mod tests {
               right: first_a,
             },
             vec![StackDiff(vec![
-              StackStep::Negative(a_prod),
-              StackStep::Positive(a_prod),
+              NamedOrAnonStep::Named(StackStep::Negative(a_prod)),
+              NamedOrAnonStep::Named(StackStep::Positive(a_prod)),
             ])],
           ),
           (
@@ -813,8 +1197,8 @@ mod tests {
               right: second_a,
             },
             vec![StackDiff(vec![
-              StackStep::Negative(a_prod),
-              StackStep::Positive(b_prod),
+              NamedOrAnonStep::Named(StackStep::Negative(a_prod)),
+              NamedOrAnonStep::Named(StackStep::Positive(b_prod)),
             ])],
           ),
           (
@@ -822,14 +1206,18 @@ mod tests {
               left: first_b,
               right: third_a,
             },
-            vec![StackDiff(vec![StackStep::Negative(a_prod)])],
+            vec![StackDiff(vec![NamedOrAnonStep::Named(
+              StackStep::Negative(a_prod),
+            )])],
           ),
           (
             StatePair {
               left: second_b,
               right: first_a,
             },
-            vec![StackDiff(vec![StackStep::Positive(a_prod)])],
+            vec![StackDiff(vec![NamedOrAnonStep::Named(
+              StackStep::Positive(a_prod),
+            )])],
           ),
           (
             StatePair {
@@ -837,10 +1225,10 @@ mod tests {
               right: first_a,
             },
             vec![
-              StackDiff(vec![StackStep::Positive(a_prod)]),
+              StackDiff(vec![NamedOrAnonStep::Named(StackStep::Positive(a_prod))]),
               StackDiff(vec![
-                StackStep::Positive(b_prod),
-                StackStep::Positive(a_prod),
+                NamedOrAnonStep::Named(StackStep::Positive(b_prod)),
+                NamedOrAnonStep::Named(StackStep::Positive(a_prod)),
               ]),
             ],
           ),
@@ -849,7 +1237,9 @@ mod tests {
               left: LoweredState::Start,
               right: second_a,
             },
-            vec![StackDiff(vec![StackStep::Positive(b_prod)])],
+            vec![StackDiff(vec![NamedOrAnonStep::Named(
+              StackStep::Positive(b_prod),
+            )])],
           ),
         ].iter()
           .cloned()
