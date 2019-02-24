@@ -290,6 +290,13 @@ pub mod grammar_indexing {
     }
   }
 
+  #[derive(Debug, Clone, PartialEq, Eq)]
+  pub struct StateTransitionGraph {
+    pub graph: IndexMap<StatePair, Vec<StackDiff>>,
+    /* NB: This is a formulation of stack cycles which is usable in both parsing directions! */
+    pub cycles: IndexMap<ProdRef, Vec<StackDiff>>,
+  }
+
   #[derive(Debug, Copy, Clone, PartialEq, Eq, Hash)]
   pub enum LoweredState {
     Start,
@@ -373,7 +380,7 @@ pub mod grammar_indexing {
       epsilon_subscripts_index
     }
 
-    pub fn produce_token_transition_graph(&self) -> IndexMap<StatePair, Vec<StackDiff>> {
+    pub fn produce_transition_graph(&self) -> StateTransitionGraph {
       let intervals_indexed_by_start_and_end = self.find_start_end_indices();
       eprintln!(
         "intervals_indexed_by_start_and_end: {:?}",
@@ -448,7 +455,11 @@ pub mod grammar_indexing {
             (pair, stack_diffs)
           })
           .collect();
-      converted_into_transitions
+      StateTransitionGraph {
+        graph: converted_into_transitions,
+        /* TODO: fill this out for stack cycles! */
+        cycles: IndexMap::new(),
+      }
     }
   }
 
@@ -669,12 +680,9 @@ pub mod grammar_indexing {
     // create a `Parse` -- these are chosen to reduce redundancy.
     // `M: T -> {Q}`, where `{Q}` is sets of states!
     pub token_states_mapping: IndexMap<Tok, Vec<TokenPosition>>,
-    // TODO: we don't yet support stack cycles (ignored), or multiple stack paths to the same
-    // succeeding state from an initial state (also ignored) -- details in
-    // build_pairwise_transitions_table().
     // `A: T x T -> {S}^+_-`, where `{S}^+_-` (LaTeX formatting) is ordered sequences of signed
     // stack symbols!
-    pub pairwise_state_transition_table: IndexMap<StatePair, Vec<StackDiff>>,
+    pub state_transition_graph: StateTransitionGraph,
   }
 
   impl<Tok: PartialEq+Eq+Hash+Copy+Clone> PreprocessedGrammar<Tok> {
@@ -779,10 +787,10 @@ pub mod grammar_indexing {
 
     pub fn new(grammar: &TokenGrammar<Tok>) -> Self {
       let terminals_interval_graph = Self::produce_terminals_interval_graph(&grammar);
-      let token_transition_graph = terminals_interval_graph.produce_token_transition_graph();
+      let state_transition_graph = terminals_interval_graph.produce_transition_graph();
       PreprocessedGrammar {
         token_states_mapping: grammar.index_token_states(),
-        pairwise_state_transition_table: token_transition_graph,
+        state_transition_graph,
       }
     }
   }
@@ -1115,7 +1123,7 @@ mod tests {
 
 
   #[test]
-  fn noncyclic_token_transition_graph() {
+  fn noncyclic_transition_graph() {
     let prods = non_cyclic_productions();
     let grammar = TokenGrammar::new(&prods);
     let preprocessed_grammar = PreprocessedGrammar::new(&grammar);
@@ -1145,7 +1153,9 @@ mod tests {
         ].iter()
           .cloned()
           .collect::<IndexMap<char, Vec<TokenPosition>>>(),
-        pairwise_state_transition_table: vec![
+        state_transition_graph: StateTransitionGraph {
+          cycles: IndexMap::new(),
+          graph: vec![
           (
             StatePair {
               left: LoweredState::Start,
@@ -1229,12 +1239,13 @@ mod tests {
         ].iter()
           .cloned()
           .collect::<IndexMap<StatePair, Vec<StackDiff>>>(),
-      }
+        },
+      },
     );
   }
 
   #[test]
-  fn cyclic_token_transition_graph() {
+  fn cyclic_transition_graph() {
     let prods = basic_productions();
     let grammar = TokenGrammar::new(&prods);
     let preprocessed_grammar = PreprocessedGrammar::new(&grammar);
@@ -1242,7 +1253,10 @@ mod tests {
       preprocessed_grammar,
       PreprocessedGrammar {
         token_states_mapping: IndexMap::new(),
-        pairwise_state_transition_table: IndexMap::new(),
+        state_transition_graph: StateTransitionGraph {
+          graph: IndexMap::new(),
+          cycles: IndexMap::new(),
+        },
       },
     );
   }
