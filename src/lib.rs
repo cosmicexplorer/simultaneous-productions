@@ -20,10 +20,8 @@
 #![feature(fn_traits)]
 
 extern crate indexmap;
-extern crate itertools;
 
 use indexmap::{IndexMap, IndexSet};
-use itertools::Itertools;
 
 use std::{
   collections::{HashMap, VecDeque},
@@ -1232,6 +1230,20 @@ mod tests {
           .cloned()
           .collect::<IndexMap<StatePair, Vec<StackDiff>>>(),
       }
+    );
+  }
+
+  #[test]
+  fn cyclic_token_transition_graph() {
+    let prods = basic_productions();
+    let grammar = TokenGrammar::new(&prods);
+    let preprocessed_grammar = PreprocessedGrammar::new(&grammar);
+    assert_eq!(
+      preprocessed_grammar,
+      PreprocessedGrammar {
+        token_states_mapping: IndexMap::new(),
+        pairwise_state_transition_table: IndexMap::new(),
+      },
     );
   }
 
