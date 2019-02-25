@@ -19,16 +19,17 @@
 */
 #![feature(fn_traits)]
 
+mod cyclic_ref;
+use crate::cyclic_ref::StrongOrWeakRef;
+
 extern crate indexmap;
 
 use indexmap::{IndexMap, IndexSet};
 
 use std::{
   borrow::{Borrow, BorrowMut},
-  cell::{Ref, RefCell},
   collections::{HashMap, HashSet, VecDeque},
   hash::{Hash, Hasher},
-  rc::{Rc, Weak},
 };
 
 pub mod user_api {
@@ -261,110 +262,6 @@ pub mod lowering_to_indices {
 }
 
 ///
-/// A way to wrap either a strong or weak pointer, assuming you've set up the
-/// reference cycles so that this doesn't cause a memory leak. Useful for
-/// intentional cycles.
-#[derive(Debug, Clone)]
-pub enum StrongOrWeakRef<T> {
-  Strong(Rc<RefCell<T>>),
-  Weak(Weak<RefCell<T>>),
-}
-
-impl<T> StrongOrWeakRef<T> {
-  /* NB: Should be called as an associated method! */
-  fn clone_strong(&self) -> Self {
-    match self {
-      StrongOrWeakRef::Strong(strong_ptr) => StrongOrWeakRef::Strong(Rc::clone(strong_ptr)),
-      StrongOrWeakRef::Weak(weak_ptr) => {
-        let strong_version = weak_ptr
-          .upgrade()
-          .expect("weak StrongOrWeakRef upgrade failed for clone_strong!");
-        StrongOrWeakRef::Strong(Rc::clone(&strong_version))
-      },
-    }
-  }
-
-  /* NB: Should be called as an associated method! */
-  fn clone_weak(&self) -> Self {
-    match self {
-      StrongOrWeakRef::Strong(strong_ptr) => {
-        StrongOrWeakRef::Weak(Rc::downgrade(&Rc::clone(strong_ptr)))
-      },
-      StrongOrWeakRef::Weak(weak_ptr) => StrongOrWeakRef::Weak(Weak::clone(weak_ptr)),
-    }
-  }
-}
-
-/* TODO: make this less hacky somehow, this is ridiculous but I cannot figure
- * out why .borrow() and .borrow_mut() don't just work to forward borrowing! */
-impl<T> Borrow<T> for StrongOrWeakRef<T> {
-  fn borrow(&self) -> &T {
-    match self {
-      StrongOrWeakRef::Strong(strong_ptr) => {
-        let x: *mut T = strong_ptr.as_ptr();
-        &*x
-      },
-      StrongOrWeakRef::Weak(weak_ptr) => {
-        let x: *mut T = weak_ptr
-          .upgrade()
-          .expect("weak StrongOrWeakRef upgrade failed for borrow!")
-          .as_ptr();
-        &*x
-      },
-    }
-  }
-}
-
-impl<T> BorrowMut<T> for StrongOrWeakRef<T> {
-  fn borrow_mut(&mut self) -> &mut T {
-    match self {
-      StrongOrWeakRef::Strong(strong_ptr) => {
-        let x: *mut T = strong_ptr.as_ptr();
-        &mut *x
-      },
-      StrongOrWeakRef::Weak(weak_ptr) => {
-        let x: *mut T = weak_ptr
-          .upgrade()
-          .expect("weak StrongOrWeakRef upgrade failed for borrow_mut!")
-          .as_ptr();
-        &mut *x
-      },
-    }
-  }
-}
-
-impl<T> PartialEq for StrongOrWeakRef<T> {
-  /* Check equality by pointer value. */
-  fn eq(&self, other: &Self) -> bool {
-    let strong_self = match self {
-      StrongOrWeakRef::Strong(x) => x,
-      StrongOrWeakRef::Weak(x) => &x.upgrade().expect("weak self during eq"),
-    };
-    let strong_other = match other {
-      StrongOrWeakRef::Strong(x) => x,
-      StrongOrWeakRef::Weak(x) => &x.upgrade().expect("weak other during eq"),
-    };
-    Rc::ptr_eq(strong_self, strong_other)
-  }
-}
-
-impl<T> Eq for StrongOrWeakRef<T> {}
-
-impl<T> Hash for StrongOrWeakRef<T> {
-  fn hash<H: Hasher>(&self, state: &mut H) {
-    /* Hash by the pointer value. */
-    let contained_ptr: *mut T = match self {
-      StrongOrWeakRef::Strong(strong_ptr) => strong_ptr.as_ptr(),
-      StrongOrWeakRef::Weak(weak_ptr) => weak_ptr
-        .upgrade()
-        .expect("weak StrongOrWeakRef upgrade failed for hash!")
-        .as_ptr(),
-    };
-    state.write_usize(contained_ptr as usize);
-  }
-}
-
-///
 /// Implementation for getting a `PreprocessedGrammar`. Performance doesn't
 /// matter here.
 pub mod grammar_indexing {
@@ -427,12 +324,13 @@ pub mod grammar_indexing {
   /* TODO(perf): coalesce subsequent `StackTrieNode.stack_diff`s if there are
    * no cycles coming from either node. */
   ///
-  /// Pointers to the appropriate "forests" of stack transitions starting/completing at each
-  /// state. "starting" and "completing" are mirrored to allow working away at mapping states to
-  /// input token indices from either direction, which is intended to allow for parallelism. They're
-  /// not really "forests" because they *will* have cycles except in very simple grammars (CFGs and
-  /// below, I think? Unclear if the Chomsky hierarchy still applies).
-  ///
+  /// Pointers to the appropriate "forests" of stack transitions
+  /// starting/completing at each state. "starting" and "completing" are
+  /// mirrored to allow working away at mapping states to input token indices
+  /// from either direction, which is intended to allow for parallelism. They're
+  /// not really "forests" because they *will* have cycles except in very simple
+  /// grammars (CFGs and below, I think? Unclear if the Chomsky hierarchy
+  /// still applies).
   #[derive(Debug, Clone, PartialEq, Eq)]
   pub struct StateTransitionGraph(pub IndexMap<LoweredState, Vec<TrieNodeRef>>);
 
@@ -577,14 +475,14 @@ pub mod grammar_indexing {
       ) -> TrieNodeRef
       {
         let basic_node = StackTrieNode::bare(vtx);
-        let ref_for_trie_node = *map
+        let ref_for_trie_node = &*map
           .entry(*vtx)
-          .or_insert_with(|| StrongOrWeakRef::Strong(Rc::new(RefCell::new(basic_node))));
+          .or_insert_with(|| StrongOrWeakRef::make_strong(basic_node.clone()));
         /* All bare trie nodes corresponding to the same vertex should have the same
          * stack diff! */
         let trie_node: &StackTrieNode = ref_for_trie_node.borrow();
         assert_eq!(trie_node.stack_diff, basic_node.stack_diff);
-        ref_for_trie_node
+        ref_for_trie_node.clone()
       }
 
       let merged_stack_cycles: IndexMap<EpsilonGraphVertex, TrieNodeRef> = {
@@ -593,14 +491,18 @@ pub mod grammar_indexing {
           let tries_for_cycle: IndexMap<EpsilonGraphVertex, TrieNodeRef> =
             cycle.convert_to_implicit_trie_cycle();
           for (vtx, node) in tries_for_cycle.into_iter() {
-            let trie_for_vertex: &mut StackTrieNode =
-              get_trie_for_vertex(&mut ret, &vtx).borrow_mut();
+            let mut ref_for_trie_for_vertex = get_trie_for_vertex(&mut ret, &vtx);
+            let trie_for_vertex: &mut StackTrieNode = ref_for_trie_for_vertex.borrow_mut();
             let cur_trie: &StackTrieNode = node.borrow();
             /* Add the next pointers (at this point, just one) from the node in the
              * current cycle to the merged entry for the current vertex. */
-            trie_for_vertex.next_nodes.extend(cur_trie.next_nodes);
+            trie_for_vertex
+              .next_nodes
+              .extend(cur_trie.next_nodes.clone());
             /* Same for the prev pointers. */
-            trie_for_vertex.prev_nodes.extend(cur_trie.prev_nodes);
+            trie_for_vertex
+              .prev_nodes
+              .extend(cur_trie.prev_nodes.clone());
           }
         }
         ret
@@ -619,12 +521,12 @@ pub mod grammar_indexing {
             right: right_state_in_pair,
           } = state_pair;
           let ContiguousNonterminalInterval(vertices) = interval;
-          for (vertex_index, vtx) in vertices.into_iter().enumerate() {
-            let ref_for_trie_for_vertex = get_trie_for_vertex(&mut all_trie_nodes, &vtx);
+          for (vertex_index, vtx) in vertices.iter().enumerate() {
+            let mut ref_for_trie_for_vertex = get_trie_for_vertex(&mut all_trie_nodes, &vtx);
             let next_edge = if vertex_index == vertices.len() - 1 {
               /* Register the current trie as emanating from the left state. */
               let left_entry = ret.entry(left_state_in_pair).or_insert(vec![]);
-              (*left_entry).push(ref_for_trie_for_vertex);
+              (*left_entry).push(ref_for_trie_for_vertex.clone());
               /* To end at the `right` state, add a forward edge to a `Completed` entry. */
               StackTrieNextEntry::Completed(right_state_in_pair)
             } else {
@@ -635,7 +537,7 @@ pub mod grammar_indexing {
             let prev_edge = if vertex_index == 0 {
               /* Register the current trie as completing at the right state. */
               let right_entry = ret.entry(right_state_in_pair).or_insert(vec![]);
-              (*right_entry).push(ref_for_trie_for_vertex);
+              (*right_entry).push(ref_for_trie_for_vertex.clone());
               /* To start at the `left` state, add a back edge to a `Completed` entry. */
               StackTrieNextEntry::Completed(left_state_in_pair)
             } else {
@@ -694,13 +596,15 @@ pub mod grammar_indexing {
         .map(|vtx| {
           (
             vtx.clone(),
-            StrongOrWeakRef::Strong(Rc::new(RefCell::new(StackTrieNode::bare(vtx)))),
+            StrongOrWeakRef::make_strong(StackTrieNode::bare(vtx)),
           )
         })
         .collect();
       /* Add a single link to the next node in the chain. */
-      for (node_index, (_, ref_for_cur_node)) in trie_nodes_for_vertices.into_iter().enumerate() {
-        let next_ptr: TrieNodeRef = if node_index < trie_nodes_for_vertices.len() - 1 {
+      for (node_index, (_, ref_for_cur_node)) in trie_nodes_for_vertices.iter().enumerate()
+      {
+        let mut ref_for_cur_node = ref_for_cur_node.clone();
+        let mut next_ptr: TrieNodeRef = if node_index < trie_nodes_for_vertices.len() - 1 {
           /* Strong ref-counted pointer to the succeeding node. */
           let next_vertex = vertices.get(node_index + 1).unwrap();
           let next_node = trie_nodes_for_vertices.get(next_vertex).unwrap();
@@ -714,14 +618,14 @@ pub mod grammar_indexing {
         };
         /* When parsing, the state can potentially take this path as it tries to find
          * a stack diff which would satisfy a token transition(s). */
+        let weak_cur_ptr = StrongOrWeakRef::clone_weak(&ref_for_cur_node.clone());
         let cur_node: &mut StackTrieNode = ref_for_cur_node.borrow_mut();
         cur_node
           .next_nodes
-          .push(StackTrieNextEntry::Incomplete(next_ptr));
+          .push(StackTrieNextEntry::Incomplete(next_ptr.clone()));
         /* Populate the back edge of the doubly-linked list, using a weak reference
          * since the forward edge already used a strong reference if
          * necessary. */
-        let weak_cur_ptr = StrongOrWeakRef::clone_weak(&ref_for_cur_node);
         let next_node: &mut StackTrieNode = next_ptr.borrow_mut();
         next_node
           .prev_nodes
@@ -1369,7 +1273,6 @@ mod tests {
     );
   }
 
-
   #[test]
   fn noncyclic_transition_graph() {
     let prods = non_cyclic_productions();
@@ -1397,9 +1300,8 @@ mod tests {
       .iter()
       .cloned()
       .collect::<IndexMap<char, Vec<TokenPosition>>>(),
-      state_transition_graph: StateTransitionGraph {
-        cycles: vec![],
-        graph: vec![
+      state_transition_graph: StateTransitionGraph(
+        vec![
           (
             StatePair {
               left: LoweredState::Start,
@@ -1483,8 +1385,8 @@ mod tests {
         ]
         .iter()
         .cloned()
-        .collect::<IndexMap<StatePair, Vec<StackDiffSegment>>>(),
-      },
+        .collect::<IndexMap<StatePair, Vec<StackDiffSegment>>>()
+      ),
     },);
   }
 
@@ -1497,10 +1399,7 @@ mod tests {
      * back after we're sure the cycles are right. */
     assert_eq!(preprocessed_grammar, PreprocessedGrammar {
       token_states_mapping: IndexMap::new(),
-      state_transition_graph: StateTransitionGraph {
-        graph: IndexMap::new(),
-        cycles: vec![],
-      },
+      state_transition_graph: StateTransitionGraph(IndexMap::new()),
     },);
   }
 
