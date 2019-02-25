@@ -24,9 +24,11 @@ extern crate indexmap;
 use indexmap::{IndexMap, IndexSet};
 
 use std::{
+  borrow::{Borrow, BorrowMut},
+  cell::{Ref, RefCell},
   collections::{HashMap, HashSet, VecDeque},
   hash::{Hash, Hasher},
-  rc::Rc,
+  rc::{Rc, Weak},
 };
 
 pub mod user_api {
@@ -259,6 +261,108 @@ pub mod lowering_to_indices {
 }
 
 ///
+/// A way to wrap either a strong or weak pointer, assuming you've set up the
+/// reference cycles so that this doesn't cause a memory leak. Useful for
+/// intentional cycles.
+#[derive(Debug, Clone)]
+pub enum StrongOrWeakRef<T> {
+  Strong(Rc<RefCell<T>>),
+  Weak(Weak<RefCell<T>>),
+}
+
+impl<T> StrongOrWeakRef<T> {
+  fn clone_strong(&self) -> Self {
+    match self {
+      StrongOrWeakRef::Strong(strong_ptr) => StrongOrWeakRef::Strong(Rc::clone(strong_ptr)),
+      StrongOrWeakRef::Weak(weak_ptr) => {
+        let strong_version = weak_ptr
+          .upgrade()
+          .expect("weak StrongOrWeakRef upgrade failed for clone_strong!");
+        StrongOrWeakRef::Strong(Rc::clone(&strong_version))
+      },
+    }
+  }
+
+  fn clone_weak(&self) -> Self {
+    match self {
+      StrongOrWeakRef::Strong(strong_ptr) => {
+        StrongOrWeakRef::Weak(Rc::downgrade(&Rc::clone(strong_ptr)))
+      },
+      StrongOrWeakRef::Weak(weak_ptr) => StrongOrWeakRef::Weak(Weak::clone(weak_ptr)),
+    }
+  }
+}
+
+/* TODO: make this less hacky somehow, this is ridiculous but I cannot figure
+ * out why .borrow() and .borrow_mut() don't just work to forward borrowing! */
+impl<T> Borrow<T> for StrongOrWeakRef<T> {
+  fn borrow(&self) -> &T {
+    match self {
+      StrongOrWeakRef::Strong(strong_ptr) => {
+        let x: *mut T = strong_ptr.as_ptr();
+        &*x
+      },
+      StrongOrWeakRef::Weak(weak_ptr) => {
+        let x: *mut T = weak_ptr
+          .upgrade()
+          .expect("weak StrongOrWeakRef upgrade failed for borrow!")
+          .as_ptr();
+        &*x
+      },
+    }
+  }
+}
+
+impl<T> BorrowMut<T> for StrongOrWeakRef<T> {
+  fn borrow_mut(&mut self) -> &mut T {
+    match self {
+      StrongOrWeakRef::Strong(strong_ptr) => {
+        let x: *mut T = strong_ptr.as_ptr();
+        &mut *x
+      },
+      StrongOrWeakRef::Weak(weak_ptr) => {
+        let x: *mut T = weak_ptr
+          .upgrade()
+          .expect("weak StrongOrWeakRef upgrade failed for borrow_mut!")
+          .as_ptr();
+        &mut *x
+      },
+    }
+  }
+}
+
+impl<T> PartialEq for StrongOrWeakRef<T> {
+  /* Check equality by pointer value. */
+  fn eq(&self, other: &Self) -> bool {
+    let strong_self = match self {
+      StrongOrWeakRef::Strong(x) => x,
+      StrongOrWeakRef::Weak(x) => &x.upgrade().expect("weak self during eq"),
+    };
+    let strong_other = match other {
+      StrongOrWeakRef::Strong(x) => x,
+      StrongOrWeakRef::Weak(x) => &x.upgrade().expect("weak other during eq"),
+    };
+    Rc::ptr_eq(strong_self, strong_other)
+  }
+}
+
+impl<T> Eq for StrongOrWeakRef<T> {}
+
+impl<T> Hash for StrongOrWeakRef<T> {
+  fn hash<H: Hasher>(&self, state: &mut H) {
+    /* Hash by the pointer value. */
+    let contained_ptr: *mut T = match self {
+      StrongOrWeakRef::Strong(strong_ptr) => strong_ptr.as_ptr(),
+      StrongOrWeakRef::Weak(weak_ptr) => weak_ptr
+        .upgrade()
+        .expect("weak StrongOrWeakRef upgrade failed for hash!")
+        .as_ptr(),
+    };
+    state.write_usize(contained_ptr as usize);
+  }
+}
+
+///
 /// Implementation for getting a `PreprocessedGrammar`. Performance doesn't
 /// matter here.
 pub mod grammar_indexing {
@@ -274,22 +378,54 @@ pub mod grammar_indexing {
   }
 
   #[derive(Debug, Clone, PartialEq, Eq, Hash)]
-  pub enum ParseTimeStateMachine {
+  pub enum NamedOrAnonStep {
     Named(StackStep),
     Anon(AnonStep),
-    /* This makes it recursive! */
-    Kleene(StackDiff),
   }
 
   #[derive(Debug, Clone, PartialEq, Eq, Hash)]
-  pub struct StackDiff(pub Vec<ParseTimeStateMachine>);
+  pub struct StackDiffSegment(pub Vec<NamedOrAnonStep>);
 
-  #[derive(Debug, Clone, PartialEq, Eq)]
-  pub struct StateTransitionGraph {
-    pub graph: IndexMap<StatePair, Vec<StackDiff>>,
-    /* NB: This is a formulation of stack cycles which is usable in both parsing directions! */
-    pub cycles: IndexMap<ProdRef, Vec<StackDiff>>,
+  /* We will intentionally be creating lots of reference cycles, to model stack
+   * cycles. */
+  type TrieNodeRef = StrongOrWeakRef<StackTrieNode>;
+
+  #[derive(Debug, Clone)]
+  pub struct StackTrieNode {
+    stack_diff: StackDiffSegment,
+    /* During parsing, the top of the stack will be a named or anonymous symbol. We can negate
+     * that (it should always be a positive step on the top of the stack, so a negative
+     * step, I think) to get a NamedOrAnonStep which can index into the relevant segments.
+     * This supports stack cycles, as well as using an Rc<StackTrieNode> to manage state
+     * during the parse. TODO: make a "build" method that removes the RefCell, coalesces
+     * stack diffs, and makes the next nodes an IndexMap (??? on the last part given lex
+     * BFS?!)! */
+    next_nodes: Vec<StackTrieNextEntry>,
+    /* Doubly-linked so that they can be traversed from either direction -- this is (maybe) key
+     * to parallelism in parsing! */
+    prev_nodes: Vec<StackTrieNextEntry>,
   }
+
+  #[derive(Debug, Clone)]
+  pub enum StackTrieNextEntry {
+    Completed(LoweredState),
+    Incomplete(TrieNodeRef),
+  }
+
+  impl StackTrieNode {
+    fn bare(vtx: &EpsilonGraphVertex) -> Self {
+      StackTrieNode {
+        stack_diff: StackDiffSegment(vtx.get_step().map_or(vec![], |s| vec![s])),
+        next_nodes: vec![],
+        prev_nodes: vec![],
+      }
+    }
+  }
+
+  /* TODO(perf): coalesce subsequent `StackTrieNode.stack_diff`s if there are
+   * no cycles coming from either node. */
+  #[derive(Debug, Clone, PartialEq, Eq)]
+  pub struct StateTransitionGraph(pub IndexMap<LoweredState, Vec<TrieNodeRef>>);
 
   #[derive(Debug, Copy, Clone, PartialEq, Eq, Hash)]
   pub enum LoweredState {
@@ -342,19 +478,17 @@ pub mod grammar_indexing {
   }
 
   impl EpsilonGraphVertex {
-    fn to_steps(&self) -> Vec<ParseTimeStateMachine> {
+    fn get_step(&self) -> Option<NamedOrAnonStep> {
       match self {
-        EpsilonGraphVertex::Start(prod_ref) => vec![ParseTimeStateMachine::Named(
-          StackStep::Positive(StackSym(*prod_ref)),
-        )],
-        EpsilonGraphVertex::End(prod_ref) => vec![ParseTimeStateMachine::Named(
-          StackStep::Negative(StackSym(*prod_ref)),
-        )],
-        EpsilonGraphVertex::Anon(anon_step) => vec![ParseTimeStateMachine::Anon(*anon_step)],
-        EpsilonGraphVertex::State(_) => {
-          /* NB: This should always be at the end of the "nonterminals"! */
-          vec![]
-        },
+        EpsilonGraphVertex::Start(prod_ref) => Some(NamedOrAnonStep::Named(StackStep::Positive(
+          StackSym(*prod_ref),
+        ))),
+        EpsilonGraphVertex::End(prod_ref) => Some(NamedOrAnonStep::Named(StackStep::Negative(
+          StackSym(*prod_ref),
+        ))),
+        EpsilonGraphVertex::Anon(anon_step) => Some(NamedOrAnonStep::Anon(*anon_step)),
+        /* NB: This should always be at the end of the "nonterminals"! */
+        EpsilonGraphVertex::State(_) => None,
       }
     }
   }
@@ -396,18 +530,21 @@ pub mod grammar_indexing {
       let intervals_indexed_by_start_and_end = self.find_start_end_indices();
       let EpsilonIntervalGraph(all_intervals) = self;
       let mut all_completed_pairs_with_vertices: Vec<CompletedStatePairWithVertices> = vec![];
-      /* NB: When finding token transitions, we keep track of which intermediate transition states
-       * we've already seen by using this Hash impl. If any stack cycles are detected when
-       * performing a single iteration, the `todo` is dropped, but as there may be multiple paths to
-       * the same intermediate transition state, we additionally require checking the identity of
-       * intermediate transition states to avoid looping forever. */
+      /* NB: When finding token transitions, we keep track of which intermediate
+       * transition states we've already seen by using this Hash impl. If any
+       * stack cycles are detected when performing a single iteration, the
+       * `todo` is dropped, but as there may be multiple paths to
+       * the same intermediate transition state, we additionally require checking
+       * the identity of intermediate transition states to avoid looping
+       * forever. */
       let mut seen_transitions: HashSet<IntermediateTokenTransition> = HashSet::new();
       let mut traversal_queue: VecDeque<IntermediateTokenTransition> = all_intervals
         .iter()
         .map(IntermediateTokenTransition::new)
         .collect();
       let mut all_stack_cycles: Vec<SingleStackCycle> = vec![];
-      let mut counter: usize = 0;
+
+      /* Find all the token transitions! */
       while !traversal_queue.is_empty() {
         let cur_transition = traversal_queue.pop_front().unwrap();
         if seen_transitions.contains(&cur_transition) {
@@ -423,45 +560,90 @@ pub mod grammar_indexing {
         all_completed_pairs_with_vertices.extend(completed);
         traversal_queue.extend(todo);
         all_stack_cycles.extend(cycles);
-        counter = counter + 1;
       }
-      let mut grouped_nonterminal_strings: IndexMap<StatePair, Vec<ContiguousNonterminalInterval>> =
-        IndexMap::new();
-      for completed_pair in all_completed_pairs_with_vertices.into_iter() {
-        let CompletedStatePairWithVertices {
-          state_pair,
-          interval,
-        } = completed_pair;
-        let entry = grouped_nonterminal_strings
-          .entry(state_pair)
-          .or_insert(vec![]);
-        (*entry).push(interval);
+
+      fn get_trie_for_vertex(
+        map: &mut IndexMap<EpsilonGraphVertex, TrieNodeRef>,
+        vtx: &EpsilonGraphVertex,
+      ) -> TrieNodeRef
+      {
+        let basic_node = StackTrieNode::bare(vtx);
+        let ref_for_trie_node = *map
+          .entry(*vtx)
+          .or_insert_with(|| StrongOrWeakRef::Strong(Rc::new(RefCell::new(basic_node))));
+        /* All bare trie nodes corresponding to the same vertex should have the same
+         * stack diff! */
+        let trie_node: &StackTrieNode = ref_for_trie_node.borrow();
+        assert_eq!(trie_node.stack_diff, basic_node.stack_diff);
+        ref_for_trie_node
       }
-      let converted_into_transitions: IndexMap<StatePair, Vec<StackDiff>> =
-        grouped_nonterminal_strings
-          .into_iter()
-          .map(|(pair, intervals)| {
-            let stack_diffs: Vec<StackDiff> = intervals
-              .iter()
-              .map(|ContiguousNonterminalInterval(nonterminals)| {
-                let cur_stack_steps: Vec<ParseTimeStateMachine> = nonterminals
-                  .iter()
-                  .flat_map(|vtx| vtx.to_steps())
-                  .collect();
-                StackDiff(cur_stack_steps)
-              })
-              /* NB: Make unique, keeping order. */
-              .collect::<IndexSet<_>>()
-              .into_iter()
-              .collect();
-            (pair, stack_diffs)
-          })
-          .collect();
-      StateTransitionGraph {
-        graph: converted_into_transitions,
-        /* TODO: put stack cycles into Kleene() in ParseTimeStateMachine! */
-        cycles: IndexMap::new(),
-      }
+
+      let merged_stack_cycles: IndexMap<EpsilonGraphVertex, TrieNodeRef> = {
+        let mut ret: IndexMap<EpsilonGraphVertex, TrieNodeRef> = IndexMap::new();
+        for cycle in all_stack_cycles.into_iter() {
+          let tries_for_cycle: IndexMap<EpsilonGraphVertex, TrieNodeRef> =
+            cycle.convert_to_implicit_trie_cycle();
+          for (vtx, node) in tries_for_cycle.into_iter() {
+            let trie_for_vertex: &mut StackTrieNode =
+              get_trie_for_vertex(&mut ret, &vtx).borrow_mut();
+            let cur_trie: &StackTrieNode = node.borrow();
+            /* Add the next pointers (at this point, just one) from the node in the
+             * current cycle to the merged entry for the current vertex. */
+            trie_for_vertex.next_nodes.extend(cur_trie.next_nodes);
+            /* Same for the prev pointers. */
+            trie_for_vertex.prev_nodes.extend(cur_trie.prev_nodes);
+          }
+        }
+        ret
+      };
+
+      let transitions_by_state: IndexMap<LoweredState, Vec<TrieNodeRef>> = {
+        let mut ret: IndexMap<LoweredState, Vec<TrieNodeRef>> = IndexMap::new();
+        let mut all_trie_nodes: IndexMap<EpsilonGraphVertex, TrieNodeRef> = merged_stack_cycles;
+        for completed_pair in all_completed_pairs_with_vertices.into_iter() {
+          let CompletedStatePairWithVertices {
+            state_pair,
+            interval,
+          } = completed_pair;
+          let StatePair {
+            left: left_state_in_pair,
+            right: right_state_in_pair,
+          } = state_pair;
+          let ContiguousNonterminalInterval(vertices) = interval;
+          for (vertex_index, vtx) in vertices.into_iter().enumerate() {
+            let ref_for_trie_for_vertex = get_trie_for_vertex(&mut all_trie_nodes, &vtx);
+            let next_edge = if vertex_index == vertices.len() - 1 {
+              /* Register the current trie as emanating from the left state. */
+              let left_entry = ret.entry(left_state_in_pair).or_insert(vec![]);
+              (*left_entry).push(ref_for_trie_for_vertex);
+              /* To end at the `right` state, add a forward edge to a `Completed` entry. */
+              StackTrieNextEntry::Completed(right_state_in_pair)
+            } else {
+              let next_vertex = vertices.get(vertex_index + 1).unwrap();
+              let next_vertex_trie = get_trie_for_vertex(&mut all_trie_nodes, &next_vertex);
+              StackTrieNextEntry::Incomplete(next_vertex_trie)
+            };
+            let prev_edge = if vertex_index == 0 {
+              /* Register the current trie as completing at the right state. */
+              let right_entry = ret.entry(right_state_in_pair).or_insert(vec![]);
+              (*right_entry).push(ref_for_trie_for_vertex);
+              /* To start at the `left` state, add a back edge to a `Completed` entry. */
+              StackTrieNextEntry::Completed(left_state_in_pair)
+            } else {
+              let prev_vertex = vertices.get(vertex_index - 1).unwrap();
+              let prev_vertex_trie = get_trie_for_vertex(&mut all_trie_nodes, &prev_vertex);
+              StackTrieNextEntry::Incomplete(prev_vertex_trie)
+            };
+            /* Add the new prev and next edge. */
+            let trie_for_vertex: &mut StackTrieNode = ref_for_trie_for_vertex.borrow_mut();
+            trie_for_vertex.next_nodes.push(next_edge);
+            trie_for_vertex.prev_nodes.push(prev_edge);
+          }
+        }
+        ret
+      };
+
+      StateTransitionGraph(transitions_by_state)
     }
   }
 
@@ -492,14 +674,51 @@ pub mod grammar_indexing {
   }
 
   #[derive(Debug, Clone, PartialEq, Eq, Hash)]
-  struct SingleStackCycle(Vec<EpsilonGraphVertex>);
+  pub struct SingleStackCycle(Vec<EpsilonGraphVertex>);
 
   impl SingleStackCycle {
-    fn to_diff(&self) -> StackDiff {
+    fn convert_to_implicit_trie_cycle(&self) -> IndexMap<EpsilonGraphVertex, TrieNodeRef> {
       let SingleStackCycle(vertices) = self;
-      let stack_steps: Vec<ParseTimeStateMachine> =
-        vertices.iter().flat_map(|vtx| vtx.to_steps()).collect();
-      StackDiff(stack_steps)
+      /* Trie nodes without any next pointers yet. */
+      let trie_nodes_for_vertices: IndexMap<EpsilonGraphVertex, TrieNodeRef> = vertices
+        .iter()
+        .map(|vtx| {
+          (
+            vtx.clone(),
+            StrongOrWeakRef::Strong(Rc::new(RefCell::new(StackTrieNode::bare(vtx)))),
+          )
+        })
+        .collect();
+      /* Add a single link to the next node in the chain. */
+      for (node_index, (_, ref_for_cur_node)) in trie_nodes_for_vertices.into_iter().enumerate() {
+        let next_ptr: TrieNodeRef = if node_index < trie_nodes_for_vertices.len() - 1 {
+          /* Strong ref-counted pointer to the succeeding node. */
+          let next_vertex = vertices.get(node_index + 1).unwrap();
+          let next_node = trie_nodes_for_vertices.get(next_vertex).unwrap();
+          StrongOrWeakRef::clone_strong(next_node)
+        } else {
+          /* Use a weak pointer since we know we have a cycle from the last node in the
+           * vector to the beginning. */
+          let next_vertex = vertices.get(0).unwrap();
+          let next_node = trie_nodes_for_vertices.get(next_vertex).unwrap();
+          StrongOrWeakRef::clone_weak(next_node)
+        };
+        /* When parsing, the state can potentially take this path as it tries to find
+         * a stack diff which would satisfy a token transition(s). */
+        let cur_node: &mut StackTrieNode = ref_for_cur_node.borrow_mut();
+        cur_node
+          .next_nodes
+          .push(StackTrieNextEntry::Incomplete(next_ptr));
+        /* Populate the back edge of the doubly-linked list, using a weak reference
+         * since the forward edge already used a strong reference if
+         * necessary. */
+        let weak_cur_ptr = StrongOrWeakRef::clone_weak(&ref_for_cur_node);
+        let next_node: &mut StackTrieNode = next_ptr.borrow_mut();
+        next_node
+          .prev_nodes
+          .push(StackTrieNextEntry::Incomplete(weak_cur_ptr));
+      }
+      trie_nodes_for_vertices
     }
   }
 
@@ -517,9 +736,8 @@ pub mod grammar_indexing {
   }
 
   ///
-  /// This Hash implementation is stable because the collection types in this struct have a specific
-  /// ordering.
-  ///
+  /// This Hash implementation is stable because the collection types in this
+  /// struct have a specific ordering.
   impl Hash for IntermediateTokenTransition {
     fn hash<H: Hasher>(&self, state: &mut H) {
       for intermediate_vertex in self.cur_traversal_intermediate_nonterminals.iter() {
@@ -885,7 +1103,7 @@ mod tests {
   /* parse, */
   /* Parse(vec![ */
   /* StackTrie { */
-  /* stack_steps: vec![StackDiff(vec![])], */
+  /* stack_steps: vec![StackDiffSegment(vec![])], */
   /* terminal_entries: vec![StackTrieTerminalEntry(vec![ */
   /* UnionRange::new(first_a, InputTokenIndex(1), first_b), */
   /* UnionRange::new(second_a, InputTokenIndex(1), second_b), */
@@ -893,7 +1111,8 @@ mod tests {
   /* }, */
   /* // StackTrie {}, */
   /* StackTrie { */
-  /* stack_steps: vec![StackDiff(vec![]), StackDiff(vec![into_a_prod])], */
+  /* stack_steps: vec![StackDiffSegment(vec![]),
+   * StackDiffSegment(vec![into_a_prod])], */
   /* terminal_entries: vec![StackTrieTerminalEntry(vec![ */
   /* UnionRange::new(first_a, InputTokenIndex(3), first_b), */
   /* UnionRange::new(second_a, InputTokenIndex(3), second_b), */
@@ -1170,7 +1389,7 @@ mod tests {
       .cloned()
       .collect::<IndexMap<char, Vec<TokenPosition>>>(),
       state_transition_graph: StateTransitionGraph {
-        cycles: IndexMap::new(),
+        cycles: vec![],
         graph: vec![
           (
             StatePair {
@@ -1178,13 +1397,11 @@ mod tests {
               right: first_a,
             },
             vec![
-              StackDiff(vec![ParseTimeStateMachine::Named(StackStep::Positive(
-                a_prod,
-              ))]),
-              StackDiff(vec![
-                ParseTimeStateMachine::Named(StackStep::Positive(b_prod)),
-                ParseTimeStateMachine::Anon(AnonStep::Positive(AnonSym(1))),
-                ParseTimeStateMachine::Named(StackStep::Positive(a_prod)),
+              StackDiffSegment(vec![NamedOrAnonStep::Named(StackStep::Positive(a_prod,))]),
+              StackDiffSegment(vec![
+                NamedOrAnonStep::Named(StackStep::Positive(b_prod)),
+                NamedOrAnonStep::Anon(AnonStep::Positive(AnonSym(1))),
+                NamedOrAnonStep::Named(StackStep::Positive(a_prod)),
               ]),
             ],
           ),
@@ -1193,7 +1410,7 @@ mod tests {
               left: LoweredState::Start,
               right: second_a,
             },
-            vec![StackDiff(vec![ParseTimeStateMachine::Named(
+            vec![StackDiffSegment(vec![NamedOrAnonStep::Named(
               StackStep::Positive(b_prod),
             )])],
           ),
@@ -1202,14 +1419,14 @@ mod tests {
               left: first_a,
               right: first_b,
             },
-            vec![StackDiff(vec![])],
+            vec![StackDiffSegment(vec![])],
           ),
           (
             StatePair {
               left: second_a,
               right: second_b,
             },
-            vec![StackDiff(vec![])],
+            vec![StackDiffSegment(vec![])],
           ),
           (
             StatePair {
@@ -1217,13 +1434,11 @@ mod tests {
               right: LoweredState::End,
             },
             vec![
-              StackDiff(vec![ParseTimeStateMachine::Named(StackStep::Negative(
-                a_prod,
-              ))]),
-              StackDiff(vec![
-                ParseTimeStateMachine::Named(StackStep::Negative(a_prod)),
-                ParseTimeStateMachine::Anon(AnonStep::Negative(AnonSym(0))),
-                ParseTimeStateMachine::Named(StackStep::Negative(b_prod)),
+              StackDiffSegment(vec![NamedOrAnonStep::Named(StackStep::Negative(a_prod,))]),
+              StackDiffSegment(vec![
+                NamedOrAnonStep::Named(StackStep::Negative(a_prod)),
+                NamedOrAnonStep::Anon(AnonStep::Negative(AnonSym(0))),
+                NamedOrAnonStep::Named(StackStep::Negative(b_prod)),
               ]),
             ],
           ),
@@ -1232,7 +1447,7 @@ mod tests {
               left: third_a,
               right: LoweredState::End,
             },
-            vec![StackDiff(vec![ParseTimeStateMachine::Named(
+            vec![StackDiffSegment(vec![NamedOrAnonStep::Named(
               StackStep::Negative(b_prod),
             )])],
           ),
@@ -1241,9 +1456,9 @@ mod tests {
               left: first_b,
               right: third_a,
             },
-            vec![StackDiff(vec![
-              ParseTimeStateMachine::Named(StackStep::Negative(a_prod)),
-              ParseTimeStateMachine::Anon(AnonStep::Negative(AnonSym(1))),
+            vec![StackDiffSegment(vec![
+              NamedOrAnonStep::Named(StackStep::Negative(a_prod)),
+              NamedOrAnonStep::Anon(AnonStep::Negative(AnonSym(1))),
             ])],
           ),
           (
@@ -1251,15 +1466,15 @@ mod tests {
               left: second_b,
               right: first_a,
             },
-            vec![StackDiff(vec![
-              ParseTimeStateMachine::Anon(AnonStep::Positive(AnonSym(0))),
-              ParseTimeStateMachine::Named(StackStep::Positive(a_prod)),
+            vec![StackDiffSegment(vec![
+              NamedOrAnonStep::Anon(AnonStep::Positive(AnonSym(0))),
+              NamedOrAnonStep::Named(StackStep::Positive(a_prod)),
             ])],
           ),
         ]
         .iter()
         .cloned()
-        .collect::<IndexMap<StatePair, Vec<StackDiff>>>(),
+        .collect::<IndexMap<StatePair, Vec<StackDiffSegment>>>(),
       },
     },);
   }
@@ -1268,13 +1483,14 @@ mod tests {
   fn cyclic_transition_graph() {
     let prods = basic_productions();
     let grammar = TokenGrammar::new(&prods);
-    /* TODO: make this stop infinite looping! */
     let preprocessed_grammar = PreprocessedGrammar::new(&grammar);
+    /* TODO: I've only worked out a few of the transitions right now -- circle
+     * back after we're sure the cycles are right. */
     assert_eq!(preprocessed_grammar, PreprocessedGrammar {
       token_states_mapping: IndexMap::new(),
       state_transition_graph: StateTransitionGraph {
         graph: IndexMap::new(),
-        cycles: IndexMap::new(),
+        cycles: vec![],
       },
     },);
   }
