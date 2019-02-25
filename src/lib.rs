@@ -271,6 +271,7 @@ pub enum StrongOrWeakRef<T> {
 }
 
 impl<T> StrongOrWeakRef<T> {
+  /* NB: Should be called as an associated method! */
   fn clone_strong(&self) -> Self {
     match self {
       StrongOrWeakRef::Strong(strong_ptr) => StrongOrWeakRef::Strong(Rc::clone(strong_ptr)),
@@ -283,6 +284,7 @@ impl<T> StrongOrWeakRef<T> {
     }
   }
 
+  /* NB: Should be called as an associated method! */
   fn clone_weak(&self) -> Self {
     match self {
       StrongOrWeakRef::Strong(strong_ptr) => {
@@ -424,6 +426,13 @@ pub mod grammar_indexing {
 
   /* TODO(perf): coalesce subsequent `StackTrieNode.stack_diff`s if there are
    * no cycles coming from either node. */
+  ///
+  /// Pointers to the appropriate "forests" of stack transitions starting/completing at each
+  /// state. "starting" and "completing" are mirrored to allow working away at mapping states to
+  /// input token indices from either direction, which is intended to allow for parallelism. They're
+  /// not really "forests" because they *will* have cycles except in very simple grammars (CFGs and
+  /// below, I think? Unclear if the Chomsky hierarchy still applies).
+  ///
   #[derive(Debug, Clone, PartialEq, Eq)]
   pub struct StateTransitionGraph(pub IndexMap<LoweredState, Vec<TrieNodeRef>>);
 
