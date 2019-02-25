@@ -20,7 +20,7 @@
 #![feature(fn_traits)]
 
 mod cyclic_ref;
-use crate::cyclic_ref::StrongOrWeakRef;
+use crate::cyclic_ref::{DeeplyEqual, StrongOrWeakRef};
 
 extern crate indexmap;
 
@@ -305,10 +305,86 @@ pub mod grammar_indexing {
     prev_nodes: Vec<StackTrieNextEntry>,
   }
 
+  #[cfg(test)]
+  impl DeeplyEqual for StackTrieNode {
+    fn deeply_equal(&self, other: &Self) -> bool {
+      (self.stack_diff != other.stack_diff) && self.deeply_equal_with(other, HashSet::new())
+    }
+  }
+
+  #[cfg(test)]
+  impl StackTrieNode {
+    fn deeply_equal_with(&self, other: &Self, seen: HashSet<TrieNodeRef>) -> bool {
+      if (self.next_nodes.len() != other.next_nodes.len())
+        || (self.prev_nodes.len() != other.prev_nodes.len())
+      {
+        false
+      } else {
+        for (next_ind, self_next_entry) in self.next_nodes.iter().enumerate() {
+          let other_next_entry = other.next_nodes.get(next_ind).unwrap();
+          if !Self::nodes_are_equal(self_next_entry, other_next_entry, seen) {
+            return false;
+          }
+        }
+        for (prev_ind, self_prev_entry) in self.prev_nodes.iter().enumerate() {
+          let other_prev_entry = other.prev_nodes.get(prev_ind).unwrap();
+          if !Self::nodes_are_equal(self_prev_entry, other_prev_entry, seen) {
+            return false;
+          }
+        }
+        true
+      }
+    }
+
+    fn nodes_are_equal(
+      self_next_entry: &StackTrieNextEntry,
+      other_next_entry: &StackTrieNextEntry,
+      seen: HashSet<TrieNodeRef>,
+    ) -> bool
+    {
+      match self_next_entry {
+        StackTrieNextEntry::Completed(self_complete) => match other_next_entry {
+          StackTrieNextEntry::Completed(other_complete) => self_complete == other_complete,
+          StackTrieNextEntry::Incomplete(_) => false,
+        },
+        StackTrieNextEntry::Incomplete(self_incomplete) => match other_next_entry {
+          StackTrieNextEntry::Completed(_) => false,
+          StackTrieNextEntry::Incomplete(other_incomplete) => {
+            if !seen.contains(self_incomplete) {
+              let self_next_borrow: &StackTrieNode = self_incomplete.borrow();
+              let other_next_borrow: &StackTrieNode = other_incomplete.borrow();
+              let new_seen: HashSet<TrieNodeRef> = seen
+                .iter()
+                .cloned()
+                .chain(vec![self_incomplete.clone()].into_iter())
+                .collect();
+              if !self_next_borrow.deeply_equal_with(other_next_borrow, new_seen) {
+                return false;
+              }
+            }
+          },
+        },
+      }
+    }
+  }
+
   #[derive(Debug, Clone)]
   pub enum StackTrieNextEntry {
     Completed(LoweredState),
     Incomplete(TrieNodeRef),
+  }
+
+  #[cfg(test)]
+  impl StackTrieNextEntry {
+    fn both_are_incomplete(&self, other: &Self) -> bool {
+      match self {
+        StackTrieNextEntry::Completed(_) => false,
+        StackTrieNextEntry::Incomplete(_) => match other {
+          StackTrieNextEntry::Completed(_) => false,
+          StackTrieNextEntry::Incomplete(_) => true,
+        },
+      }
+    }
   }
 
   impl StackTrieNode {
@@ -333,6 +409,39 @@ pub mod grammar_indexing {
   /// still applies).
   #[derive(Debug, Clone, PartialEq, Eq)]
   pub struct StateTransitionGraph(pub IndexMap<LoweredState, Vec<TrieNodeRef>>);
+
+  #[cfg(test)]
+  impl DeeplyEqual for StateTransitionGraph {
+    fn deeply_equal(&self, other: &Self) -> bool {
+      let StateTransitionGraph(self_map) = self;
+      let self_mappings: Vec<(LoweredState, Vec<TrieNodeRef>)> = self_map.iter().cloned().collect();
+      let StateTransitionGraph(other_map) = other;
+      let other_mappings: Vec<(LoweredState, Vec<TrieNodeRef>)> =
+        other_map.iter().cloned().collect();
+      if self_mappings.len() != other_mappings.len() {
+        false
+      } else {
+        for (mappings_ind, (self_state, self_node_refs)) in self_mappings.into_iter().enumerate() {
+          let (other_state, other_node_refs) = other_mappings.get(mappings_ind).unwrap();
+          if self_state != other_state {
+            return false;
+          } else if self_node_refs.len() != other_node_refs.len() {
+            return false;
+          } else {
+            for (refs_ind, self_ref) in self_node_refs.iter().enumerate() {
+              let other_ref = other_node_refs.get(refs_ind).unwrap();
+              let self_trie: &StackTrieNode = self_ref.borrow();
+              let other_trie: &StackTrieNode = other_ref.borrow();
+              if !self_trie.deeply_equal(other_trie) {
+                return false;
+              }
+            }
+          }
+        }
+        true
+      }
+    }
+  }
 
   #[derive(Debug, Copy, Clone, PartialEq, Eq, Hash)]
   pub enum LoweredState {
@@ -601,8 +710,7 @@ pub mod grammar_indexing {
         })
         .collect();
       /* Add a single link to the next node in the chain. */
-      for (node_index, (_, ref_for_cur_node)) in trie_nodes_for_vertices.iter().enumerate()
-      {
+      for (node_index, (_, ref_for_cur_node)) in trie_nodes_for_vertices.iter().enumerate() {
         let mut ref_for_cur_node = ref_for_cur_node.clone();
         let mut next_ptr: TrieNodeRef = if node_index < trie_nodes_for_vertices.len() - 1 {
           /* Strong ref-counted pointer to the succeeding node. */
@@ -1285,8 +1393,9 @@ mod tests {
     let third_a = LoweredState::Within(TokenPosition::new(1, 1, 1));
     let a_prod = StackSym(ProdRef(0));
     let b_prod = StackSym(ProdRef(1));
-    assert_eq!(preprocessed_grammar.clone(), PreprocessedGrammar {
-      token_states_mapping: vec![
+    assert_eq!(
+      preprocessed_grammar.token_states_mapping.clone(),
+      vec![
         ('a', vec![
           TokenPosition::new(0, 0, 0),
           TokenPosition::new(1, 0, 0),
@@ -1300,94 +1409,97 @@ mod tests {
       .iter()
       .cloned()
       .collect::<IndexMap<char, Vec<TokenPosition>>>(),
-      state_transition_graph: StateTransitionGraph(
-        vec![
-          (
-            StatePair {
-              left: LoweredState::Start,
-              right: first_a,
-            },
-            vec![
-              StackDiffSegment(vec![NamedOrAnonStep::Named(StackStep::Positive(a_prod,))]),
-              StackDiffSegment(vec![
-                NamedOrAnonStep::Named(StackStep::Positive(b_prod)),
-                NamedOrAnonStep::Anon(AnonStep::Positive(AnonSym(1))),
-                NamedOrAnonStep::Named(StackStep::Positive(a_prod)),
-              ]),
-            ],
-          ),
-          (
-            StatePair {
-              left: LoweredState::Start,
-              right: second_a,
-            },
-            vec![StackDiffSegment(vec![NamedOrAnonStep::Named(
-              StackStep::Positive(b_prod),
-            )])],
-          ),
-          (
-            StatePair {
-              left: first_a,
-              right: first_b,
-            },
-            vec![StackDiffSegment(vec![])],
-          ),
-          (
-            StatePair {
-              left: second_a,
-              right: second_b,
-            },
-            vec![StackDiffSegment(vec![])],
-          ),
-          (
-            StatePair {
-              left: first_b,
-              right: LoweredState::End,
-            },
-            vec![
-              StackDiffSegment(vec![NamedOrAnonStep::Named(StackStep::Negative(a_prod,))]),
-              StackDiffSegment(vec![
-                NamedOrAnonStep::Named(StackStep::Negative(a_prod)),
-                NamedOrAnonStep::Anon(AnonStep::Negative(AnonSym(0))),
-                NamedOrAnonStep::Named(StackStep::Negative(b_prod)),
-              ]),
-            ],
-          ),
-          (
-            StatePair {
-              left: third_a,
-              right: LoweredState::End,
-            },
-            vec![StackDiffSegment(vec![NamedOrAnonStep::Named(
-              StackStep::Negative(b_prod),
-            )])],
-          ),
-          (
-            StatePair {
-              left: first_b,
-              right: third_a,
-            },
-            vec![StackDiffSegment(vec![
-              NamedOrAnonStep::Named(StackStep::Negative(a_prod)),
-              NamedOrAnonStep::Anon(AnonStep::Negative(AnonSym(1))),
-            ])],
-          ),
-          (
-            StatePair {
-              left: second_b,
-              right: first_a,
-            },
-            vec![StackDiffSegment(vec![
-              NamedOrAnonStep::Anon(AnonStep::Positive(AnonSym(0))),
+    );
+    let other_state_transition_graph = StateTransitionGraph(
+      vec![
+        (
+          StatePair {
+            left: LoweredState::Start,
+            right: first_a,
+          },
+          vec![
+            StackDiffSegment(vec![NamedOrAnonStep::Named(StackStep::Positive(a_prod))]),
+            StackDiffSegment(vec![
+              NamedOrAnonStep::Named(StackStep::Positive(b_prod)),
+              NamedOrAnonStep::Anon(AnonStep::Positive(AnonSym(1))),
               NamedOrAnonStep::Named(StackStep::Positive(a_prod)),
-            ])],
-          ),
-        ]
-        .iter()
-        .cloned()
-        .collect::<IndexMap<StatePair, Vec<StackDiffSegment>>>()
-      ),
-    },);
+            ]),
+          ],
+        ),
+        (
+          StatePair {
+            left: LoweredState::Start,
+            right: second_a,
+          },
+          vec![StackDiffSegment(vec![NamedOrAnonStep::Named(
+            StackStep::Positive(b_prod),
+          )])],
+        ),
+        (
+          StatePair {
+            left: first_a,
+            right: first_b,
+          },
+          vec![StackDiffSegment(vec![])],
+        ),
+        (
+          StatePair {
+            left: second_a,
+            right: second_b,
+          },
+          vec![StackDiffSegment(vec![])],
+        ),
+        (
+          StatePair {
+            left: first_b,
+            right: LoweredState::End,
+          },
+          vec![
+            StackDiffSegment(vec![NamedOrAnonStep::Named(StackStep::Negative(a_prod))]),
+            StackDiffSegment(vec![
+              NamedOrAnonStep::Named(StackStep::Negative(a_prod)),
+              NamedOrAnonStep::Anon(AnonStep::Negative(AnonSym(0))),
+              NamedOrAnonStep::Named(StackStep::Negative(b_prod)),
+            ]),
+          ],
+        ),
+        (
+          StatePair {
+            left: third_a,
+            right: LoweredState::End,
+          },
+          vec![StackDiffSegment(vec![NamedOrAnonStep::Named(
+            StackStep::Negative(b_prod),
+          )])],
+        ),
+        (
+          StatePair {
+            left: first_b,
+            right: third_a,
+          },
+          vec![StackDiffSegment(vec![
+            NamedOrAnonStep::Named(StackStep::Negative(a_prod)),
+            NamedOrAnonStep::Anon(AnonStep::Negative(AnonSym(1))),
+          ])],
+        ),
+        (
+          StatePair {
+            left: second_b,
+            right: first_a,
+          },
+          vec![StackDiffSegment(vec![
+            NamedOrAnonStep::Anon(AnonStep::Positive(AnonSym(0))),
+            NamedOrAnonStep::Named(StackStep::Positive(a_prod)),
+          ])],
+        ),
+      ]
+      .iter()
+      .cloned()
+      .collect::<IndexMap<StatePair, Vec<StackDiffSegment>>>(),
+    );
+    assert!(preprocessed_grammar
+      .state_transition_graph
+      .deeply_equal(other_state_transition_graph));
   }
 
   #[test]

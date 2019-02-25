@@ -20,7 +20,7 @@
 
 use std::{
   borrow::{Borrow, BorrowMut},
-  cell::{Ref, RefCell},
+  cell::RefCell,
   hash::{Hash, Hasher},
   rc::{Rc, Weak},
 };
@@ -139,4 +139,12 @@ impl<T> Hash for StrongOrWeakRef<T> {
     };
     state.write_usize(contained_ptr as usize);
   }
+}
+
+///
+/// A tiny trait to indicate that some form of equality is defined which reaches into the contents
+/// of each node instead of just counting references.
+///
+pub trait DeeplyEqual {
+  fn deeply_equal(&self, other: &Self) -> bool;
 }
