@@ -350,7 +350,9 @@ pub mod grammar_indexing {
         StackTrieNextEntry::Incomplete(self_incomplete) => match other_next_entry {
           StackTrieNextEntry::Completed(_) => false,
           StackTrieNextEntry::Incomplete(other_incomplete) => {
-            if !seen.contains(self_incomplete) {
+            if seen.contains(self_incomplete) {
+              true
+            } else {
               let self_next_borrow: &StackTrieNode = self_incomplete.borrow();
               let other_next_borrow: &StackTrieNode = other_incomplete.borrow();
               let new_seen: HashSet<TrieNodeRef> = seen
@@ -358,9 +360,7 @@ pub mod grammar_indexing {
                 .cloned()
                 .chain(vec![self_incomplete.clone()].into_iter())
                 .collect();
-              if !self_next_borrow.deeply_equal_with(other_next_borrow, new_seen) {
-                return false;
-              }
+              self_next_borrow.deeply_equal_with(other_next_borrow, new_seen)
             }
           },
         },
@@ -414,16 +414,23 @@ pub mod grammar_indexing {
   impl DeeplyEqual for StateTransitionGraph {
     fn deeply_equal(&self, other: &Self) -> bool {
       let StateTransitionGraph(self_map) = self;
-      let self_mappings: Vec<(LoweredState, Vec<TrieNodeRef>)> = self_map.iter().cloned().collect();
+      /* TODO: make this pair clone method into an Iterator extension! See
+       * https://stackoverflow.com/questions/30540766/how-can-i-add-new-methods-to-iterator. */
+      let self_mappings: Vec<(LoweredState, Vec<TrieNodeRef>)> = self_map
+        .iter()
+        .map(|(x, y)| (x.clone(), y.clone()))
+        .collect();
       let StateTransitionGraph(other_map) = other;
-      let other_mappings: Vec<(LoweredState, Vec<TrieNodeRef>)> =
-        other_map.iter().cloned().collect();
+      let other_mappings: Vec<(LoweredState, Vec<TrieNodeRef>)> = other_map
+        .iter()
+        .map(|(x, y)| (x.clone(), y.clone()))
+        .collect();
       if self_mappings.len() != other_mappings.len() {
         false
       } else {
         for (mappings_ind, (self_state, self_node_refs)) in self_mappings.into_iter().enumerate() {
           let (other_state, other_node_refs) = other_mappings.get(mappings_ind).unwrap();
-          if self_state != other_state {
+          if self_state != *other_state {
             return false;
           } else if self_node_refs.len() != other_node_refs.len() {
             return false;
@@ -1499,7 +1506,7 @@ mod tests {
     );
     assert!(preprocessed_grammar
       .state_transition_graph
-      .deeply_equal(other_state_transition_graph));
+      .deeply_equal(&other_state_transition_graph));
   }
 
   #[test]
