@@ -19,9 +19,6 @@
 */
 #![feature(fn_traits)]
 
-mod cyclic_ref;
-use crate::cyclic_ref::StrongOrWeakRef;
-
 extern crate indexmap;
 
 use indexmap::{IndexMap, IndexSet};
@@ -285,13 +282,12 @@ pub mod grammar_indexing {
   #[derive(Debug, Clone, PartialEq, Eq, Hash)]
   pub struct StackDiffSegment(pub Vec<NamedOrAnonStep>);
 
-  /* We will intentionally be creating lots of reference cycles, to model stack
-   * cycles. */
-  type TrieNodeRef = StrongOrWeakRef<StackTrieNode>;
+  #[derive(Debug, Copy, Clone, PartialEq, Eq, Hash)]
+  pub struct TrieNodeRef(pub usize);
 
-  #[derive(Debug, Clone)]
+  #[derive(Debug, Clone, PartialEq, Eq, Hash)]
   pub struct StackTrieNode {
-    stack_diff: StackDiffSegment,
+    pub stack_diff: StackDiffSegment,
     /* During parsing, the top of the stack will be a named or anonymous symbol. We can negate
      * that (it should always be a positive step on the top of the stack, so a negative
      * step, I think) to get a NamedOrAnonStep which can index into the relevant segments.
@@ -299,13 +295,13 @@ pub mod grammar_indexing {
      * during the parse. TODO: make a "build" method that removes the RefCell, coalesces
      * stack diffs, and makes the next nodes an IndexMap (??? on the last part given lex
      * BFS?!)! */
-    next_nodes: Vec<StackTrieNextEntry>,
+    pub next_nodes: Vec<StackTrieNextEntry>,
     /* Doubly-linked so that they can be traversed from either direction -- this is (maybe) key
      * to parallelism in parsing! */
     pub prev_nodes: Vec<StackTrieNextEntry>,
   }
 
-  #[derive(Debug, Clone)]
+  #[derive(Debug, Copy, Clone, PartialEq, Eq, Hash)]
   pub enum StackTrieNextEntry {
     Completed(LoweredState),
     Incomplete(TrieNodeRef),
@@ -321,18 +317,73 @@ pub mod grammar_indexing {
     }
   }
 
-  /* TODO(perf): coalesce subsequent `StackTrieNode.stack_diff`s if there are
-   * no cycles coming from either node. */
-  ///
-  /// Pointers to the appropriate "forests" of stack transitions
-  /// starting/completing at each state. "starting" and "completing" are
-  /// mirrored to allow working away at mapping states to input token indices
-  /// from either direction, which is intended to allow for parallelism. They're
-  /// not really "forests" because they *will* have cycles except in very simple
-  /// grammars (CFGs and below, I think? Unclear if the Chomsky hierarchy
-  /// still applies).
   #[derive(Debug, Clone, PartialEq, Eq)]
-  pub struct StateTransitionGraph(pub IndexMap<LoweredState, Vec<TrieNodeRef>>);
+  struct EpsilonNodeStateSubgraph {
+    vertex_mapping: IndexMap<EpsilonGraphVertex, TrieNodeRef>,
+    trie_node_universe: Vec<StackTrieNode>,
+  }
+
+  impl EpsilonNodeStateSubgraph {
+    fn new() -> Self {
+      EpsilonNodeStateSubgraph {
+        vertex_mapping: IndexMap::new(),
+        trie_node_universe: vec![],
+      }
+    }
+
+    fn get_trie(&mut self, node_ref: TrieNodeRef) -> &mut StackTrieNode {
+      let TrieNodeRef(node_index) = node_ref;
+      self.trie_node_universe.get_mut(node_index).unwrap()
+    }
+
+    fn trie_ref_for_vertex(&mut self, vtx: &EpsilonGraphVertex) -> TrieNodeRef {
+      let basic_node = StackTrieNode::bare(vtx);
+      let trie_node_ref_for_vertex = self.vertex_mapping.get(vtx)
+        .cloned()
+        .unwrap_or_else(|| {
+          let next_ref = TrieNodeRef(self.trie_node_universe.len());
+          self.trie_node_universe.push(basic_node.clone());
+          next_ref
+        });
+      /* All trie nodes corresponding to the same vertex should have the same stack diff! */
+      assert_eq!(self.get_trie(trie_node_ref_for_vertex).stack_diff, basic_node.stack_diff);
+      trie_node_ref_for_vertex
+    }
+  }
+
+  #[derive(Debug, Clone, PartialEq, Eq)]
+  pub struct ForestEntryExitPoints {
+    pub entering_into: Vec<TrieNodeRef>,
+    pub exiting_out_of: Vec<TrieNodeRef>,
+  }
+
+  impl ForestEntryExitPoints {
+    fn new() -> Self {
+      ForestEntryExitPoints {
+        entering_into: vec![],
+        exiting_out_of: vec![],
+      }
+    }
+
+    fn add_exiting(&mut self, node_ref: TrieNodeRef) {
+      self.exiting_out_of.push(node_ref);
+    }
+
+    fn add_entering(&mut self, node_ref: TrieNodeRef) {
+      self.entering_into.push(node_ref);
+    }
+  }
+
+  /* Pointers to the appropriate "forests" of stack transitions starting/completing at each
+   * state. "starting" and "completing" are mirrored to allow working away at mapping states to
+   * input token indices from either direction, which is intended to allow for parallelism. They're
+   * not really "forests" because they *will* have cycles except in very simple grammars (CFGs and
+   * below, I think? Unclear if the Chomsky hierarchy still applies). */
+  #[derive(Debug, Clone, PartialEq, Eq)]
+  pub struct StateTransitionGraph {
+    pub state_forest_contact_points: IndexMap<LoweredState, ForestEntryExitPoints>,
+    pub trie_node_mapping: Vec<StackTrieNode>,
+  }
 
   #[derive(Debug, Copy, Clone, PartialEq, Eq, Hash)]
   pub enum LoweredState {
@@ -469,48 +520,40 @@ pub mod grammar_indexing {
         all_stack_cycles.extend(cycles);
       }
 
-      fn get_trie_for_vertex(
-        map: &mut IndexMap<EpsilonGraphVertex, TrieNodeRef>,
-        vtx: &EpsilonGraphVertex,
-      ) -> TrieNodeRef
-      {
-        let basic_node = StackTrieNode::bare(vtx);
-        let ref_for_trie_node = &*map
-          .entry(*vtx)
-          .or_insert_with(|| StrongOrWeakRef::make_strong(basic_node.clone()));
-        /* All bare trie nodes corresponding to the same vertex should have the same
-         * stack diff! */
-        let trie_node: &StackTrieNode = ref_for_trie_node.borrow();
-        assert_eq!(trie_node.stack_diff, basic_node.stack_diff);
-        ref_for_trie_node.clone()
-      }
-
-      let merged_stack_cycles: IndexMap<EpsilonGraphVertex, TrieNodeRef> = {
-        let mut ret: IndexMap<EpsilonGraphVertex, TrieNodeRef> = IndexMap::new();
+      let merged_stack_cycles: EpsilonNodeStateSubgraph = {
+        let mut ret = EpsilonNodeStateSubgraph::new();
         for cycle in all_stack_cycles.into_iter() {
-          let tries_for_cycle: IndexMap<EpsilonGraphVertex, TrieNodeRef> =
-            cycle.convert_to_implicit_trie_cycle();
-          for (vtx, node) in tries_for_cycle.into_iter() {
-            let mut ref_for_trie_for_vertex = get_trie_for_vertex(&mut ret, &vtx);
-            let trie_for_vertex: &mut StackTrieNode = ref_for_trie_for_vertex.borrow_mut();
-            let cur_trie: &StackTrieNode = node.borrow();
-            /* Add the next pointers (at this point, just one) from the node in the
-             * current cycle to the merged entry for the current vertex. */
-            trie_for_vertex
-              .next_nodes
-              .extend(cur_trie.next_nodes.clone());
-            /* Same for the prev pointers. */
-            trie_for_vertex
-              .prev_nodes
-              .extend(cur_trie.prev_nodes.clone());
+          let SingleStackCycle(vertices) = cycle;
+          for (cur_vtx_index, vtx) in vertices.iter().enumerate() {
+            let cur_trie_ref = ret.trie_ref_for_vertex(&vtx);
+            let next_trie_ref = {
+              let next_vtx_index = (cur_vtx_index + 1) % vertices.len();
+              let next_vertex = vertices.get(next_vtx_index).unwrap();
+              ret.trie_ref_for_vertex(&next_vertex)
+            };
+            {
+              /* Add a forward link from the current to the next vertex's node. */
+              let mut cur_trie = ret.get_trie(cur_trie_ref);
+              cur_trie
+                .next_nodes
+                .push(StackTrieNextEntry::Incomplete(next_trie_ref));
+            }
+            {
+              /* Add a back edge from the next to the current. */
+              let mut next_trie = ret.get_trie(next_trie_ref);
+              next_trie
+                .prev_nodes
+                .push(StackTrieNextEntry::Incomplete(cur_trie_ref));
+            }
           }
         }
         ret
       };
 
-      let transitions_by_state: IndexMap<LoweredState, Vec<TrieNodeRef>> = {
-        let mut ret: IndexMap<LoweredState, Vec<TrieNodeRef>> = IndexMap::new();
-        let mut all_trie_nodes: IndexMap<EpsilonGraphVertex, TrieNodeRef> = merged_stack_cycles;
+      /* TODO: this method, by extending `merged_stack_cycles` with `EpsilonNodeStateSubgraph`!!! */
+      let transitions_by_state: StateTransitionGraph = {
+        let mut ret_mapping: IndexMap<LoweredState, ForestEntryExitPoints> = IndexMap::new();
+        let mut ret_trie_subgraph = merged_stack_cycles;
         for completed_pair in all_completed_pairs_with_vertices.into_iter() {
           let CompletedStatePairWithVertices {
             state_pair,
@@ -522,39 +565,56 @@ pub mod grammar_indexing {
           } = state_pair;
           let ContiguousNonterminalInterval(vertices) = interval;
           for (vertex_index, vtx) in vertices.iter().enumerate() {
-            let mut ref_for_trie_for_vertex = get_trie_for_vertex(&mut all_trie_nodes, &vtx);
+            let cur_trie_ref = ret_trie_subgraph.trie_ref_for_vertex(&vtx);
             let next_edge = if vertex_index == vertices.len() - 1 {
-              /* Register the current trie as emanating from the left state. */
-              let left_entry = ret.entry(left_state_in_pair).or_insert(vec![]);
-              (*left_entry).push(ref_for_trie_for_vertex.clone());
+              /* Register the current trie as completing at the right state. */
+              let right_entry = ret_mapping.entry(right_state_in_pair)
+                .or_insert_with(ForestEntryExitPoints::new);
+              (*right_entry).add_exiting(cur_trie_ref);
               /* To end at the `right` state, add a forward edge to a `Completed` entry. */
               StackTrieNextEntry::Completed(right_state_in_pair)
             } else {
               let next_vertex = vertices.get(vertex_index + 1).unwrap();
-              let next_vertex_trie = get_trie_for_vertex(&mut all_trie_nodes, &next_vertex);
-              StackTrieNextEntry::Incomplete(next_vertex_trie)
+              let next_trie_ref = ret_trie_subgraph.trie_ref_for_vertex(&next_vertex);
+              let mut next_trie = ret_trie_subgraph.get_trie(next_trie_ref);
+              next_trie
+                .prev_nodes
+                .push(StackTrieNextEntry::Incomplete(cur_trie_ref));
+              StackTrieNextEntry::Incomplete(next_trie_ref)
             };
             let prev_edge = if vertex_index == 0 {
-              /* Register the current trie as completing at the right state. */
-              let right_entry = ret.entry(right_state_in_pair).or_insert(vec![]);
-              (*right_entry).push(ref_for_trie_for_vertex.clone());
+              /* Register the current trie as emanating from the left state. */
+              let left_entry = ret_mapping.entry(left_state_in_pair)
+                .or_insert_with(ForestEntryExitPoints::new);
+              (*left_entry).add_exiting(cur_trie_ref);
               /* To start at the `left` state, add a back edge to a `Completed` entry. */
               StackTrieNextEntry::Completed(left_state_in_pair)
             } else {
               let prev_vertex = vertices.get(vertex_index - 1).unwrap();
-              let prev_vertex_trie = get_trie_for_vertex(&mut all_trie_nodes, &prev_vertex);
-              StackTrieNextEntry::Incomplete(prev_vertex_trie)
+              let prev_trie_ref = ret_trie_subgraph.trie_ref_for_vertex(&prev_vertex);
+              let mut prev_trie = ret_trie_subgraph.get_trie(prev_trie_ref);
+              prev_trie
+                .next_nodes
+                .push(StackTrieNextEntry::Incomplete(cur_trie_ref));
+              StackTrieNextEntry::Incomplete(prev_trie_ref)
             };
-            /* Add the new prev and next edge. */
-            let trie_for_vertex: &mut StackTrieNode = ref_for_trie_for_vertex.borrow_mut();
-            trie_for_vertex.next_nodes.push(next_edge);
-            trie_for_vertex.prev_nodes.push(prev_edge);
+            /* Link the forward and back edges from the current node. */
+            let mut cur_trie = ret_trie_subgraph.get_trie(cur_trie_ref);
+            cur_trie
+              .next_nodes
+              .push(next_edge);
+            cur_trie
+              .prev_nodes
+              .push(prev_edge);
           }
         }
-        ret
+        StateTransitionGraph {
+          state_forest_contact_points: ret_mapping,
+          trie_node_mapping: ret_trie_subgraph.trie_node_universe,
+        }
       };
 
-      StateTransitionGraph(transitions_by_state)
+      transitions_by_state
     }
   }
 
@@ -587,53 +647,6 @@ pub mod grammar_indexing {
   #[derive(Debug, Clone, PartialEq, Eq, Hash)]
   pub struct SingleStackCycle(Vec<EpsilonGraphVertex>);
 
-  impl SingleStackCycle {
-    fn convert_to_implicit_trie_cycle(&self) -> IndexMap<EpsilonGraphVertex, TrieNodeRef> {
-      let SingleStackCycle(vertices) = self;
-      /* Trie nodes without any next pointers yet. */
-      let trie_nodes_for_vertices: IndexMap<EpsilonGraphVertex, TrieNodeRef> = vertices
-        .iter()
-        .map(|vtx| {
-          (
-            vtx.clone(),
-            StrongOrWeakRef::make_strong(StackTrieNode::bare(vtx)),
-          )
-        })
-        .collect();
-      /* Add a single link to the next node in the chain. */
-      for (node_index, (_, ref_for_cur_node)) in trie_nodes_for_vertices.iter().enumerate() {
-        let mut ref_for_cur_node = ref_for_cur_node.clone();
-        let mut next_ptr: TrieNodeRef = if node_index < trie_nodes_for_vertices.len() - 1 {
-          /* Strong ref-counted pointer to the succeeding node. */
-          let next_vertex = vertices.get(node_index + 1).unwrap();
-          let next_node = trie_nodes_for_vertices.get(next_vertex).unwrap();
-          StrongOrWeakRef::clone_strong(next_node)
-        } else {
-          /* Use a weak pointer since we know we have a cycle from the last node in the
-           * vector to the beginning. */
-          let next_vertex = vertices.get(0).unwrap();
-          let next_node = trie_nodes_for_vertices.get(next_vertex).unwrap();
-          StrongOrWeakRef::clone_weak(next_node)
-        };
-        /* When parsing, the state can potentially take this path as it tries to find
-         * a stack diff which would satisfy a token transition(s). */
-        let weak_cur_ptr = StrongOrWeakRef::clone_weak(&ref_for_cur_node.clone());
-        let cur_node: &mut StackTrieNode = ref_for_cur_node.borrow_mut();
-        cur_node
-          .next_nodes
-          .push(StackTrieNextEntry::Incomplete(next_ptr.clone()));
-        /* Populate the back edge of the doubly-linked list, using a weak reference
-         * since the forward edge already used a strong reference if
-         * necessary. */
-        let next_node: &mut StackTrieNode = next_ptr.borrow_mut();
-        next_node
-          .prev_nodes
-          .push(StackTrieNextEntry::Incomplete(weak_cur_ptr));
-      }
-      trie_nodes_for_vertices
-    }
-  }
-
   #[derive(Debug, Clone, PartialEq, Eq)]
   struct TransitionIterationResult {
     completed: Vec<CompletedStatePairWithVertices>,
@@ -647,9 +660,8 @@ pub mod grammar_indexing {
     rest_of_interval: Vec<EpsilonGraphVertex>,
   }
 
-  ///
-  /// This Hash implementation is stable because the collection types in this
-  /// struct have a specific ordering.
+  /* This Hash implementation is stable because the collection types in this struct have a specific
+   * ordering. */
   impl Hash for IntermediateTokenTransition {
     fn hash<H: Hasher>(&self, state: &mut H) {
       for intermediate_vertex in self.cur_traversal_intermediate_nonterminals.iter() {
@@ -1340,98 +1352,130 @@ mod tests {
       .collect::<IndexMap<char, Vec<TokenPosition>>>(),
     );
 
-    /* TODO: This is extremely brittle to changes in the algorithm or data structure to produce the
-     * stack trie forest. It is probably better to do some testing in the parse phase. */
-    /* let other_state_transition_graph = StateTransitionGraph( */
-    /*   vec![ */
-    /*     ( */
-    /*       StatePair { */
-    /*         left: LoweredState::Start, */
-    /*         right: first_a, */
-    /*       }, */
-    /*       vec![ */
-    /*         StackDiffSegment(vec![NamedOrAnonStep::Named(StackStep::Positive(a_prod))]), */
-    /*         StackDiffSegment(vec![ */
-    /*           NamedOrAnonStep::Named(StackStep::Positive(b_prod)), */
-    /*           NamedOrAnonStep::Anon(AnonStep::Positive(AnonSym(1))), */
-    /*           NamedOrAnonStep::Named(StackStep::Positive(a_prod)), */
-    /*         ]), */
-    /*       ], */
-    /*     ), */
-    /*     ( */
-    /*       StatePair { */
-    /*         left: LoweredState::Start, */
-    /*         right: second_a, */
-    /*       }, */
-    /*       vec![StackDiffSegment(vec![NamedOrAnonStep::Named( */
-    /*         StackStep::Positive(b_prod), */
-    /*       )])], */
-    /*     ), */
-    /*     ( */
-    /*       StatePair { */
-    /*         left: first_a, */
-    /*         right: first_b, */
-    /*       }, */
-    /*       vec![StackDiffSegment(vec![])], */
-    /*     ), */
-    /*     ( */
-    /*       StatePair { */
-    /*         left: second_a, */
-    /*         right: second_b, */
-    /*       }, */
-    /*       vec![StackDiffSegment(vec![])], */
-    /*     ), */
-    /*     ( */
-    /*       StatePair { */
-    /*         left: first_b, */
-    /*         right: LoweredState::End, */
-    /*       }, */
-    /*       vec![ */
-    /*         StackDiffSegment(vec![NamedOrAnonStep::Named(StackStep::Negative(a_prod))]), */
-    /*         StackDiffSegment(vec![ */
-    /*           NamedOrAnonStep::Named(StackStep::Negative(a_prod)), */
-    /*           NamedOrAnonStep::Anon(AnonStep::Negative(AnonSym(0))), */
-    /*           NamedOrAnonStep::Named(StackStep::Negative(b_prod)), */
-    /*         ]), */
-    /*       ], */
-    /*     ), */
-    /*     ( */
-    /*       StatePair { */
-    /*         left: third_a, */
-    /*         right: LoweredState::End, */
-    /*       }, */
-    /*       vec![StackDiffSegment(vec![NamedOrAnonStep::Named( */
-    /*         StackStep::Negative(b_prod), */
-    /*       )])], */
-    /*     ), */
-    /*     ( */
-    /*       StatePair { */
-    /*         left: first_b, */
-    /*         right: third_a, */
-    /*       }, */
-    /*       vec![StackDiffSegment(vec![ */
-    /*         NamedOrAnonStep::Named(StackStep::Negative(a_prod)), */
-    /*         NamedOrAnonStep::Anon(AnonStep::Negative(AnonSym(1))), */
-    /*       ])], */
-    /*     ), */
-    /*     ( */
-    /*       StatePair { */
-    /*         left: second_b, */
-    /*         right: first_a, */
-    /*       }, */
-    /*       vec![StackDiffSegment(vec![ */
-    /*         NamedOrAnonStep::Anon(AnonStep::Positive(AnonSym(0))), */
-    /*         NamedOrAnonStep::Named(StackStep::Positive(a_prod)), */
-    /*       ])], */
-    /*     ), */
-    /*   ] */
-    /*   .iter() */
-    /*   .cloned() */
-    /*   .collect::<IndexMap<StatePair, Vec<StackDiffSegment>>>(), */
-    /* ); */
-    /* assert!(preprocessed_grammar */
-    /*   .state_transition_graph */
-    /*   .deeply_equal(&other_state_transition_graph)); */
+    let other_state_transition_graph = StateTransitionGraph {
+      state_forest_contact_points: [
+        (LoweredState::Start, ForestEntryExitPoints {
+          entering_into: vec![TrieNodeRef(0)],
+          exiting_out_of: vec![],
+        }),
+        (first_a, ForestEntryExitPoints {
+          entering_into: vec![],
+          exiting_out_of: vec![TrieNodeRef(1)],
+        }),
+      ].into_iter().map(|(s, t)| (s.clone(), t.clone())).collect(),
+      trie_node_mapping: vec![
+        /* 0 */
+        StackTrieNode {
+          stack_diff: StackDiffSegment(vec![NamedOrAnonStep::Named(StackStep::Positive(a_prod))]),
+          next_nodes: vec![StackTrieNextEntry::Incomplete(TrieNodeRef(1))],
+          prev_nodes: vec![StackTrieNextEntry::Completed(LoweredState::Start)],
+        },
+        /* 1 */
+        StackTrieNode {
+          stack_diff: StackDiffSegment(vec![
+              NamedOrAnonStep::Named(StackStep::Positive(b_prod)),
+              NamedOrAnonStep::Anon(AnonStep::Positive(AnonSym(1))),
+              NamedOrAnonStep::Named(StackStep::Positive(a_prod)),
+          ]),
+          next_nodes: vec![StackTrieNextEntry::Completed(first_a)],
+          prev_nodes: vec![StackTrieNextEntry::Incomplete(TrieNodeRef(0))],
+        },
+      ],
+      /* vec![ */
+      /*   /\* = {0,1} *\/ */
+      /*   /\* ( *\/ */
+      /*   /\*   StatePair { *\/ */
+      /*   /\*     left: LoweredState::Start, *\/ */
+      /*   /\*     right: first_a, *\/ */
+      /*   /\*   }, *\/ */
+      /*   /\*   vec![ *\/ */
+      /*   /\*     StackDiffSegment(vec![NamedOrAnonStep::Named(StackStep::Positive(a_prod))]), *\/ */
+      /*   /\*     StackDiffSegment(vec![ *\/ */
+      /*   /\*       NamedOrAnonStep::Named(StackStep::Positive(b_prod)), *\/ */
+      /*   /\*       NamedOrAnonStep::Anon(AnonStep::Positive(AnonSym(1))), *\/ */
+      /*   /\*       NamedOrAnonStep::Named(StackStep::Positive(a_prod)), *\/ */
+      /*   /\*     ]), *\/ */
+      /*   /\*   ], *\/ */
+      /*   /\* ) *\/, */
+      /*   ( */
+      /*     StatePair { */
+      /*       left: LoweredState::Start, */
+      /*       right: second_a, */
+      /*     }, */
+      /*     vec![StackDiffSegment(vec![NamedOrAnonStep::Named( */
+      /*       StackStep::Positive(b_prod), */
+      /*     )])], */
+      /*   ), */
+      /*   ( */
+      /*     StatePair { */
+      /*       left: first_a, */
+      /*       right: first_b, */
+      /*     }, */
+      /*     vec![StackDiffSegment(vec![])], */
+      /*   ), */
+      /*   ( */
+      /*     StatePair { */
+      /*       left: second_a, */
+      /*       right: second_b, */
+      /*     }, */
+      /*     vec![StackDiffSegment(vec![])], */
+      /*   ), */
+      /*   ( */
+      /*     StatePair { */
+      /*       left: first_b, */
+      /*       right: LoweredState::End, */
+      /*     }, */
+      /*     vec![ */
+      /*       StackDiffSegment(vec![NamedOrAnonStep::Named(StackStep::Negative(a_prod))]), */
+      /*       StackDiffSegment(vec![ */
+      /*         NamedOrAnonStep::Named(StackStep::Negative(a_prod)), */
+      /*         NamedOrAnonStep::Anon(AnonStep::Negative(AnonSym(0))), */
+      /*         NamedOrAnonStep::Named(StackStep::Negative(b_prod)), */
+      /*       ]), */
+      /*     ], */
+      /*   ), */
+      /*   ( */
+      /*     StatePair { */
+      /*       left: third_a, */
+      /*       right: LoweredState::End, */
+      /*     }, */
+      /*     vec![StackDiffSegment(vec![NamedOrAnonStep::Named( */
+      /*       StackStep::Negative(b_prod), */
+      /*     )])], */
+      /*   ), */
+      /*   ( */
+      /*     StatePair { */
+      /*       left: first_b, */
+      /*       right: third_a, */
+      /*     }, */
+      /*     vec![StackDiffSegment(vec![ */
+      /*       NamedOrAnonStep::Named(StackStep::Negative(a_prod)), */
+      /*       NamedOrAnonStep::Anon(AnonStep::Negative(AnonSym(1))), */
+      /*     ])], */
+      /*   ), */
+      /*   ( */
+      /*     StatePair { */
+      /*       left: second_b, */
+      /*       right: first_a, */
+      /*     }, */
+      /*     vec![StackDiffSegment(vec![ */
+      /*       NamedOrAnonStep::Anon(AnonStep::Positive(AnonSym(0))), */
+      /*       NamedOrAnonStep::Named(StackStep::Positive(a_prod)), */
+      /*     ])], */
+      /*   ), */
+      /* ].iter() */
+      /*   .cloned() */
+      /*   .collect::<IndexMap<StatePair, Vec<StackDiffSegment>>>(), */
+    };
+
+    let other_state_transition_graph = StateTransitionGraph {
+      state_forest_contact_points: vec![].into_iter().collect(),
+      trie_node_mapping: vec![],
+    };
+    assert_eq!(
+      preprocessed_grammar.state_transition_graph,
+      other_state_transition_graph,
+    );
   }
 
   /* #[test] */
