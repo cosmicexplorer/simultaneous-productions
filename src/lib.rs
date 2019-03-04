@@ -958,6 +958,44 @@ pub mod grammar_indexing {
   }
 }
 
+///
+/// Implementation of parsing. Performance /does/ (eventually) matter here.
+///
+pub mod parsing {
+  use super::{lowering_to_indices::*, grammar_indexing::*, *};
+
+  #[derive(Debug, Clone)]
+  pub struct Input<Tok: PartialEq+Eq+Hash+Copy+Clone>(Vec<Tok>);
+
+  #[derive(Debug, Copy, Clone, PartialEq, Eq, Hash)]
+  pub struct InputTokenIndex(usize);
+
+  #[derive(Debug, Copy, Clone, PartialEq, Eq, Hash)]
+  pub struct InputRange {
+    left: InputTokenIndex,
+    right: InputTokenIndex,
+  }
+
+  #[derive(Debug, Clone, PartialEq, Eq, Hash)]
+  pub struct SpanningSubtree {
+    /* This is likely to be converted into a VecDeque<>. */
+    contiguous_states: Vec<LoweredState>,
+    input_spans: Vec<InputRange>,
+    /* TODO: need pointers to the last pair of unions which merged to form this one! */
+  }
+
+  #[derive(Debug, Clone, PartialEq, Eq, Hash)]
+  pub enum ParseGraphEdgeWeight {
+    Stack(NamedOrAnonStep),
+    State(SpanningSubtree),
+  }
+
+  /* #[derive(Debug, Clone, PartialEq, Eq, Hash)] */
+  /* pub struct Parse { */
+  /*   input_mapping: IndexMap<ParseGraphEdgeWeight, Vec<InputRange>>, */
+  /* } */
+}
+
 #[cfg(test)]
 mod tests {
   use super::{grammar_indexing::*, lowering_to_indices::*, user_api::*, *};
