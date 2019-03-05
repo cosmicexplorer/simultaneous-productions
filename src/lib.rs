@@ -1355,15 +1355,51 @@ mod tests {
     let other_state_transition_graph = StateTransitionGraph {
       state_forest_contact_points: [
         (LoweredState::Start, ForestEntryExitPoints {
-          entering_into: vec![TrieNodeRef(0)],
+          entering_into: vec![TrieNodeRef(0), TrieNodeRef(2)],
           exiting_out_of: vec![],
         }),
-        (first_a, ForestEntryExitPoints {
+        (LoweredState::End, ForestEntryExitPoints {
           entering_into: vec![],
-          exiting_out_of: vec![TrieNodeRef(1)],
+          exiting_out_of: vec![TrieNodeRef(6), TrieNodeRef(7)],
+        }),
+        (first_a, ForestEntryExitPoints {
+          entering_into: vec![TrieNodeRef(3)],
+          exiting_out_of: vec![TrieNodeRef(1), TrieNodeRef(9)],
+        }),
+        (second_a, ForestEntryExitPoints {
+          entering_into: vec![TrieNodeRef(4)],
+          exiting_out_of: vec![TrieNodeRef(2)],
+        }),
+        (first_b, ForestEntryExitPoints {
+          entering_into: vec![TrieNodeRef(5), TrieNodeRef(8)],
+          exiting_out_of: vec![TrieNodeRef(3)],
+        }),
+        (second_b, ForestEntryExitPoints {
+          entering_into: vec![TrieNodeRef(9)],
+          exiting_out_of: vec![TrieNodeRef(4)],
+        }),
+        (third_a, ForestEntryExitPoints {
+          entering_into: vec![TrieNodeRef(7)],
+          exiting_out_of: vec![TrieNodeRef(8)],
         }),
       ].into_iter().map(|(s, t)| (s.clone(), t.clone())).collect(),
+
       trie_node_mapping: vec![
+        /* = {0,1} */
+        /* ( */
+        /*   StatePair { */
+        /*     left: LoweredState::Start, */
+        /*     right: first_a, */
+        /*   }, */
+        /*   vec![ */
+        /*     StackDiffSegment(vec![NamedOrAnonStep::Named(StackStep::Positive(a_prod))]), */
+        /*     StackDiffSegment(vec![ */
+        /*       NamedOrAnonStep::Named(StackStep::Positive(b_prod)), */
+        /*       NamedOrAnonStep::Anon(AnonStep::Positive(AnonSym(1))), */
+        /*       NamedOrAnonStep::Named(StackStep::Positive(a_prod)), */
+        /*     ]), */
+        /*   ], */
+        /* ), */
         /* 0 */
         StackTrieNode {
           stack_diff: StackDiffSegment(vec![NamedOrAnonStep::Named(StackStep::Positive(a_prod))]),
@@ -1380,92 +1416,134 @@ mod tests {
           next_nodes: vec![StackTrieNextEntry::Completed(first_a)],
           prev_nodes: vec![StackTrieNextEntry::Incomplete(TrieNodeRef(0))],
         },
+        /* 2 */
+        /* ( */
+        /*   StatePair { */
+        /*     left: LoweredState::Start, */
+        /*     right: second_a, */
+        /*   }, */
+        /*   vec![StackDiffSegment(vec![ */
+        /*     NamedOrAnonStep::Named(StackStep::Positive(b_prod)), */
+        /*   ])], */
+        /* ), */
+        StackTrieNode {
+          stack_diff: StackDiffSegment(vec![NamedOrAnonStep::Named(StackStep::Positive(b_prod))]),
+          next_nodes: vec![StackTrieNextEntry::Completed(second_a)],
+          prev_nodes: vec![StackTrieNextEntry::Completed(LoweredState::Start)],
+        },
+        /* 3 */
+        /* ( */
+        /*   StatePair { */
+        /*     left: first_a, */
+        /*     right: first_b, */
+        /*   }, */
+        /*   vec![StackDiffSegment(vec![])], */
+        /* ), */
+        StackTrieNode {
+          stack_diff: StackDiffSegment(vec![]),
+          next_nodes: vec![StackTrieNextEntry::Completed(first_b)],
+          prev_nodes: vec![StackTrieNextEntry::Completed(first_a)],
+        },
+        /* 4 */
+        /* ( */
+        /*   StatePair { */
+        /*     left: second_a, */
+        /*     right: second_b, */
+        /*   }, */
+        /*   vec![StackDiffSegment(vec![])], */
+        /* ), */
+        StackTrieNode {
+          stack_diff: StackDiffSegment(vec![]),
+          next_nodes: vec![StackTrieNextEntry::Completed(second_b)],
+          prev_nodes: vec![StackTrieNextEntry::Completed(second_a)],
+        },
+        /* = {5,6} */
+        /* ( */
+        /*   StatePair { */
+        /*     left: first_b, */
+        /*     right: LoweredState::End, */
+        /*   }, */
+        /*   vec![ */
+        /*     StackDiffSegment(vec![NamedOrAnonStep::Named(StackStep::Negative(a_prod))]), */
+        /*     StackDiffSegment(vec![ */
+        /*       NamedOrAnonStep::Named(StackStep::Negative(a_prod)), */
+        /*       NamedOrAnonStep::Anon(AnonStep::Negative(AnonSym(0))), */
+        /*       NamedOrAnonStep::Named(StackStep::Negative(b_prod)), */
+        /*     ]), */
+        /*   ], */
+        /* ), */
+        /* 5 */
+        StackTrieNode {
+          stack_diff: StackDiffSegment(vec![NamedOrAnonStep::Named(StackStep::Negative(a_prod))]),
+          next_nodes: vec![StackTrieNextEntry::Incomplete(TrieNodeRef(6))],
+          prev_nodes: vec![StackTrieNextEntry::Completed(first_b)],
+        },
+        /* 6 */
+        StackTrieNode {
+          stack_diff: StackDiffSegment(vec![
+            NamedOrAnonStep::Named(StackStep::Negative(a_prod)),
+            NamedOrAnonStep::Anon(AnonStep::Negative(AnonSym(0))),
+            NamedOrAnonStep::Named(StackStep::Negative(b_prod)),
+          ]),
+          next_nodes: vec![StackTrieNextEntry::Completed(LoweredState::End)],
+          prev_nodes: vec![StackTrieNextEntry::Incomplete(TrieNodeRef(5))],
+        },
+        /* 7 */
+        /* ( */
+        /*   StatePair { */
+        /*     left: third_a, */
+        /*     right: LoweredState::End, */
+        /*   }, */
+        /*   vec![StackDiffSegment(vec![NamedOrAnonStep::Named( */
+        /*     StackStep::Negative(b_prod), */
+        /*   )])], */
+        /* ), */
+        StackTrieNode {
+          stack_diff: StackDiffSegment(vec![NamedOrAnonStep::Named(
+            StackStep::Negative(b_prod),
+          )]),
+          next_nodes: vec![StackTrieNextEntry::Completed(LoweredState::End)],
+          prev_nodes: vec![StackTrieNextEntry::Completed(third_a)],
+        },
+        /* 8 */
+        /* ( */
+        /*   StatePair { */
+        /*     left: first_b, */
+        /*     right: third_a, */
+        /*   }, */
+        /*   vec![StackDiffSegment(vec![ */
+        /*     NamedOrAnonStep::Named(StackStep::Negative(a_prod)), */
+        /*     NamedOrAnonStep::Anon(AnonStep::Negative(AnonSym(1))), */
+        /*   ])], */
+        /* ), */
+        StackTrieNode {
+          stack_diff: StackDiffSegment(vec![
+            NamedOrAnonStep::Named(StackStep::Negative(a_prod)),
+            NamedOrAnonStep::Anon(AnonStep::Negative(AnonSym(1))),
+          ]),
+          next_nodes: vec![StackTrieNextEntry::Completed(third_a)],
+          prev_nodes: vec![StackTrieNextEntry::Completed(first_b)],
+        },
+        /* 9 */
+        /* ( */
+        /*   StatePair { */
+        /*     left: second_b, */
+        /*     right: first_a, */
+        /*   }, */
+        /*   vec![StackDiffSegment(vec![ */
+        /*     NamedOrAnonStep::Anon(AnonStep::Positive(AnonSym(0))), */
+        /*     NamedOrAnonStep::Named(StackStep::Positive(a_prod)), */
+        /*   ])], */
+        /* ), */
+        StackTrieNode {
+          stack_diff: StackDiffSegment(vec![
+            NamedOrAnonStep::Anon(AnonStep::Positive(AnonSym(0))),
+            NamedOrAnonStep::Named(StackStep::Positive(a_prod)),
+          ]),
+          next_nodes: vec![StackTrieNextEntry::Completed(first_a)],
+          prev_nodes: vec![StackTrieNextEntry::Completed(second_b)],
+        },
       ],
-      /* vec![ */
-      /*   /\* = {0,1} *\/ */
-      /*   /\* ( *\/ */
-      /*   /\*   StatePair { *\/ */
-      /*   /\*     left: LoweredState::Start, *\/ */
-      /*   /\*     right: first_a, *\/ */
-      /*   /\*   }, *\/ */
-      /*   /\*   vec![ *\/ */
-      /*   /\*     StackDiffSegment(vec![NamedOrAnonStep::Named(StackStep::Positive(a_prod))]), *\/ */
-      /*   /\*     StackDiffSegment(vec![ *\/ */
-      /*   /\*       NamedOrAnonStep::Named(StackStep::Positive(b_prod)), *\/ */
-      /*   /\*       NamedOrAnonStep::Anon(AnonStep::Positive(AnonSym(1))), *\/ */
-      /*   /\*       NamedOrAnonStep::Named(StackStep::Positive(a_prod)), *\/ */
-      /*   /\*     ]), *\/ */
-      /*   /\*   ], *\/ */
-      /*   /\* ) *\/, */
-      /*   ( */
-      /*     StatePair { */
-      /*       left: LoweredState::Start, */
-      /*       right: second_a, */
-      /*     }, */
-      /*     vec![StackDiffSegment(vec![NamedOrAnonStep::Named( */
-      /*       StackStep::Positive(b_prod), */
-      /*     )])], */
-      /*   ), */
-      /*   ( */
-      /*     StatePair { */
-      /*       left: first_a, */
-      /*       right: first_b, */
-      /*     }, */
-      /*     vec![StackDiffSegment(vec![])], */
-      /*   ), */
-      /*   ( */
-      /*     StatePair { */
-      /*       left: second_a, */
-      /*       right: second_b, */
-      /*     }, */
-      /*     vec![StackDiffSegment(vec![])], */
-      /*   ), */
-      /*   ( */
-      /*     StatePair { */
-      /*       left: first_b, */
-      /*       right: LoweredState::End, */
-      /*     }, */
-      /*     vec![ */
-      /*       StackDiffSegment(vec![NamedOrAnonStep::Named(StackStep::Negative(a_prod))]), */
-      /*       StackDiffSegment(vec![ */
-      /*         NamedOrAnonStep::Named(StackStep::Negative(a_prod)), */
-      /*         NamedOrAnonStep::Anon(AnonStep::Negative(AnonSym(0))), */
-      /*         NamedOrAnonStep::Named(StackStep::Negative(b_prod)), */
-      /*       ]), */
-      /*     ], */
-      /*   ), */
-      /*   ( */
-      /*     StatePair { */
-      /*       left: third_a, */
-      /*       right: LoweredState::End, */
-      /*     }, */
-      /*     vec![StackDiffSegment(vec![NamedOrAnonStep::Named( */
-      /*       StackStep::Negative(b_prod), */
-      /*     )])], */
-      /*   ), */
-      /*   ( */
-      /*     StatePair { */
-      /*       left: first_b, */
-      /*       right: third_a, */
-      /*     }, */
-      /*     vec![StackDiffSegment(vec![ */
-      /*       NamedOrAnonStep::Named(StackStep::Negative(a_prod)), */
-      /*       NamedOrAnonStep::Anon(AnonStep::Negative(AnonSym(1))), */
-      /*     ])], */
-      /*   ), */
-      /*   ( */
-      /*     StatePair { */
-      /*       left: second_b, */
-      /*       right: first_a, */
-      /*     }, */
-      /*     vec![StackDiffSegment(vec![ */
-      /*       NamedOrAnonStep::Anon(AnonStep::Positive(AnonSym(0))), */
-      /*       NamedOrAnonStep::Named(StackStep::Positive(a_prod)), */
-      /*     ])], */
-      /*   ), */
-      /* ].iter() */
-      /*   .cloned() */
-      /*   .collect::<IndexMap<StatePair, Vec<StackDiffSegment>>>(), */
     };
 
     let other_state_transition_graph = StateTransitionGraph {
