@@ -586,7 +586,7 @@ pub mod grammar_indexing {
               /* Register the current trie as emanating from the left state. */
               let left_entry = ret_mapping.entry(left_state_in_pair)
                 .or_insert_with(ForestEntryExitPoints::new);
-              (*left_entry).add_exiting(cur_trie_ref);
+              (*left_entry).add_entering(cur_trie_ref);
               /* To start at the `left` state, add a back edge to a `Completed` entry. */
               StackTrieNextEntry::Completed(left_state_in_pair)
             } else {
@@ -1546,10 +1546,6 @@ mod tests {
       ],
     };
 
-    let other_state_transition_graph = StateTransitionGraph {
-      state_forest_contact_points: vec![].into_iter().collect(),
-      trie_node_mapping: vec![],
-    };
     assert_eq!(
       preprocessed_grammar.state_transition_graph,
       other_state_transition_graph,
