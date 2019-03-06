@@ -19,12 +19,40 @@
 */
 #![feature(fn_traits)]
 
+/* These clippy lint descriptions are purely non-functional and do not affect the functionality or
+ * correctness of the code. */
+/* Note: run clippy with: rustup run nightly cargo-clippy! */
+#![deny(warnings)]
+// Enable all clippy lints except for many of the pedantic ones. It's a shame this needs to be copied and pasted across crates, but there doesn't appear to be a way to include inner attributes from a common source.
+#![deny(
+  clippy::all,
+  clippy::default_trait_access,
+  clippy::expl_impl_clone_on_copy,
+  clippy::if_not_else,
+  clippy::needless_continue,
+  clippy::single_match_else,
+  clippy::unseparated_literal_suffix,
+  clippy::used_underscore_binding
+)]
+// It is often more clear to show that nothing is being moved.
+#![allow(clippy::match_ref_pats)]
+// Subjective style.
+#![allow(
+  clippy::derive_hash_xor_eq,
+  clippy::len_without_is_empty,
+  clippy::redundant_field_names,
+  clippy::too_many_arguments
+)]
+// Default isn't as big a deal as people seem to think it is.
+#![allow(clippy::new_without_default, clippy::new_ret_no_self)]
+// Arc<Mutex> can be more clear than needing to grok Orderings:
+#![allow(clippy::mutex_atomic)]
+
 extern crate indexmap;
 
 use indexmap::{IndexMap, IndexSet};
 
 use std::{
-  borrow::{Borrow, BorrowMut},
   collections::{HashMap, HashSet, VecDeque},
   hash::{Hash, Hasher},
 };
@@ -193,7 +221,7 @@ pub mod lowering_to_indices {
                   CaseElement::Prod(prod_ref) => {
                     let prod_ref_ind = prod_ref_mapping
                       .get(prod_ref)
-                      .expect(&format!("prod ref {:?} not found", prod_ref));
+                      .unwrap_or_else(|| panic!("prod ref {:?} not found", prod_ref));
                     vec![CaseEl::Prod(ProdRef(*prod_ref_ind))]
                   },
                 })
@@ -333,7 +361,8 @@ pub mod grammar_indexing {
 
     fn get_trie(&mut self, node_ref: TrieNodeRef) -> &mut StackTrieNode {
       let TrieNodeRef(node_index) = node_ref;
-      self.trie_node_universe.get_mut(node_index).unwrap()
+      /* NB: This does a .get_mut().unwrap() under the hood, so it is still bounds-checked! */
+      &mut self.trie_node_universe[node_index]
     }
 
     fn trie_ref_for_vertex(&mut self, vtx: &EpsilonGraphVertex) -> TrieNodeRef {
@@ -466,15 +495,15 @@ pub mod grammar_indexing {
         let ContiguousNonterminalInterval(vertices) = interval.clone();
         /* We should always have a start and end node. */
         assert!(vertices.len() >= 2);
-        let first = vertices.get(0).unwrap();
+        let first = vertices[0];
         match first {
           EpsilonGraphVertex::Start(start_prod_ref) => {
-            let intervals_for_this_prod = epsilon_subscripts_index.entry(*start_prod_ref)
+            let intervals_for_this_prod = epsilon_subscripts_index.entry(start_prod_ref)
               .or_insert(StartEndEpsilonIntervals::new());
             (*intervals_for_this_prod).start_epsilons.push(interval.clone());
           },
           EpsilonGraphVertex::End(end_prod_ref) => {
-            let intervals_for_this_prod = epsilon_subscripts_index.entry(*end_prod_ref)
+            let intervals_for_this_prod = epsilon_subscripts_index.entry(end_prod_ref)
               .or_insert(StartEndEpsilonIntervals::new());
             (*intervals_for_this_prod).end_epsilons.push(interval.clone());
           },
@@ -507,9 +536,8 @@ pub mod grammar_indexing {
         let cur_transition = traversal_queue.pop_front().unwrap();
         if seen_transitions.contains(&cur_transition) {
           continue;
-        } else {
-          seen_transitions.insert(cur_transition.clone());
         }
+        seen_transitions.insert(cur_transition.clone());
         let TransitionIterationResult {
           completed,
           todo,
@@ -528,7 +556,7 @@ pub mod grammar_indexing {
             let cur_trie_ref = ret.trie_ref_for_vertex(&vtx);
             let next_trie_ref = {
               let next_vtx_index = (cur_vtx_index + 1) % vertices.len();
-              let next_vertex = vertices.get(next_vtx_index).unwrap();
+              let next_vertex = vertices[next_vtx_index];
               ret.trie_ref_for_vertex(&next_vertex)
             };
             {
@@ -574,7 +602,7 @@ pub mod grammar_indexing {
               /* To end at the `right` state, add a forward edge to a `Completed` entry. */
               StackTrieNextEntry::Completed(right_state_in_pair)
             } else {
-              let next_vertex = vertices.get(vertex_index + 1).unwrap();
+              let next_vertex = vertices[vertex_index + 1];
               let next_trie_ref = ret_trie_subgraph.trie_ref_for_vertex(&next_vertex);
               let mut next_trie = ret_trie_subgraph.get_trie(next_trie_ref);
               next_trie
@@ -590,7 +618,7 @@ pub mod grammar_indexing {
               /* To start at the `left` state, add a back edge to a `Completed` entry. */
               StackTrieNextEntry::Completed(left_state_in_pair)
             } else {
-              let prev_vertex = vertices.get(vertex_index - 1).unwrap();
+              let prev_vertex = vertices[vertex_index - 1];
               let prev_trie_ref = ret_trie_subgraph.trie_ref_for_vertex(&prev_vertex);
               let mut prev_trie = ret_trie_subgraph.get_trie(prev_trie_ref);
               prev_trie
@@ -678,10 +706,10 @@ pub mod grammar_indexing {
       let ContiguousNonterminalInterval(interval) = wrapped_interval;
       /* All intervals have a start and end node. */
       assert!(interval.len() >= 2);
-      let start = interval.get(0).unwrap();
-      let rest_of_interval = interval.get(1..).unwrap().to_vec();
+      let start = interval[0];
+      let rest_of_interval = interval[1..].to_vec();
       IntermediateTokenTransition {
-        cur_traversal_intermediate_nonterminals: vec![*start].into_iter().collect(),
+        cur_traversal_intermediate_nonterminals: vec![start].into_iter().collect(),
         rest_of_interval,
       }
     }
@@ -698,13 +726,13 @@ pub mod grammar_indexing {
         .nth(0)
         .unwrap();
       assert!(!self.rest_of_interval.is_empty());
-      let next = self.rest_of_interval.get(0).unwrap();
+      let next = self.rest_of_interval[0];
       let (intermediate_nonterminals_for_next_step, cycles) = {
         /* Check for cycles. This method supports multiple paths to the same vertex,
          * each of which are a cycle, by pulling out the constituent
          * vertices from the current set of "intermediate" nonterminals. */
         let mut prev_nonterminals = self.cur_traversal_intermediate_nonterminals.clone();
-        let (cur_vtx_ind, was_new_insert) = prev_nonterminals.insert_full(next.clone());
+        let (cur_vtx_ind, was_new_insert) = prev_nonterminals.insert_full(next);
         if was_new_insert {
           (prev_nonterminals, vec![])
         } else {
@@ -735,7 +763,7 @@ pub mod grammar_indexing {
            * End node or end on a Start node, so we can skip completed paths
            * entirely here. */
           let passthrough_intermediates: Vec<IntermediateTokenTransition> = indexed_intervals
-            .get(start_prod_ref)
+            .get(&start_prod_ref)
             .expect("all `ProdRef`s should have been accounted for when grouping by start and end intervals")
             .start_epsilons
             .iter()
@@ -743,7 +771,7 @@ pub mod grammar_indexing {
               IntermediateTokenTransition {
                 cur_traversal_intermediate_nonterminals: intermediate_nonterminals_for_next_step.clone(),
                 /* Get the rest of the interval without the epsilon node that it starts with. */
-                rest_of_interval: next_vertices.get(1..).unwrap().to_vec(),
+                rest_of_interval: next_vertices[1..].to_vec(),
               }
             })
             .collect();
@@ -781,7 +809,7 @@ pub mod grammar_indexing {
             vec![]
           };
           let passthrough_intermediates: Vec<IntermediateTokenTransition> = indexed_intervals
-            .get(end_prod_ref)
+            .get(&end_prod_ref)
             .expect("all `ProdRef`s should have been accounted for when grouping by start and end intervals")
             .end_epsilons
             .iter()
@@ -789,7 +817,7 @@ pub mod grammar_indexing {
               IntermediateTokenTransition {
                 cur_traversal_intermediate_nonterminals: intermediate_nonterminals_for_next_step.clone(),
                 /* Get the rest of the interval without the epsilon node that it starts with. */
-                rest_of_interval: next_vertices.get(1..).unwrap().to_vec(),
+                rest_of_interval: next_vertices[1..].to_vec(),
               }
             })
             .collect();
@@ -798,13 +826,13 @@ pub mod grammar_indexing {
         /* `next` is the anonymous vertex, which is all we need it for. */
         EpsilonGraphVertex::Anon(_) => (vec![], vec![IntermediateTokenTransition {
           cur_traversal_intermediate_nonterminals: intermediate_nonterminals_for_next_step.clone(),
-          rest_of_interval: self.rest_of_interval.get(1..).unwrap().to_vec(),
+          rest_of_interval: self.rest_of_interval[1..].to_vec(),
         }]),
         /* Similar to start and end, but the `todo` starts off at the state. */
         EpsilonGraphVertex::State(state_pos) => {
           let completed_state_pair = StatePair {
             left: LoweredState::from_vertex(*start),
-            right: LoweredState::Within(*state_pos),
+            right: LoweredState::Within(state_pos),
           };
           let completed_path_makes_sense = match start {
             EpsilonGraphVertex::State(_) => true,
@@ -830,8 +858,8 @@ pub mod grammar_indexing {
           };
           (completed, vec![IntermediateTokenTransition {
             /* NB: starting off /at/ the current state vertex! */
-            cur_traversal_intermediate_nonterminals: vec![next.clone()].into_iter().collect(),
-            rest_of_interval: self.rest_of_interval.get(1..).unwrap().to_vec(),
+            cur_traversal_intermediate_nonterminals: vec![next].into_iter().collect(),
+            rest_of_interval: self.rest_of_interval[1..].to_vec(),
           }])
         },
       };
@@ -935,7 +963,7 @@ pub mod grammar_indexing {
                   neg_anon,
                 ]);
                 /* Bump the loop-global anonymous symbol index! */
-                cur_anon_sym_index = cur_anon_sym_index + 1;
+                cur_anon_sym_index += 1;
                 /* Register the interval we just cut off in the results list. */
                 all_intervals_from_this_case.push(interval_upto_subprod);
               },
@@ -974,7 +1002,7 @@ pub mod grammar_indexing {
 /// Implementation of parsing. Performance /does/ (eventually) matter here.
 ///
 pub mod parsing {
-  use super::{lowering_to_indices::*, grammar_indexing::*, *};
+  use super::{grammar_indexing::*, *};
 
   #[derive(Debug, Clone)]
   pub struct Input<Tok: PartialEq+Eq+Hash+Copy+Clone>(Vec<Tok>);
