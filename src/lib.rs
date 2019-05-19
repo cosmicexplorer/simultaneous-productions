@@ -18,12 +18,15 @@
     along with this program.  If not, see <http://www.gnu.org/licenses/>.
 */
 #![feature(fn_traits)]
-
-/* These clippy lint descriptions are purely non-functional and do not affect the functionality or
- * correctness of the code. */
-/* Note: run clippy with: rustup run nightly cargo-clippy! */
+/* These clippy lint descriptions are purely non-functional and do not affect the functionality
+ * or correctness of the code.
+ * TODO: rustfmt breaks multiline comments when used one on top of another! (each with its own
+ * pair of delimiters)
+ * Note: run clippy with: rustup run nightly cargo-clippy! */
 #![deny(warnings)]
-// Enable all clippy lints except for many of the pedantic ones. It's a shame this needs to be copied and pasted across crates, but there doesn't appear to be a way to include inner attributes from a common source.
+// Enable all clippy lints except for many of the pedantic ones. It's a shame this needs to be
+// copied and pasted across crates, but there doesn't appear to be a way to include inner attributes
+// from a common source.
 #![deny(
   clippy::all,
   clippy::default_trait_access,
@@ -346,9 +349,9 @@ pub mod grammar_indexing {
   }
 
   #[derive(Debug, Clone, PartialEq, Eq)]
-  struct EpsilonNodeStateSubgraph {
-    vertex_mapping: IndexMap<EpsilonGraphVertex, TrieNodeRef>,
-    trie_node_universe: Vec<StackTrieNode>,
+  pub struct EpsilonNodeStateSubgraph {
+    pub vertex_mapping: IndexMap<EpsilonGraphVertex, TrieNodeRef>,
+    pub trie_node_universe: Vec<StackTrieNode>,
   }
 
   impl EpsilonNodeStateSubgraph {
@@ -361,21 +364,24 @@ pub mod grammar_indexing {
 
     fn get_trie(&mut self, node_ref: TrieNodeRef) -> &mut StackTrieNode {
       let TrieNodeRef(node_index) = node_ref;
-      /* NB: This does a .get_mut().unwrap() under the hood, so it is still bounds-checked! */
+      /* NB: This does a .get_mut().unwrap() under the hood, so it is still
+       * bounds-checked! */
       &mut self.trie_node_universe[node_index]
     }
 
     fn trie_ref_for_vertex(&mut self, vtx: &EpsilonGraphVertex) -> TrieNodeRef {
       let basic_node = StackTrieNode::bare(vtx);
-      let trie_node_ref_for_vertex = self.vertex_mapping.get(vtx)
-        .cloned()
-        .unwrap_or_else(|| {
-          let next_ref = TrieNodeRef(self.trie_node_universe.len());
-          self.trie_node_universe.push(basic_node.clone());
-          next_ref
-        });
-      /* All trie nodes corresponding to the same vertex should have the same stack diff! */
-      assert_eq!(self.get_trie(trie_node_ref_for_vertex).stack_diff, basic_node.stack_diff);
+      let trie_node_ref_for_vertex = self.vertex_mapping.get(vtx).cloned().unwrap_or_else(|| {
+        let next_ref = TrieNodeRef(self.trie_node_universe.len());
+        self.trie_node_universe.push(basic_node.clone());
+        next_ref
+      });
+      /* All trie nodes corresponding to the same vertex should have the same stack
+       * diff! */
+      assert_eq!(
+        self.get_trie(trie_node_ref_for_vertex).stack_diff,
+        basic_node.stack_diff
+      );
       trie_node_ref_for_vertex
     }
   }
@@ -394,20 +400,18 @@ pub mod grammar_indexing {
       }
     }
 
-    fn add_exiting(&mut self, node_ref: TrieNodeRef) {
-      self.exiting_out_of.push(node_ref);
-    }
+    fn add_exiting(&mut self, node_ref: TrieNodeRef) { self.exiting_out_of.push(node_ref); }
 
-    fn add_entering(&mut self, node_ref: TrieNodeRef) {
-      self.entering_into.push(node_ref);
-    }
+    fn add_entering(&mut self, node_ref: TrieNodeRef) { self.entering_into.push(node_ref); }
   }
 
-  /* Pointers to the appropriate "forests" of stack transitions starting/completing at each
-   * state. "starting" and "completing" are mirrored to allow working away at mapping states to
-   * input token indices from either direction, which is intended to allow for parallelism. They're
-   * not really "forests" because they *will* have cycles except in very simple grammars (CFGs and
-   * below, I think? Unclear if the Chomsky hierarchy still applies). */
+  /* Pointers to the appropriate "forests" of stack transitions
+   * starting/completing at each state. "starting" and "completing" are
+   * mirrored to allow working away at mapping states to input token indices
+   * from either direction, which is intended to allow for parallelism. They're
+   * not really "forests" because they *will* have cycles except in very simple
+   * grammars (CFGs and below, I think? Unclear if the Chomsky hierarchy
+   * still applies). */
   #[derive(Debug, Clone, PartialEq, Eq)]
   pub struct StateTransitionGraph {
     pub state_forest_contact_points: IndexMap<LoweredState, ForestEntryExitPoints>,
@@ -483,6 +487,12 @@ pub mod grammar_indexing {
   #[derive(Debug, Clone, PartialEq, Eq, Hash)]
   pub struct ContiguousNonterminalInterval(pub Vec<EpsilonGraphVertex>);
 
+  #[derive(Debug, Clone, PartialEq, Eq)]
+  pub struct CyclicGraphDecomposition {
+    pub cyclic_subgraph: EpsilonNodeStateSubgraph,
+    pub pairwise_state_transitions: Vec<CompletedStatePairWithVertices>,
+  }
+
   #[derive(Debug, Clone, PartialEq, Eq, Hash)]
   pub struct EpsilonIntervalGraph(pub Vec<ContiguousNonterminalInterval>);
 
@@ -513,7 +523,7 @@ pub mod grammar_indexing {
       epsilon_subscripts_index
     }
 
-    fn connect_all_vertices(&self) -> (EpsilonNodeStateSubgraph, Vec<CompletedStatePairWithVertices>) {
+    pub fn connect_all_vertices(&self) -> CyclicGraphDecomposition {
       let intervals_indexed_by_start_and_end = self.find_start_end_indices();
       let EpsilonIntervalGraph(all_intervals) = self;
 
@@ -579,11 +589,17 @@ pub mod grammar_indexing {
         ret
       };
 
-      (merged_stack_cycles, all_completed_pairs_with_vertices)
+      CyclicGraphDecomposition {
+        cyclic_subgraph: merged_stack_cycles,
+        pairwise_state_transitions: all_completed_pairs_with_vertices,
+      }
     }
 
     pub fn produce_transition_graph(&self) -> StateTransitionGraph {
-      let (merged_stack_cycles, all_completed_pairs_with_vertices) = self.connect_all_vertices();
+      let CyclicGraphDecomposition {
+        cyclic_subgraph: merged_stack_cycles,
+        pairwise_state_transitions: all_completed_pairs_with_vertices,
+      } = self.connect_all_vertices();
 
       let mut ret_mapping: IndexMap<LoweredState, ForestEntryExitPoints> = IndexMap::new();
       let mut ret_trie_subgraph = merged_stack_cycles;
@@ -601,7 +617,8 @@ pub mod grammar_indexing {
           let cur_trie_ref = ret_trie_subgraph.trie_ref_for_vertex(&vtx);
           let next_edge = if vertex_index == vertices.len() - 1 {
             /* Register the current trie as completing at the right state. */
-            let right_entry = ret_mapping.entry(right_state_in_pair)
+            let right_entry = ret_mapping
+              .entry(right_state_in_pair)
               .or_insert_with(ForestEntryExitPoints::new);
             (*right_entry).add_exiting(cur_trie_ref);
             /* To end at the `right` state, add a forward edge to a `Completed` entry. */
@@ -617,7 +634,8 @@ pub mod grammar_indexing {
           };
           let prev_edge = if vertex_index == 0 {
             /* Register the current trie as emanating from the left state. */
-            let left_entry = ret_mapping.entry(left_state_in_pair)
+            let left_entry = ret_mapping
+              .entry(left_state_in_pair)
               .or_insert_with(ForestEntryExitPoints::new);
             (*left_entry).add_entering(cur_trie_ref);
             /* To start at the `left` state, add a back edge to a `Completed` entry. */
@@ -633,12 +651,8 @@ pub mod grammar_indexing {
           };
           /* Link the forward and back edges from the current node. */
           let mut cur_trie = ret_trie_subgraph.get_trie(cur_trie_ref);
-          cur_trie
-            .next_nodes
-            .push(next_edge);
-          cur_trie
-            .prev_nodes
-            .push(prev_edge);
+          cur_trie.next_nodes.push(next_edge);
+          cur_trie.prev_nodes.push(prev_edge);
         }
       }
 
@@ -670,7 +684,7 @@ pub mod grammar_indexing {
   }
 
   #[derive(Debug, Clone, PartialEq, Eq, Hash)]
-  struct CompletedStatePairWithVertices {
+  pub struct CompletedStatePairWithVertices {
     state_pair: StatePair,
     interval: ContiguousNonterminalInterval,
   }
@@ -691,8 +705,8 @@ pub mod grammar_indexing {
     rest_of_interval: Vec<EpsilonGraphVertex>,
   }
 
-  /* This Hash implementation is stable because the collection types in this struct have a specific
-   * ordering. */
+  /* This Hash implementation is stable because the collection types in this
+   * struct have a specific ordering. */
   impl Hash for IntermediateTokenTransition {
     fn hash<H: Hasher>(&self, state: &mut H) {
       for intermediate_vertex in self.cur_traversal_intermediate_nonterminals.iter() {
@@ -1003,7 +1017,6 @@ pub mod grammar_indexing {
 
 ///
 /// Implementation of parsing. Performance /does/ (eventually) matter here.
-///
 pub mod parsing {
   use super::{grammar_indexing::*, *};
 
@@ -1035,7 +1048,7 @@ pub mod parsing {
 
   /* #[derive(Debug, Clone, PartialEq, Eq, Hash)] */
   /* pub struct Parse { */
-  /*   input_mapping: IndexMap<ParseGraphEdgeWeight, Vec<InputRange>>, */
+  /* input_mapping: IndexMap<ParseGraphEdgeWeight, Vec<InputRange>>, */
   /* } */
 }
 
@@ -1190,39 +1203,99 @@ mod tests {
     let noncyclic_grammar = TokenGrammar::new(&noncyclic_prods);
     let noncyclic_interval_graph =
       PreprocessedGrammar::produce_terminals_interval_graph(&noncyclic_grammar);
+
+    let a_start = EpsilonGraphVertex::Start(ProdRef(0));
+    let a_0_0 = EpsilonGraphVertex::State(TokenPosition::new(0, 0, 0));
+    let a_0_1 = EpsilonGraphVertex::State(TokenPosition::new(0, 0, 1));
+    let a_end = EpsilonGraphVertex::End(ProdRef(0));
+
+    let b_start = EpsilonGraphVertex::Start(ProdRef(1));
+    let b_0_0 = EpsilonGraphVertex::State(TokenPosition::new(1, 0, 0));
+    let b_0_1 = EpsilonGraphVertex::State(TokenPosition::new(1, 0, 1));
+    let b_0_anon_0_start = EpsilonGraphVertex::Anon(AnonStep::Positive(AnonSym(0)));
+    let b_0_anon_0_end = EpsilonGraphVertex::Anon(AnonStep::Negative(AnonSym(0)));
+    let b_1_anon_0_start = EpsilonGraphVertex::Anon(AnonStep::Positive(AnonSym(1)));
+    let b_1_anon_0_end = EpsilonGraphVertex::Anon(AnonStep::Negative(AnonSym(1)));
+    let b_1_1 = EpsilonGraphVertex::State(TokenPosition::new(1, 1, 1));
+    let b_end = EpsilonGraphVertex::End(ProdRef(1));
+
+    let a_0 = ContiguousNonterminalInterval(vec![a_start, a_0_0, a_0_1, a_end]);
+    let b_start_to_a_start_0 =
+      ContiguousNonterminalInterval(vec![b_start, b_0_0, b_0_1, b_0_anon_0_start, a_start]);
+    let a_end_to_b_end_0 = ContiguousNonterminalInterval(vec![a_end, b_0_anon_0_end, b_end]);
+    let b_start_to_a_start_1 =
+      ContiguousNonterminalInterval(vec![b_start, b_1_anon_0_start, a_start]);
+    let a_end_to_b_end_1 = ContiguousNonterminalInterval(vec![a_end, b_1_anon_0_end, b_1_1, b_end]);
+
     assert_eq!(
       noncyclic_interval_graph,
       EpsilonIntervalGraph(vec![
-        ContiguousNonterminalInterval(vec![
-          EpsilonGraphVertex::Start(ProdRef(0)),
-          EpsilonGraphVertex::State(TokenPosition::new(0, 0, 0)),
-          EpsilonGraphVertex::State(TokenPosition::new(0, 0, 1)),
-          EpsilonGraphVertex::End(ProdRef(0)),
-        ]),
-        ContiguousNonterminalInterval(vec![
-          EpsilonGraphVertex::Start(ProdRef(1)),
-          EpsilonGraphVertex::State(TokenPosition::new(1, 0, 0)),
-          EpsilonGraphVertex::State(TokenPosition::new(1, 0, 1)),
-          EpsilonGraphVertex::Anon(AnonStep::Positive(AnonSym(0))),
-          EpsilonGraphVertex::Start(ProdRef(0)),
-        ]),
-        ContiguousNonterminalInterval(vec![
-          EpsilonGraphVertex::End(ProdRef(0)),
-          EpsilonGraphVertex::Anon(AnonStep::Negative(AnonSym(0))),
-          EpsilonGraphVertex::End(ProdRef(1)),
-        ]),
-        ContiguousNonterminalInterval(vec![
-          EpsilonGraphVertex::Start(ProdRef(1)),
-          EpsilonGraphVertex::Anon(AnonStep::Positive(AnonSym(1))),
-          EpsilonGraphVertex::Start(ProdRef(0)),
-        ]),
-        ContiguousNonterminalInterval(vec![
-          EpsilonGraphVertex::End(ProdRef(0)),
-          EpsilonGraphVertex::Anon(AnonStep::Negative(AnonSym(1))),
-          EpsilonGraphVertex::State(TokenPosition::new(1, 1, 1)),
-          EpsilonGraphVertex::End(ProdRef(1)),
-        ]),
+        a_0,
+        b_start_to_a_start_0,
+        a_end_to_b_end_0,
+        b_start_to_a_start_1,
+        a_end_to_b_end_1,
       ])
+    );
+
+    /* Now check that the transition graph is as we expect. */
+    let CyclicGraphDecomposition {
+      cyclic_subgraph: merged_stack_cycles,
+      pairwise_state_transitions: _all_completed_pairs_with_vertices,
+    } = noncyclic_interval_graph.connect_all_vertices();
+    /* There are no stack cycles in the noncyclic graph. */
+    assert_eq!(merged_stack_cycles, EpsilonNodeStateSubgraph {
+      vertex_mapping: IndexMap::new(),
+      trie_node_universe: vec![],
+    });
+    /* assert_eq!(all_completed_pairs_with_vertices, vec![]); */
+
+    let intervals_by_start_and_end = noncyclic_interval_graph.find_start_end_indices();
+    assert_eq!(
+      intervals_by_start_and_end,
+      vec![
+        (ProdRef(0), StartEndEpsilonIntervals {
+          start_epsilons: vec![ContiguousNonterminalInterval(vec![
+            EpsilonGraphVertex::Start(ProdRef(0)),
+            EpsilonGraphVertex::State(TokenPosition::new(0, 0, 0)),
+            EpsilonGraphVertex::State(TokenPosition::new(0, 0, 1)),
+            EpsilonGraphVertex::End(ProdRef(0)),
+          ])],
+          end_epsilons: vec![
+            ContiguousNonterminalInterval(vec![
+              EpsilonGraphVertex::End(ProdRef(0)),
+              EpsilonGraphVertex::Anon(AnonStep::Negative(AnonSym(0))),
+              EpsilonGraphVertex::End(ProdRef(1)),
+            ]),
+            ContiguousNonterminalInterval(vec![
+              EpsilonGraphVertex::End(ProdRef(0)),
+              EpsilonGraphVertex::Anon(AnonStep::Negative(AnonSym(1))),
+              EpsilonGraphVertex::State(TokenPosition::new(1, 1, 1)),
+              EpsilonGraphVertex::End(ProdRef(1)),
+            ]),
+          ],
+        },),
+        (ProdRef(1), StartEndEpsilonIntervals {
+          start_epsilons: vec![
+            ContiguousNonterminalInterval(vec![
+              EpsilonGraphVertex::Start(ProdRef(1)),
+              EpsilonGraphVertex::State(TokenPosition::new(1, 0, 0)),
+              EpsilonGraphVertex::State(TokenPosition::new(1, 0, 1)),
+              EpsilonGraphVertex::Anon(AnonStep::Positive(AnonSym(0))),
+              EpsilonGraphVertex::Start(ProdRef(0)),
+            ]),
+            ContiguousNonterminalInterval(vec![
+              EpsilonGraphVertex::Start(ProdRef(1)),
+              EpsilonGraphVertex::Anon(AnonStep::Positive(AnonSym(1))),
+              EpsilonGraphVertex::Start(ProdRef(0)),
+            ]),
+          ],
+          end_epsilons: vec![],
+        },),
+      ]
+      .iter()
+      .cloned()
+      .collect::<IndexMap<ProdRef, StartEndEpsilonIntervals>>()
     );
 
     /* Now do the same, but for `basic_productions()`. */
@@ -1299,64 +1372,10 @@ mod tests {
     );
   }
 
-  #[test]
-  fn terminals_interval_graph_start_end_indices() {
-    let noncyclic_prods = non_cyclic_productions();
-    let noncyclic_grammar = TokenGrammar::new(&noncyclic_prods);
-    let noncyclic_interval_graph =
-      PreprocessedGrammar::produce_terminals_interval_graph(&noncyclic_grammar);
-    let intervals_by_start_and_end = noncyclic_interval_graph.find_start_end_indices();
-    assert_eq!(
-      intervals_by_start_and_end,
-      vec![
-        (ProdRef(0), StartEndEpsilonIntervals {
-          start_epsilons: vec![ContiguousNonterminalInterval(vec![
-            EpsilonGraphVertex::Start(ProdRef(0)),
-            EpsilonGraphVertex::State(TokenPosition::new(0, 0, 0)),
-            EpsilonGraphVertex::State(TokenPosition::new(0, 0, 1)),
-            EpsilonGraphVertex::End(ProdRef(0)),
-          ])],
-          end_epsilons: vec![
-            ContiguousNonterminalInterval(vec![
-              EpsilonGraphVertex::End(ProdRef(0)),
-              EpsilonGraphVertex::Anon(AnonStep::Negative(AnonSym(0))),
-              EpsilonGraphVertex::End(ProdRef(1)),
-            ]),
-            ContiguousNonterminalInterval(vec![
-              EpsilonGraphVertex::End(ProdRef(0)),
-              EpsilonGraphVertex::Anon(AnonStep::Negative(AnonSym(1))),
-              EpsilonGraphVertex::State(TokenPosition::new(1, 1, 1)),
-              EpsilonGraphVertex::End(ProdRef(1)),
-            ]),
-          ],
-        },),
-        (ProdRef(1), StartEndEpsilonIntervals {
-          start_epsilons: vec![
-            ContiguousNonterminalInterval(vec![
-              EpsilonGraphVertex::Start(ProdRef(1)),
-              EpsilonGraphVertex::State(TokenPosition::new(1, 0, 0)),
-              EpsilonGraphVertex::State(TokenPosition::new(1, 0, 1)),
-              EpsilonGraphVertex::Anon(AnonStep::Positive(AnonSym(0))),
-              EpsilonGraphVertex::Start(ProdRef(0)),
-            ]),
-            ContiguousNonterminalInterval(vec![
-              EpsilonGraphVertex::Start(ProdRef(1)),
-              EpsilonGraphVertex::Anon(AnonStep::Positive(AnonSym(1))),
-              EpsilonGraphVertex::Start(ProdRef(0)),
-            ]),
-          ],
-          end_epsilons: vec![],
-        },),
-      ]
-      .iter()
-      .cloned()
-      .collect::<IndexMap<ProdRef, StartEndEpsilonIntervals>>()
-    );
-  }
-
-  /* TODO: consider creating/using a generic tree diffing algorithm in case that speeds up
-   * debugging (this might conflict with the benefits of using totally ordered IndexMaps though,
-   * namely determinism, as well as knowing exactly which order your subtrees are created in)! */
+  /* TODO: consider creating/using a generic tree diffing algorithm in case
+   * that speeds up debugging (this might conflict with the benefits of using
+   * totally ordered IndexMaps though, namely determinism, as well as knowing
+   * exactly which order your subtrees are created in)! */
   #[test]
   fn noncyclic_transition_graph() {
     let prods = non_cyclic_productions();
@@ -1417,7 +1436,10 @@ mod tests {
           entering_into: vec![TrieNodeRef(7)],
           exiting_out_of: vec![TrieNodeRef(8)],
         }),
-      ].into_iter().map(|(s, t)| (s.clone(), t.clone())).collect(),
+      ]
+      .into_iter()
+      .map(|(s, t)| (s.clone(), t.clone()))
+      .collect(),
 
       trie_node_mapping: vec![
         /* = {0,1} */
@@ -1589,15 +1611,17 @@ mod tests {
 
   /* #[test] */
   /* fn cyclic_transition_graph() { */
-  /*   let prods = basic_productions(); */
-  /*   let grammar = TokenGrammar::new(&prods); */
-  /*   let preprocessed_grammar = PreprocessedGrammar::new(&grammar); */
-  /*   /\* TODO: I've only worked out a few of the transitions right now -- circle */
-  /*    * back after we're sure the cycles are right. *\/ */
-  /*   assert_eq!(preprocessed_grammar, PreprocessedGrammar { */
-  /*     token_states_mapping: IndexMap::new(), */
-  /*     state_transition_graph: StateTransitionGraph(IndexMap::new()), */
-  /*   },); */
+  /* let prods = basic_productions(); */
+  /* let grammar = TokenGrammar::new(&prods); */
+  /* let preprocessed_grammar = PreprocessedGrammar::new(&grammar); */
+  /* /\* TODO: I've only worked out a few of the transitions right now --
+   * circle */
+  /*
+   * * back after we're sure the cycles are right. *\/ */
+  /* assert_eq!(preprocessed_grammar, PreprocessedGrammar { */
+  /* token_states_mapping: IndexMap::new(), */
+  /* state_transition_graph: StateTransitionGraph(IndexMap::new()), */
+  /* },); */
   /* } */
 
   #[test]
