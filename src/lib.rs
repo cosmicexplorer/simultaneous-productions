@@ -449,6 +449,11 @@ pub mod grammar_indexing {
     pub right: LoweredState,
   }
 
+  #[cfg(test)]
+  impl StatePair {
+    pub fn new(left: LoweredState, right: LoweredState) -> Self { StatePair { left, right } }
+  }
+
   #[derive(Debug, Copy, Clone, PartialEq, Eq, Hash)]
   pub struct AnonSym(pub usize);
 
@@ -687,6 +692,16 @@ pub mod grammar_indexing {
   pub struct CompletedStatePairWithVertices {
     state_pair: StatePair,
     interval: ContiguousNonterminalInterval,
+  }
+
+  #[cfg(test)]
+  impl CompletedStatePairWithVertices {
+    pub fn new(state_pair: StatePair, interval: ContiguousNonterminalInterval) -> Self {
+      CompletedStatePairWithVertices {
+        state_pair,
+        interval,
+      }
+    }
   }
 
   #[derive(Debug, Clone, PartialEq, Eq, Hash)]
@@ -1204,19 +1219,24 @@ mod tests {
     let noncyclic_interval_graph =
       PreprocessedGrammar::produce_terminals_interval_graph(&noncyclic_grammar);
 
+    let s_0 = TokenPosition::new(0, 0, 0);
+    let s_1 = TokenPosition::new(0, 0, 1);
     let a_start = EpsilonGraphVertex::Start(ProdRef(0));
-    let a_0_0 = EpsilonGraphVertex::State(TokenPosition::new(0, 0, 0));
-    let a_0_1 = EpsilonGraphVertex::State(TokenPosition::new(0, 0, 1));
+    let a_0_0 = EpsilonGraphVertex::State(s_0);
+    let a_0_1 = EpsilonGraphVertex::State(s_1);
     let a_end = EpsilonGraphVertex::End(ProdRef(0));
 
+    let s_2 = TokenPosition::new(1, 0, 0);
+    let s_3 = TokenPosition::new(1, 0, 1);
+    let s_4 = TokenPosition::new(1, 1, 1);
     let b_start = EpsilonGraphVertex::Start(ProdRef(1));
-    let b_0_0 = EpsilonGraphVertex::State(TokenPosition::new(1, 0, 0));
-    let b_0_1 = EpsilonGraphVertex::State(TokenPosition::new(1, 0, 1));
+    let b_0_0 = EpsilonGraphVertex::State(s_2);
+    let b_0_1 = EpsilonGraphVertex::State(s_3);
     let b_0_anon_0_start = EpsilonGraphVertex::Anon(AnonStep::Positive(AnonSym(0)));
     let b_0_anon_0_end = EpsilonGraphVertex::Anon(AnonStep::Negative(AnonSym(0)));
     let b_1_anon_0_start = EpsilonGraphVertex::Anon(AnonStep::Positive(AnonSym(1)));
     let b_1_anon_0_end = EpsilonGraphVertex::Anon(AnonStep::Negative(AnonSym(1)));
-    let b_1_1 = EpsilonGraphVertex::State(TokenPosition::new(1, 1, 1));
+    let b_1_1 = EpsilonGraphVertex::State(s_4);
     let b_end = EpsilonGraphVertex::End(ProdRef(1));
 
     let a_0 = ContiguousNonterminalInterval(vec![a_start, a_0_0, a_0_1, a_end]);
@@ -1230,66 +1250,25 @@ mod tests {
     assert_eq!(
       noncyclic_interval_graph,
       EpsilonIntervalGraph(vec![
-        a_0,
-        b_start_to_a_start_0,
-        a_end_to_b_end_0,
-        b_start_to_a_start_1,
-        a_end_to_b_end_1,
+        a_0.clone(),
+        b_start_to_a_start_0.clone(),
+        a_end_to_b_end_0.clone(),
+        b_start_to_a_start_1.clone(),
+        a_end_to_b_end_1.clone(),
       ])
     );
 
-    /* Now check that the transition graph is as we expect. */
-    let CyclicGraphDecomposition {
-      cyclic_subgraph: merged_stack_cycles,
-      pairwise_state_transitions: _all_completed_pairs_with_vertices,
-    } = noncyclic_interval_graph.connect_all_vertices();
-    /* There are no stack cycles in the noncyclic graph. */
-    assert_eq!(merged_stack_cycles, EpsilonNodeStateSubgraph {
-      vertex_mapping: IndexMap::new(),
-      trie_node_universe: vec![],
-    });
-    /* assert_eq!(all_completed_pairs_with_vertices, vec![]); */
-
+    /* Now check for indices. */
     let intervals_by_start_and_end = noncyclic_interval_graph.find_start_end_indices();
     assert_eq!(
       intervals_by_start_and_end,
       vec![
         (ProdRef(0), StartEndEpsilonIntervals {
-          start_epsilons: vec![ContiguousNonterminalInterval(vec![
-            EpsilonGraphVertex::Start(ProdRef(0)),
-            EpsilonGraphVertex::State(TokenPosition::new(0, 0, 0)),
-            EpsilonGraphVertex::State(TokenPosition::new(0, 0, 1)),
-            EpsilonGraphVertex::End(ProdRef(0)),
-          ])],
-          end_epsilons: vec![
-            ContiguousNonterminalInterval(vec![
-              EpsilonGraphVertex::End(ProdRef(0)),
-              EpsilonGraphVertex::Anon(AnonStep::Negative(AnonSym(0))),
-              EpsilonGraphVertex::End(ProdRef(1)),
-            ]),
-            ContiguousNonterminalInterval(vec![
-              EpsilonGraphVertex::End(ProdRef(0)),
-              EpsilonGraphVertex::Anon(AnonStep::Negative(AnonSym(1))),
-              EpsilonGraphVertex::State(TokenPosition::new(1, 1, 1)),
-              EpsilonGraphVertex::End(ProdRef(1)),
-            ]),
-          ],
+          start_epsilons: vec![a_0.clone()],
+          end_epsilons: vec![a_end_to_b_end_0.clone(), a_end_to_b_end_1.clone()],
         },),
         (ProdRef(1), StartEndEpsilonIntervals {
-          start_epsilons: vec![
-            ContiguousNonterminalInterval(vec![
-              EpsilonGraphVertex::Start(ProdRef(1)),
-              EpsilonGraphVertex::State(TokenPosition::new(1, 0, 0)),
-              EpsilonGraphVertex::State(TokenPosition::new(1, 0, 1)),
-              EpsilonGraphVertex::Anon(AnonStep::Positive(AnonSym(0))),
-              EpsilonGraphVertex::Start(ProdRef(0)),
-            ]),
-            ContiguousNonterminalInterval(vec![
-              EpsilonGraphVertex::Start(ProdRef(1)),
-              EpsilonGraphVertex::Anon(AnonStep::Positive(AnonSym(1))),
-              EpsilonGraphVertex::Start(ProdRef(0)),
-            ]),
-          ],
+          start_epsilons: vec![b_start_to_a_start_0.clone(), b_start_to_a_start_1.clone()],
           end_epsilons: vec![],
         },),
       ]
@@ -1297,6 +1276,23 @@ mod tests {
       .cloned()
       .collect::<IndexMap<ProdRef, StartEndEpsilonIntervals>>()
     );
+
+    /* /\* Now check that the transition graph is as we expect. *\/ */
+    /* let CyclicGraphDecomposition { */
+    /*   cyclic_subgraph: merged_stack_cycles, */
+    /*   pairwise_state_transitions: all_completed_pairs_with_vertices, */
+    /* } = noncyclic_interval_graph.connect_all_vertices(); */
+    /* /\* There are no stack cycles in the noncyclic graph. *\/ */
+    /* assert_eq!(merged_stack_cycles, EpsilonNodeStateSubgraph { */
+    /*   vertex_mapping: IndexMap::new(), */
+    /*   trie_node_universe: vec![], */
+    /* }); */
+    /* assert_eq!(all_completed_pairs_with_vertices, vec![ */
+    /*   CompletedStatePairWithVertices::new( */
+    /*     StatePair::new(LoweredState::Start, LoweredState::Within(s_0)), */
+    /*     a_0, */
+    /*   ), */
+    /* ]); */
 
     /* Now do the same, but for `basic_productions()`. */
     let prods = basic_productions();
