@@ -513,9 +513,10 @@ pub mod grammar_indexing {
       epsilon_subscripts_index
     }
 
-    pub fn produce_transition_graph(&self) -> StateTransitionGraph {
+    fn connect_all_vertices(&self) -> (EpsilonNodeStateSubgraph, Vec<CompletedStatePairWithVertices>) {
       let intervals_indexed_by_start_and_end = self.find_start_end_indices();
       let EpsilonIntervalGraph(all_intervals) = self;
+
       let mut all_completed_pairs_with_vertices: Vec<CompletedStatePairWithVertices> = vec![];
       /* NB: When finding token transitions, we keep track of which intermediate
        * transition states we've already seen by using this Hash impl. If any
@@ -578,71 +579,73 @@ pub mod grammar_indexing {
         ret
       };
 
-      /* TODO: this method, by extending `merged_stack_cycles` with `EpsilonNodeStateSubgraph`!!! */
-      let transitions_by_state: StateTransitionGraph = {
-        let mut ret_mapping: IndexMap<LoweredState, ForestEntryExitPoints> = IndexMap::new();
-        let mut ret_trie_subgraph = merged_stack_cycles;
-        for completed_pair in all_completed_pairs_with_vertices.into_iter() {
-          let CompletedStatePairWithVertices {
-            state_pair,
-            interval,
-          } = completed_pair;
-          let StatePair {
-            left: left_state_in_pair,
-            right: right_state_in_pair,
-          } = state_pair;
-          let ContiguousNonterminalInterval(vertices) = interval;
-          for (vertex_index, vtx) in vertices.iter().enumerate() {
-            let cur_trie_ref = ret_trie_subgraph.trie_ref_for_vertex(&vtx);
-            let next_edge = if vertex_index == vertices.len() - 1 {
-              /* Register the current trie as completing at the right state. */
-              let right_entry = ret_mapping.entry(right_state_in_pair)
-                .or_insert_with(ForestEntryExitPoints::new);
-              (*right_entry).add_exiting(cur_trie_ref);
-              /* To end at the `right` state, add a forward edge to a `Completed` entry. */
-              StackTrieNextEntry::Completed(right_state_in_pair)
-            } else {
-              let next_vertex = vertices[vertex_index + 1];
-              let next_trie_ref = ret_trie_subgraph.trie_ref_for_vertex(&next_vertex);
-              let mut next_trie = ret_trie_subgraph.get_trie(next_trie_ref);
-              next_trie
-                .prev_nodes
-                .push(StackTrieNextEntry::Incomplete(cur_trie_ref));
-              StackTrieNextEntry::Incomplete(next_trie_ref)
-            };
-            let prev_edge = if vertex_index == 0 {
-              /* Register the current trie as emanating from the left state. */
-              let left_entry = ret_mapping.entry(left_state_in_pair)
-                .or_insert_with(ForestEntryExitPoints::new);
-              (*left_entry).add_entering(cur_trie_ref);
-              /* To start at the `left` state, add a back edge to a `Completed` entry. */
-              StackTrieNextEntry::Completed(left_state_in_pair)
-            } else {
-              let prev_vertex = vertices[vertex_index - 1];
-              let prev_trie_ref = ret_trie_subgraph.trie_ref_for_vertex(&prev_vertex);
-              let mut prev_trie = ret_trie_subgraph.get_trie(prev_trie_ref);
-              prev_trie
-                .next_nodes
-                .push(StackTrieNextEntry::Incomplete(cur_trie_ref));
-              StackTrieNextEntry::Incomplete(prev_trie_ref)
-            };
-            /* Link the forward and back edges from the current node. */
-            let mut cur_trie = ret_trie_subgraph.get_trie(cur_trie_ref);
-            cur_trie
-              .next_nodes
-              .push(next_edge);
-            cur_trie
-              .prev_nodes
-              .push(prev_edge);
-          }
-        }
-        StateTransitionGraph {
-          state_forest_contact_points: ret_mapping,
-          trie_node_mapping: ret_trie_subgraph.trie_node_universe,
-        }
-      };
+      (merged_stack_cycles, all_completed_pairs_with_vertices)
+    }
 
-      transitions_by_state
+    pub fn produce_transition_graph(&self) -> StateTransitionGraph {
+      let (merged_stack_cycles, all_completed_pairs_with_vertices) = self.connect_all_vertices();
+
+      let mut ret_mapping: IndexMap<LoweredState, ForestEntryExitPoints> = IndexMap::new();
+      let mut ret_trie_subgraph = merged_stack_cycles;
+      for completed_pair in all_completed_pairs_with_vertices.into_iter() {
+        let CompletedStatePairWithVertices {
+          state_pair,
+          interval,
+        } = completed_pair;
+        let StatePair {
+          left: left_state_in_pair,
+          right: right_state_in_pair,
+        } = state_pair;
+        let ContiguousNonterminalInterval(vertices) = interval;
+        for (vertex_index, vtx) in vertices.iter().enumerate() {
+          let cur_trie_ref = ret_trie_subgraph.trie_ref_for_vertex(&vtx);
+          let next_edge = if vertex_index == vertices.len() - 1 {
+            /* Register the current trie as completing at the right state. */
+            let right_entry = ret_mapping.entry(right_state_in_pair)
+              .or_insert_with(ForestEntryExitPoints::new);
+            (*right_entry).add_exiting(cur_trie_ref);
+            /* To end at the `right` state, add a forward edge to a `Completed` entry. */
+            StackTrieNextEntry::Completed(right_state_in_pair)
+          } else {
+            let next_vertex = vertices[vertex_index + 1];
+            let next_trie_ref = ret_trie_subgraph.trie_ref_for_vertex(&next_vertex);
+            let mut next_trie = ret_trie_subgraph.get_trie(next_trie_ref);
+            next_trie
+              .prev_nodes
+              .push(StackTrieNextEntry::Incomplete(cur_trie_ref));
+            StackTrieNextEntry::Incomplete(next_trie_ref)
+          };
+          let prev_edge = if vertex_index == 0 {
+            /* Register the current trie as emanating from the left state. */
+            let left_entry = ret_mapping.entry(left_state_in_pair)
+              .or_insert_with(ForestEntryExitPoints::new);
+            (*left_entry).add_entering(cur_trie_ref);
+            /* To start at the `left` state, add a back edge to a `Completed` entry. */
+            StackTrieNextEntry::Completed(left_state_in_pair)
+          } else {
+            let prev_vertex = vertices[vertex_index - 1];
+            let prev_trie_ref = ret_trie_subgraph.trie_ref_for_vertex(&prev_vertex);
+            let mut prev_trie = ret_trie_subgraph.get_trie(prev_trie_ref);
+            prev_trie
+              .next_nodes
+              .push(StackTrieNextEntry::Incomplete(cur_trie_ref));
+            StackTrieNextEntry::Incomplete(prev_trie_ref)
+          };
+          /* Link the forward and back edges from the current node. */
+          let mut cur_trie = ret_trie_subgraph.get_trie(cur_trie_ref);
+          cur_trie
+            .next_nodes
+            .push(next_edge);
+          cur_trie
+            .prev_nodes
+            .push(prev_edge);
+        }
+      }
+
+      StateTransitionGraph {
+        state_forest_contact_points: ret_mapping,
+        trie_node_mapping: ret_trie_subgraph.trie_node_universe,
+      }
     }
   }
 
@@ -1222,6 +1225,7 @@ mod tests {
       ])
     );
 
+    /* Now do the same, but for `basic_productions()`. */
     let prods = basic_productions();
     let grammar = TokenGrammar::new(&prods);
     let interval_graph = PreprocessedGrammar::produce_terminals_interval_graph(&grammar);
@@ -1350,6 +1354,9 @@ mod tests {
     );
   }
 
+  /* TODO: consider creating/using a generic tree diffing algorithm in case that speeds up
+   * debugging (this might conflict with the benefits of using totally ordered IndexMaps though,
+   * namely determinism, as well as knowing exactly which order your subtrees are created in)! */
   #[test]
   fn noncyclic_transition_graph() {
     let prods = non_cyclic_productions();
