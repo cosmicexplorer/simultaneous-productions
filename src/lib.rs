@@ -611,9 +611,7 @@ pub mod grammar_indexing {
         } = state_pair;
         let ContiguousNonterminalInterval(vertices) = interval;
         for (vertex_index, vtx) in vertices.iter().enumerate() {
-          dbg!(vtx);
           let cur_trie_ref = ret_trie_subgraph.trie_ref_for_vertex(&vtx);
-          dbg!(cur_trie_ref);
           let next_edge = if vertex_index == vertices.len() - 1 {
             /* Register the current trie as completing at the right state. */
             ret_mapping
@@ -623,9 +621,7 @@ pub mod grammar_indexing {
             StackTrieNextEntry::Completed(right_state_in_pair)
           } else {
             let next_vertex = vertices[vertex_index + 1];
-            dbg!(next_vertex);
             let next_trie_ref = ret_trie_subgraph.trie_ref_for_vertex(&next_vertex);
-            dbg!(next_trie_ref);
             let next_trie = ret_trie_subgraph.get_trie(next_trie_ref);
             next_trie
               .prev_nodes
@@ -641,9 +637,7 @@ pub mod grammar_indexing {
             StackTrieNextEntry::Completed(left_state_in_pair)
           } else {
             let prev_vertex = vertices[vertex_index - 1];
-            dbg!(prev_vertex);
             let prev_trie_ref = ret_trie_subgraph.trie_ref_for_vertex(&prev_vertex);
-            dbg!(prev_trie_ref);
             let prev_trie = ret_trie_subgraph.get_trie(prev_trie_ref);
             prev_trie
               .next_nodes
@@ -1465,163 +1459,205 @@ mod tests {
       .collect(),
 
       trie_node_mapping: vec![
-        /* = {0,1} */
-        /* ( */
-        /*   StatePair { */
-        /*     left: LoweredState::Start, */
-        /*     right: first_a, */
-        /*   }, */
-        /*   vec![ */
-        /*     StackDiffSegment(vec![NamedOrAnonStep::Named(StackStep::Positive(a_prod))]), */
-        /*     StackDiffSegment(vec![ */
-        /*       NamedOrAnonStep::Named(StackStep::Positive(b_prod)), */
-        /*       NamedOrAnonStep::Anon(AnonStep::Positive(AnonSym(1))), */
-        /*       NamedOrAnonStep::Named(StackStep::Positive(a_prod)), */
-        /*     ]), */
-        /*   ], */
-        /* ), */
         /* 0 */
         StackTrieNode {
           stack_diff: StackDiffSegment(vec![NamedOrAnonStep::Named(StackStep::Positive(a_prod))]),
-          next_nodes: vec![StackTrieNextEntry::Incomplete(TrieNodeRef(1))].iter().cloned().collect::<IndexSet<_>>(),
-          prev_nodes: vec![StackTrieNextEntry::Completed(LoweredState::Start)].iter().cloned().collect::<IndexSet<_>>(),
+          next_nodes: vec![StackTrieNextEntry::Incomplete(TrieNodeRef(1))]
+            .iter()
+            .cloned()
+            .collect::<IndexSet<_>>(),
+          prev_nodes: vec![
+            StackTrieNextEntry::Completed(LoweredState::Start),
+            StackTrieNextEntry::Incomplete(TrieNodeRef(7)),
+            StackTrieNextEntry::Incomplete(TrieNodeRef(12)),
+          ]
+          .iter()
+          .cloned()
+          .collect::<IndexSet<_>>(),
         },
         /* 1 */
         StackTrieNode {
-          stack_diff: StackDiffSegment(vec![
-              NamedOrAnonStep::Named(StackStep::Positive(b_prod)),
-              NamedOrAnonStep::Anon(AnonStep::Positive(AnonSym(1))),
-              NamedOrAnonStep::Named(StackStep::Positive(a_prod)),
-          ]),
-          next_nodes: vec![StackTrieNextEntry::Completed(first_a)].iter().cloned().collect::<IndexSet<_>>(),
-          prev_nodes: vec![StackTrieNextEntry::Incomplete(TrieNodeRef(0))].iter().cloned().collect::<IndexSet<_>>(),
+          stack_diff: StackDiffSegment(vec![]),
+          next_nodes: vec![
+            StackTrieNextEntry::Completed(first_a),
+            StackTrieNextEntry::Incomplete(TrieNodeRef(4)),
+          ]
+          .iter()
+          .cloned()
+          .collect::<IndexSet<_>>(),
+          prev_nodes: vec![
+            StackTrieNextEntry::Incomplete(TrieNodeRef(0)),
+            StackTrieNextEntry::Completed(first_a),
+          ]
+          .iter()
+          .cloned()
+          .collect::<IndexSet<_>>(),
         },
         /* 2 */
-        /* ( */
-        /*   StatePair { */
-        /*     left: LoweredState::Start, */
-        /*     right: second_a, */
-        /*   }, */
-        /*   vec![StackDiffSegment(vec![ */
-        /*     NamedOrAnonStep::Named(StackStep::Positive(b_prod)), */
-        /*   ])], */
-        /* ), */
         StackTrieNode {
           stack_diff: StackDiffSegment(vec![NamedOrAnonStep::Named(StackStep::Positive(b_prod))]),
-          next_nodes: vec![StackTrieNextEntry::Completed(second_a)].iter().cloned().collect::<IndexSet<_>>(),
-          prev_nodes: vec![StackTrieNextEntry::Completed(LoweredState::Start)].iter().cloned().collect::<IndexSet<_>>(),
+          next_nodes: vec![
+            StackTrieNextEntry::Incomplete(TrieNodeRef(3)),
+            StackTrieNextEntry::Incomplete(TrieNodeRef(7)),
+          ]
+          .iter()
+          .cloned()
+          .collect::<IndexSet<_>>(),
+          prev_nodes: vec![StackTrieNextEntry::Completed(LoweredState::Start)]
+            .iter()
+            .cloned()
+            .collect::<IndexSet<_>>(),
         },
         /* 3 */
-        /* ( */
-        /*   StatePair { */
-        /*     left: first_a, */
-        /*     right: first_b, */
-        /*   }, */
-        /*   vec![StackDiffSegment(vec![])], */
-        /* ), */
         StackTrieNode {
           stack_diff: StackDiffSegment(vec![]),
-          next_nodes: vec![StackTrieNextEntry::Completed(first_b)].iter().cloned().collect::<IndexSet<_>>(),
-          prev_nodes: vec![StackTrieNextEntry::Completed(first_a)].iter().cloned().collect::<IndexSet<_>>(),
+          next_nodes: vec![
+            StackTrieNextEntry::Completed(second_a),
+            StackTrieNextEntry::Incomplete(TrieNodeRef(5)),
+          ]
+          .iter()
+          .cloned()
+          .collect::<IndexSet<_>>(),
+          prev_nodes: vec![
+            StackTrieNextEntry::Incomplete(TrieNodeRef(2)),
+            StackTrieNextEntry::Completed(second_a),
+          ]
+          .iter()
+          .cloned()
+          .collect::<IndexSet<_>>(),
         },
         /* 4 */
-        /* ( */
-        /*   StatePair { */
-        /*     left: second_a, */
-        /*     right: second_b, */
-        /*   }, */
-        /*   vec![StackDiffSegment(vec![])], */
-        /* ), */
         StackTrieNode {
           stack_diff: StackDiffSegment(vec![]),
-          next_nodes: vec![StackTrieNextEntry::Completed(second_b)].iter().cloned().collect::<IndexSet<_>>(),
-          prev_nodes: vec![StackTrieNextEntry::Completed(second_a)].iter().cloned().collect::<IndexSet<_>>(),
+          next_nodes: vec![
+            StackTrieNextEntry::Completed(first_b),
+            StackTrieNextEntry::Incomplete(TrieNodeRef(6)),
+          ]
+          .iter()
+          .cloned()
+          .collect::<IndexSet<_>>(),
+          prev_nodes: vec![
+            StackTrieNextEntry::Incomplete(TrieNodeRef(1)),
+            StackTrieNextEntry::Completed(first_b),
+          ]
+          .iter()
+          .cloned()
+          .collect::<IndexSet<_>>(),
         },
-        /* = {5,6} */
-        /* ( */
-        /*   StatePair { */
-        /*     left: first_b, */
-        /*     right: LoweredState::End, */
-        /*   }, */
-        /*   vec![ */
-        /*     StackDiffSegment(vec![NamedOrAnonStep::Named(StackStep::Negative(a_prod))]), */
-        /*     StackDiffSegment(vec![ */
-        /*       NamedOrAnonStep::Named(StackStep::Negative(a_prod)), */
-        /*       NamedOrAnonStep::Anon(AnonStep::Negative(AnonSym(0))), */
-        /*       NamedOrAnonStep::Named(StackStep::Negative(b_prod)), */
-        /*     ]), */
-        /*   ], */
-        /* ), */
         /* 5 */
         StackTrieNode {
-          stack_diff: StackDiffSegment(vec![NamedOrAnonStep::Named(StackStep::Negative(a_prod))]),
-          next_nodes: vec![StackTrieNextEntry::Incomplete(TrieNodeRef(6))].iter().cloned().collect::<IndexSet<_>>(),
-          prev_nodes: vec![StackTrieNextEntry::Completed(first_b)].iter().cloned().collect::<IndexSet<_>>(),
+          stack_diff: StackDiffSegment(vec![]),
+          next_nodes: vec![
+            StackTrieNextEntry::Completed(second_b),
+            StackTrieNextEntry::Incomplete(TrieNodeRef(12)),
+          ]
+          .iter()
+          .cloned()
+          .collect::<IndexSet<_>>(),
+          prev_nodes: vec![
+            StackTrieNextEntry::Incomplete(TrieNodeRef(3)),
+            StackTrieNextEntry::Completed(second_b),
+          ]
+          .iter()
+          .cloned()
+          .collect::<IndexSet<_>>(),
         },
         /* 6 */
         StackTrieNode {
-          stack_diff: StackDiffSegment(vec![
-            NamedOrAnonStep::Named(StackStep::Negative(a_prod)),
-            NamedOrAnonStep::Anon(AnonStep::Negative(AnonSym(0))),
-            NamedOrAnonStep::Named(StackStep::Negative(b_prod)),
-          ]),
-          next_nodes: vec![StackTrieNextEntry::Completed(LoweredState::End)].iter().cloned().collect::<IndexSet<_>>(),
-          prev_nodes: vec![StackTrieNextEntry::Incomplete(TrieNodeRef(5))].iter().cloned().collect::<IndexSet<_>>(),
+          stack_diff: StackDiffSegment(vec![NamedOrAnonStep::Named(StackStep::Negative(a_prod))]),
+          next_nodes: vec![
+            StackTrieNextEntry::Completed(LoweredState::End),
+            StackTrieNextEntry::Incomplete(TrieNodeRef(10)),
+            StackTrieNextEntry::Incomplete(TrieNodeRef(11)),
+          ]
+          .iter()
+          .cloned()
+          .collect::<IndexSet<_>>(),
+          prev_nodes: vec![StackTrieNextEntry::Incomplete(TrieNodeRef(4))]
+            .iter()
+            .cloned()
+            .collect::<IndexSet<_>>(),
         },
         /* 7 */
-        /* ( */
-        /*   StatePair { */
-        /*     left: third_a, */
-        /*     right: LoweredState::End, */
-        /*   }, */
-        /*   vec![StackDiffSegment(vec![NamedOrAnonStep::Named( */
-        /*     StackStep::Negative(b_prod), */
-        /*   )])], */
-        /* ), */
         StackTrieNode {
-          stack_diff: StackDiffSegment(vec![NamedOrAnonStep::Named(
-            StackStep::Negative(b_prod),
-          )]),
-          next_nodes: vec![StackTrieNextEntry::Completed(LoweredState::End)].iter().cloned().collect::<IndexSet<_>>(),
-          prev_nodes: vec![StackTrieNextEntry::Completed(third_a)].iter().cloned().collect::<IndexSet<_>>(),
+          stack_diff: StackDiffSegment(vec![NamedOrAnonStep::Anon(AnonStep::Positive(AnonSym(1)))]),
+          next_nodes: vec![StackTrieNextEntry::Incomplete(TrieNodeRef(0))]
+            .iter()
+            .cloned()
+            .collect::<IndexSet<_>>(),
+          prev_nodes: vec![StackTrieNextEntry::Incomplete(TrieNodeRef(2))]
+            .iter()
+            .cloned()
+            .collect::<IndexSet<_>>(),
         },
         /* 8 */
-        /* ( */
-        /*   StatePair { */
-        /*     left: first_b, */
-        /*     right: third_a, */
-        /*   }, */
-        /*   vec![StackDiffSegment(vec![ */
-        /*     NamedOrAnonStep::Named(StackStep::Negative(a_prod)), */
-        /*     NamedOrAnonStep::Anon(AnonStep::Negative(AnonSym(1))), */
-        /*   ])], */
-        /* ), */
         StackTrieNode {
-          stack_diff: StackDiffSegment(vec![
-            NamedOrAnonStep::Named(StackStep::Negative(a_prod)),
-            NamedOrAnonStep::Anon(AnonStep::Negative(AnonSym(1))),
-          ]),
-          next_nodes: vec![StackTrieNextEntry::Completed(third_a)].iter().cloned().collect::<IndexSet<_>>(),
-          prev_nodes: vec![StackTrieNextEntry::Completed(first_b)].iter().cloned().collect::<IndexSet<_>>(),
+          stack_diff: StackDiffSegment(vec![]),
+          next_nodes: vec![
+            StackTrieNextEntry::Incomplete(TrieNodeRef(9)),
+            StackTrieNextEntry::Completed(third_a),
+          ]
+          .iter()
+          .cloned()
+          .collect::<IndexSet<_>>(),
+          prev_nodes: vec![
+            StackTrieNextEntry::Completed(third_a),
+            StackTrieNextEntry::Incomplete(TrieNodeRef(11)),
+          ]
+          .iter()
+          .cloned()
+          .collect::<IndexSet<_>>(),
         },
         /* 9 */
-        /* ( */
-        /*   StatePair { */
-        /*     left: second_b, */
-        /*     right: first_a, */
-        /*   }, */
-        /*   vec![StackDiffSegment(vec![ */
-        /*     NamedOrAnonStep::Anon(AnonStep::Positive(AnonSym(0))), */
-        /*     NamedOrAnonStep::Named(StackStep::Positive(a_prod)), */
-        /*   ])], */
-        /* ), */
         StackTrieNode {
-          stack_diff: StackDiffSegment(vec![
-            NamedOrAnonStep::Anon(AnonStep::Positive(AnonSym(0))),
-            NamedOrAnonStep::Named(StackStep::Positive(a_prod)),
-          ]),
-          next_nodes: vec![StackTrieNextEntry::Completed(first_a)].iter().cloned().collect::<IndexSet<_>>(),
-          prev_nodes: vec![StackTrieNextEntry::Completed(second_b)].iter().cloned().collect::<IndexSet<_>>(),
+          stack_diff: StackDiffSegment(vec![NamedOrAnonStep::Named(StackStep::Negative(b_prod))]),
+          next_nodes: vec![StackTrieNextEntry::Completed(LoweredState::End)]
+            .iter()
+            .cloned()
+            .collect::<IndexSet<_>>(),
+          prev_nodes: vec![
+            StackTrieNextEntry::Incomplete(TrieNodeRef(8)),
+            StackTrieNextEntry::Incomplete(TrieNodeRef(10)),
+          ]
+          .iter()
+          .cloned()
+          .collect::<IndexSet<_>>(),
+        },
+        /* 10 */
+        StackTrieNode {
+          stack_diff: StackDiffSegment(vec![NamedOrAnonStep::Anon(AnonStep::Negative(AnonSym(0)))]),
+          next_nodes: vec![StackTrieNextEntry::Incomplete(TrieNodeRef(9))]
+            .iter()
+            .cloned()
+            .collect::<IndexSet<_>>(),
+          prev_nodes: vec![StackTrieNextEntry::Incomplete(TrieNodeRef(6))]
+            .iter()
+            .cloned()
+            .collect::<IndexSet<_>>(),
+        },
+        /* 11 */
+        StackTrieNode {
+          stack_diff: StackDiffSegment(vec![NamedOrAnonStep::Anon(AnonStep::Negative(AnonSym(1)))]),
+          next_nodes: vec![StackTrieNextEntry::Incomplete(TrieNodeRef(8))]
+            .iter()
+            .cloned()
+            .collect::<IndexSet<_>>(),
+          prev_nodes: vec![StackTrieNextEntry::Incomplete(TrieNodeRef(6))]
+            .iter()
+            .cloned()
+            .collect::<IndexSet<_>>(),
+        },
+        /* 12 */
+        StackTrieNode {
+          stack_diff: StackDiffSegment(vec![NamedOrAnonStep::Anon(AnonStep::Positive(AnonSym(0)))]),
+          next_nodes: vec![StackTrieNextEntry::Incomplete(TrieNodeRef(0))]
+            .iter()
+            .cloned()
+            .collect::<IndexSet<_>>(),
+          prev_nodes: vec![StackTrieNextEntry::Incomplete(TrieNodeRef(5))]
+            .iter()
+            .cloned()
+            .collect::<IndexSet<_>>(),
         },
       ],
     };
