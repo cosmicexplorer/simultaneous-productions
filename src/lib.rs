@@ -371,11 +371,14 @@ pub mod grammar_indexing {
 
     fn trie_ref_for_vertex(&mut self, vtx: &EpsilonGraphVertex) -> TrieNodeRef {
       let basic_node = StackTrieNode::bare(vtx);
-      let trie_node_ref_for_vertex = self.vertex_mapping.get(vtx).cloned().unwrap_or_else(|| {
+      let trie_node_ref_for_vertex = if let Some(x) = self.vertex_mapping.get(vtx) {
+        x.clone()
+      } else {
         let next_ref = TrieNodeRef(self.trie_node_universe.len());
         self.trie_node_universe.push(basic_node.clone());
+        self.vertex_mapping.insert(*vtx, next_ref);
         next_ref
-      });
+      };
       /* All trie nodes corresponding to the same vertex should have the same stack
        * diff! */
       assert_eq!(
@@ -577,14 +580,14 @@ pub mod grammar_indexing {
             };
             {
               /* Add a forward link from the current to the next vertex's node. */
-              let mut cur_trie = ret.get_trie(cur_trie_ref);
+              let cur_trie = ret.get_trie(cur_trie_ref);
               cur_trie
                 .next_nodes
                 .push(StackTrieNextEntry::Incomplete(next_trie_ref));
             }
             {
               /* Add a back edge from the next to the current. */
-              let mut next_trie = ret.get_trie(next_trie_ref);
+              let next_trie = ret.get_trie(next_trie_ref);
               next_trie
                 .prev_nodes
                 .push(StackTrieNextEntry::Incomplete(cur_trie_ref));
@@ -619,7 +622,9 @@ pub mod grammar_indexing {
         } = state_pair;
         let ContiguousNonterminalInterval(vertices) = interval;
         for (vertex_index, vtx) in vertices.iter().enumerate() {
+          dbg!(vtx);
           let cur_trie_ref = ret_trie_subgraph.trie_ref_for_vertex(&vtx);
+          dbg!(cur_trie_ref);
           let next_edge = if vertex_index == vertices.len() - 1 {
             /* Register the current trie as completing at the right state. */
             let right_entry = ret_mapping
@@ -630,8 +635,10 @@ pub mod grammar_indexing {
             StackTrieNextEntry::Completed(right_state_in_pair)
           } else {
             let next_vertex = vertices[vertex_index + 1];
+            dbg!(next_vertex);
             let next_trie_ref = ret_trie_subgraph.trie_ref_for_vertex(&next_vertex);
-            let mut next_trie = ret_trie_subgraph.get_trie(next_trie_ref);
+            dbg!(next_trie_ref);
+            let next_trie = ret_trie_subgraph.get_trie(next_trie_ref);
             next_trie
               .prev_nodes
               .push(StackTrieNextEntry::Incomplete(cur_trie_ref));
@@ -647,15 +654,17 @@ pub mod grammar_indexing {
             StackTrieNextEntry::Completed(left_state_in_pair)
           } else {
             let prev_vertex = vertices[vertex_index - 1];
+            dbg!(prev_vertex);
             let prev_trie_ref = ret_trie_subgraph.trie_ref_for_vertex(&prev_vertex);
-            let mut prev_trie = ret_trie_subgraph.get_trie(prev_trie_ref);
+            dbg!(prev_trie_ref);
+            let prev_trie = ret_trie_subgraph.get_trie(prev_trie_ref);
             prev_trie
               .next_nodes
               .push(StackTrieNextEntry::Incomplete(cur_trie_ref));
             StackTrieNextEntry::Incomplete(prev_trie_ref)
           };
           /* Link the forward and back edges from the current node. */
-          let mut cur_trie = ret_trie_subgraph.get_trie(cur_trie_ref);
+          let cur_trie = ret_trie_subgraph.get_trie(cur_trie_ref);
           cur_trie.next_nodes.push(next_edge);
           cur_trie.prev_nodes.push(prev_edge);
         }
