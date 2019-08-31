@@ -316,7 +316,7 @@ pub mod grammar_indexing {
   #[derive(Debug, Copy, Clone, PartialEq, Eq, Hash)]
   pub struct TrieNodeRef(pub usize);
 
-  #[derive(Debug, Clone, PartialEq, Eq, Hash)]
+  #[derive(Debug, Clone, PartialEq, Eq)]
   pub struct StackTrieNode {
     pub stack_diff: StackDiffSegment,
     /* During parsing, the top of the stack will be a named or anonymous symbol. We can negate
@@ -326,10 +326,18 @@ pub mod grammar_indexing {
      * during the parse. TODO: make a "build" method that removes the RefCell, coalesces
      * stack diffs, and makes the next nodes an IndexMap (??? on the last part given lex
      * BFS?!)! */
-    pub next_nodes: Vec<StackTrieNextEntry>,
+    pub next_nodes: IndexSet<StackTrieNextEntry>,
     /* Doubly-linked so that they can be traversed from either direction -- this is (maybe) key
      * to parallelism in parsing! */
-    pub prev_nodes: Vec<StackTrieNextEntry>,
+    pub prev_nodes: IndexSet<StackTrieNextEntry>,
+  }
+
+  impl Hash for StackTrieNode {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+      self.stack_diff.hash(state);
+      self.next_nodes.iter().collect::<Vec<_>>().hash(state);
+      self.prev_nodes.iter().collect::<Vec<_>>().hash(state);
+    }
   }
 
   #[derive(Debug, Copy, Clone, PartialEq, Eq, Hash)]
@@ -342,8 +350,8 @@ pub mod grammar_indexing {
     fn bare(vtx: &EpsilonGraphVertex) -> Self {
       StackTrieNode {
         stack_diff: StackDiffSegment(vtx.get_step().map_or(vec![], |s| vec![s])),
-        next_nodes: vec![],
-        prev_nodes: vec![],
+        next_nodes: IndexSet::new(),
+        prev_nodes: IndexSet::new(),
       }
     }
   }
@@ -389,25 +397,6 @@ pub mod grammar_indexing {
     }
   }
 
-  #[derive(Debug, Clone, PartialEq, Eq)]
-  pub struct ForestEntryExitPoints {
-    pub entering_into: Vec<TrieNodeRef>,
-    pub exiting_out_of: Vec<TrieNodeRef>,
-  }
-
-  impl ForestEntryExitPoints {
-    fn new() -> Self {
-      ForestEntryExitPoints {
-        entering_into: vec![],
-        exiting_out_of: vec![],
-      }
-    }
-
-    fn add_exiting(&mut self, node_ref: TrieNodeRef) { self.exiting_out_of.push(node_ref); }
-
-    fn add_entering(&mut self, node_ref: TrieNodeRef) { self.entering_into.push(node_ref); }
-  }
-
   /* Pointers to the appropriate "forests" of stack transitions
    * starting/completing at each state. "starting" and "completing" are
    * mirrored to allow working away at mapping states to input token indices
@@ -417,7 +406,7 @@ pub mod grammar_indexing {
    * still applies). */
   #[derive(Debug, Clone, PartialEq, Eq)]
   pub struct StateTransitionGraph {
-    pub state_forest_contact_points: IndexMap<LoweredState, ForestEntryExitPoints>,
+    pub state_forest_contact_points: IndexMap<LoweredState, TrieNodeRef>,
     pub trie_node_mapping: Vec<StackTrieNode>,
   }
 
@@ -583,14 +572,14 @@ pub mod grammar_indexing {
               let cur_trie = ret.get_trie(cur_trie_ref);
               cur_trie
                 .next_nodes
-                .push(StackTrieNextEntry::Incomplete(next_trie_ref));
+                .insert(StackTrieNextEntry::Incomplete(next_trie_ref));
             }
             {
               /* Add a back edge from the next to the current. */
               let next_trie = ret.get_trie(next_trie_ref);
               next_trie
                 .prev_nodes
-                .push(StackTrieNextEntry::Incomplete(cur_trie_ref));
+                .insert(StackTrieNextEntry::Incomplete(cur_trie_ref));
             }
           }
         }
@@ -609,7 +598,7 @@ pub mod grammar_indexing {
         pairwise_state_transitions: all_completed_pairs_with_vertices,
       } = self.connect_all_vertices();
 
-      let mut ret_mapping: IndexMap<LoweredState, ForestEntryExitPoints> = IndexMap::new();
+      let mut ret_mapping: IndexMap<LoweredState, TrieNodeRef> = IndexMap::new();
       let mut ret_trie_subgraph = merged_stack_cycles;
       for completed_pair in all_completed_pairs_with_vertices.into_iter() {
         let CompletedStatePairWithVertices {
@@ -627,10 +616,9 @@ pub mod grammar_indexing {
           dbg!(cur_trie_ref);
           let next_edge = if vertex_index == vertices.len() - 1 {
             /* Register the current trie as completing at the right state. */
-            let right_entry = ret_mapping
+            ret_mapping
               .entry(right_state_in_pair)
-              .or_insert_with(ForestEntryExitPoints::new);
-            (*right_entry).add_exiting(cur_trie_ref);
+              .or_insert(cur_trie_ref);
             /* To end at the `right` state, add a forward edge to a `Completed` entry. */
             StackTrieNextEntry::Completed(right_state_in_pair)
           } else {
@@ -641,15 +629,14 @@ pub mod grammar_indexing {
             let next_trie = ret_trie_subgraph.get_trie(next_trie_ref);
             next_trie
               .prev_nodes
-              .push(StackTrieNextEntry::Incomplete(cur_trie_ref));
+              .insert(StackTrieNextEntry::Incomplete(cur_trie_ref));
             StackTrieNextEntry::Incomplete(next_trie_ref)
           };
           let prev_edge = if vertex_index == 0 {
             /* Register the current trie as emanating from the left state. */
-            let left_entry = ret_mapping
+            ret_mapping
               .entry(left_state_in_pair)
-              .or_insert_with(ForestEntryExitPoints::new);
-            (*left_entry).add_entering(cur_trie_ref);
+              .or_insert(cur_trie_ref);
             /* To start at the `left` state, add a back edge to a `Completed` entry. */
             StackTrieNextEntry::Completed(left_state_in_pair)
           } else {
@@ -660,13 +647,13 @@ pub mod grammar_indexing {
             let prev_trie = ret_trie_subgraph.get_trie(prev_trie_ref);
             prev_trie
               .next_nodes
-              .push(StackTrieNextEntry::Incomplete(cur_trie_ref));
+              .insert(StackTrieNextEntry::Incomplete(cur_trie_ref));
             StackTrieNextEntry::Incomplete(prev_trie_ref)
           };
           /* Link the forward and back edges from the current node. */
           let cur_trie = ret_trie_subgraph.get_trie(cur_trie_ref);
-          cur_trie.next_nodes.push(next_edge);
-          cur_trie.prev_nodes.push(prev_edge);
+          cur_trie.next_nodes.insert(next_edge);
+          cur_trie.prev_nodes.insert(prev_edge);
         }
       }
 
@@ -1465,34 +1452,13 @@ mod tests {
 
     let other_state_transition_graph = StateTransitionGraph {
       state_forest_contact_points: [
-        (LoweredState::Start, ForestEntryExitPoints {
-          entering_into: vec![TrieNodeRef(0), TrieNodeRef(2)],
-          exiting_out_of: vec![],
-        }),
-        (LoweredState::End, ForestEntryExitPoints {
-          entering_into: vec![],
-          exiting_out_of: vec![TrieNodeRef(6), TrieNodeRef(7)],
-        }),
-        (first_a, ForestEntryExitPoints {
-          entering_into: vec![TrieNodeRef(3)],
-          exiting_out_of: vec![TrieNodeRef(1), TrieNodeRef(9)],
-        }),
-        (second_a, ForestEntryExitPoints {
-          entering_into: vec![TrieNodeRef(4)],
-          exiting_out_of: vec![TrieNodeRef(2)],
-        }),
-        (first_b, ForestEntryExitPoints {
-          entering_into: vec![TrieNodeRef(5), TrieNodeRef(8)],
-          exiting_out_of: vec![TrieNodeRef(3)],
-        }),
-        (second_b, ForestEntryExitPoints {
-          entering_into: vec![TrieNodeRef(9)],
-          exiting_out_of: vec![TrieNodeRef(4)],
-        }),
-        (third_a, ForestEntryExitPoints {
-          entering_into: vec![TrieNodeRef(7)],
-          exiting_out_of: vec![TrieNodeRef(8)],
-        }),
+        (LoweredState::Start, TrieNodeRef(0)),
+        (first_a, TrieNodeRef(1)),
+        (second_a, TrieNodeRef(3)),
+        (first_b, TrieNodeRef(4)),
+        (second_b, TrieNodeRef(5)),
+        (LoweredState::End, TrieNodeRef(6)),
+        (third_a, TrieNodeRef(8)),
       ]
       .into_iter()
       .map(|(s, t)| (s.clone(), t.clone()))
@@ -1517,8 +1483,8 @@ mod tests {
         /* 0 */
         StackTrieNode {
           stack_diff: StackDiffSegment(vec![NamedOrAnonStep::Named(StackStep::Positive(a_prod))]),
-          next_nodes: vec![StackTrieNextEntry::Incomplete(TrieNodeRef(1))],
-          prev_nodes: vec![StackTrieNextEntry::Completed(LoweredState::Start)],
+          next_nodes: vec![StackTrieNextEntry::Incomplete(TrieNodeRef(1))].iter().cloned().collect::<IndexSet<_>>(),
+          prev_nodes: vec![StackTrieNextEntry::Completed(LoweredState::Start)].iter().cloned().collect::<IndexSet<_>>(),
         },
         /* 1 */
         StackTrieNode {
@@ -1527,8 +1493,8 @@ mod tests {
               NamedOrAnonStep::Anon(AnonStep::Positive(AnonSym(1))),
               NamedOrAnonStep::Named(StackStep::Positive(a_prod)),
           ]),
-          next_nodes: vec![StackTrieNextEntry::Completed(first_a)],
-          prev_nodes: vec![StackTrieNextEntry::Incomplete(TrieNodeRef(0))],
+          next_nodes: vec![StackTrieNextEntry::Completed(first_a)].iter().cloned().collect::<IndexSet<_>>(),
+          prev_nodes: vec![StackTrieNextEntry::Incomplete(TrieNodeRef(0))].iter().cloned().collect::<IndexSet<_>>(),
         },
         /* 2 */
         /* ( */
@@ -1542,8 +1508,8 @@ mod tests {
         /* ), */
         StackTrieNode {
           stack_diff: StackDiffSegment(vec![NamedOrAnonStep::Named(StackStep::Positive(b_prod))]),
-          next_nodes: vec![StackTrieNextEntry::Completed(second_a)],
-          prev_nodes: vec![StackTrieNextEntry::Completed(LoweredState::Start)],
+          next_nodes: vec![StackTrieNextEntry::Completed(second_a)].iter().cloned().collect::<IndexSet<_>>(),
+          prev_nodes: vec![StackTrieNextEntry::Completed(LoweredState::Start)].iter().cloned().collect::<IndexSet<_>>(),
         },
         /* 3 */
         /* ( */
@@ -1555,8 +1521,8 @@ mod tests {
         /* ), */
         StackTrieNode {
           stack_diff: StackDiffSegment(vec![]),
-          next_nodes: vec![StackTrieNextEntry::Completed(first_b)],
-          prev_nodes: vec![StackTrieNextEntry::Completed(first_a)],
+          next_nodes: vec![StackTrieNextEntry::Completed(first_b)].iter().cloned().collect::<IndexSet<_>>(),
+          prev_nodes: vec![StackTrieNextEntry::Completed(first_a)].iter().cloned().collect::<IndexSet<_>>(),
         },
         /* 4 */
         /* ( */
@@ -1568,8 +1534,8 @@ mod tests {
         /* ), */
         StackTrieNode {
           stack_diff: StackDiffSegment(vec![]),
-          next_nodes: vec![StackTrieNextEntry::Completed(second_b)],
-          prev_nodes: vec![StackTrieNextEntry::Completed(second_a)],
+          next_nodes: vec![StackTrieNextEntry::Completed(second_b)].iter().cloned().collect::<IndexSet<_>>(),
+          prev_nodes: vec![StackTrieNextEntry::Completed(second_a)].iter().cloned().collect::<IndexSet<_>>(),
         },
         /* = {5,6} */
         /* ( */
@@ -1589,8 +1555,8 @@ mod tests {
         /* 5 */
         StackTrieNode {
           stack_diff: StackDiffSegment(vec![NamedOrAnonStep::Named(StackStep::Negative(a_prod))]),
-          next_nodes: vec![StackTrieNextEntry::Incomplete(TrieNodeRef(6))],
-          prev_nodes: vec![StackTrieNextEntry::Completed(first_b)],
+          next_nodes: vec![StackTrieNextEntry::Incomplete(TrieNodeRef(6))].iter().cloned().collect::<IndexSet<_>>(),
+          prev_nodes: vec![StackTrieNextEntry::Completed(first_b)].iter().cloned().collect::<IndexSet<_>>(),
         },
         /* 6 */
         StackTrieNode {
@@ -1599,8 +1565,8 @@ mod tests {
             NamedOrAnonStep::Anon(AnonStep::Negative(AnonSym(0))),
             NamedOrAnonStep::Named(StackStep::Negative(b_prod)),
           ]),
-          next_nodes: vec![StackTrieNextEntry::Completed(LoweredState::End)],
-          prev_nodes: vec![StackTrieNextEntry::Incomplete(TrieNodeRef(5))],
+          next_nodes: vec![StackTrieNextEntry::Completed(LoweredState::End)].iter().cloned().collect::<IndexSet<_>>(),
+          prev_nodes: vec![StackTrieNextEntry::Incomplete(TrieNodeRef(5))].iter().cloned().collect::<IndexSet<_>>(),
         },
         /* 7 */
         /* ( */
@@ -1616,8 +1582,8 @@ mod tests {
           stack_diff: StackDiffSegment(vec![NamedOrAnonStep::Named(
             StackStep::Negative(b_prod),
           )]),
-          next_nodes: vec![StackTrieNextEntry::Completed(LoweredState::End)],
-          prev_nodes: vec![StackTrieNextEntry::Completed(third_a)],
+          next_nodes: vec![StackTrieNextEntry::Completed(LoweredState::End)].iter().cloned().collect::<IndexSet<_>>(),
+          prev_nodes: vec![StackTrieNextEntry::Completed(third_a)].iter().cloned().collect::<IndexSet<_>>(),
         },
         /* 8 */
         /* ( */
@@ -1635,8 +1601,8 @@ mod tests {
             NamedOrAnonStep::Named(StackStep::Negative(a_prod)),
             NamedOrAnonStep::Anon(AnonStep::Negative(AnonSym(1))),
           ]),
-          next_nodes: vec![StackTrieNextEntry::Completed(third_a)],
-          prev_nodes: vec![StackTrieNextEntry::Completed(first_b)],
+          next_nodes: vec![StackTrieNextEntry::Completed(third_a)].iter().cloned().collect::<IndexSet<_>>(),
+          prev_nodes: vec![StackTrieNextEntry::Completed(first_b)].iter().cloned().collect::<IndexSet<_>>(),
         },
         /* 9 */
         /* ( */
@@ -1654,8 +1620,8 @@ mod tests {
             NamedOrAnonStep::Anon(AnonStep::Positive(AnonSym(0))),
             NamedOrAnonStep::Named(StackStep::Positive(a_prod)),
           ]),
-          next_nodes: vec![StackTrieNextEntry::Completed(first_a)],
-          prev_nodes: vec![StackTrieNextEntry::Completed(second_b)],
+          next_nodes: vec![StackTrieNextEntry::Completed(first_a)].iter().cloned().collect::<IndexSet<_>>(),
+          prev_nodes: vec![StackTrieNextEntry::Completed(second_b)].iter().cloned().collect::<IndexSet<_>>(),
         },
       ],
     };
