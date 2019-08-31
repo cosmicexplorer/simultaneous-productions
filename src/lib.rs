@@ -1668,20 +1668,22 @@ mod tests {
     );
   }
 
-  /* #[test] */
-  /* fn cyclic_transition_graph() { */
-  /* let prods = basic_productions(); */
-  /* let grammar = TokenGrammar::new(&prods); */
-  /* let preprocessed_grammar = PreprocessedGrammar::new(&grammar); */
-  /* /\* TODO: I've only worked out a few of the transitions right now --
-   * circle */
-  /*
-   * * back after we're sure the cycles are right. *\/ */
-  /* assert_eq!(preprocessed_grammar, PreprocessedGrammar { */
-  /* token_states_mapping: IndexMap::new(), */
-  /* state_transition_graph: StateTransitionGraph(IndexMap::new()), */
-  /* },); */
-  /* } */
+  #[test]
+  fn cyclic_transition_graph() {
+    let prods = basic_productions();
+    let grammar = TokenGrammar::new(&prods);
+    let preprocessed_grammar = PreprocessedGrammar::new(&grammar);
+    /* TODO: I've only worked out a few of the transitions right now --
+    circle
+    * back after we're sure the cycles are right. */
+    assert_eq!(preprocessed_grammar, PreprocessedGrammar {
+      token_states_mapping: IndexMap::new(),
+      state_transition_graph: StateTransitionGraph {
+        state_forest_contact_points: IndexMap::new(),
+        trie_node_mapping: vec![],
+      },
+    });
+  }
 
   #[test]
   #[should_panic(expected = "prod ref ProductionReference(\"c\") not found")]
