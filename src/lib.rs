@@ -1673,16 +1673,37 @@ mod tests {
     let prods = basic_productions();
     let grammar = TokenGrammar::new(&prods);
     let preprocessed_grammar = PreprocessedGrammar::new(&grammar);
-    /* TODO: I've only worked out a few of the transitions right now --
-    circle
-    * back after we're sure the cycles are right. */
-    assert_eq!(preprocessed_grammar, PreprocessedGrammar {
-      token_states_mapping: IndexMap::new(),
-      state_transition_graph: StateTransitionGraph {
+
+    assert_eq!(
+      preprocessed_grammar.token_states_mapping.clone(),
+      vec![
+        ('a', vec![
+          TokenPosition::new(0, 0, 0),
+          TokenPosition::new(0, 1, 0)
+        ]),
+        ('b', vec![
+          TokenPosition::new(0, 0, 1),
+          TokenPosition::new(0, 2, 0),
+          TokenPosition::new(1, 2, 1)
+        ]),
+        ('c', vec![
+          TokenPosition::new(0, 0, 2),
+          TokenPosition::new(0, 1, 2),
+          TokenPosition::new(0, 2, 1),
+          TokenPosition::new(1, 2, 2)
+        ]),
+      ]
+      .into_iter()
+      .collect::<IndexMap<_, _>>()
+    );
+
+    assert_eq!(
+      preprocessed_grammar.state_transition_graph,
+      StateTransitionGraph {
         state_forest_contact_points: IndexMap::new(),
         trie_node_mapping: vec![],
-      },
-    });
+      }
+    );
   }
 
   #[test]
