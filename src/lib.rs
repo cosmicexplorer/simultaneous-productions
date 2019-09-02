@@ -1674,6 +1674,18 @@ mod tests {
     let grammar = TokenGrammar::new(&prods);
     let preprocessed_grammar = PreprocessedGrammar::new(&grammar);
 
+    let first_a = LoweredState::Within(TokenPosition::new(0, 0, 0));
+    let second_a = LoweredState::Within(TokenPosition::new(0, 1, 0));
+
+    let first_b = LoweredState::Within(TokenPosition::new(0, 0, 1));
+    let second_b = LoweredState::Within(TokenPosition::new(0, 2, 0));
+    let third_b = LoweredState::Within(TokenPosition::new(1, 2, 1));
+
+    let first_c = LoweredState::Within(TokenPosition::new(0, 0, 2));
+    let second_c = LoweredState::Within(TokenPosition::new(0, 1, 2));
+    let third_c = LoweredState::Within(TokenPosition::new(0, 2, 1));
+    let fourth_c = LoweredState::Within(TokenPosition::new(1, 2, 2));
+
     assert_eq!(
       preprocessed_grammar.token_states_mapping.clone(),
       vec![
@@ -1698,11 +1710,33 @@ mod tests {
     );
 
     assert_eq!(
-      preprocessed_grammar.state_transition_graph,
-      StateTransitionGraph {
-        state_forest_contact_points: IndexMap::new(),
-        trie_node_mapping: vec![],
-      }
+      preprocessed_grammar
+        .state_transition_graph
+        .state_forest_contact_points
+        .clone(),
+      [
+        (LoweredState::Start, TrieNodeRef(6)),
+        (first_a, TrieNodeRef(12)),
+        (first_b, TrieNodeRef(14)),
+        (second_a, TrieNodeRef(4)),
+        (second_b, TrieNodeRef(13)),
+        (third_c, TrieNodeRef(15)),
+        (first_c, TrieNodeRef(16)),
+        (second_c, TrieNodeRef(10)),
+        (LoweredState::End, TrieNodeRef(8)),
+        (third_b, TrieNodeRef(19)),
+        (fourth_c, TrieNodeRef(20)),
+      ]
+      .into_iter()
+      .map(|(s, t)| (s.clone(), t.clone()))
+      .collect::<IndexMap<_, _>>()
+    );
+
+    assert_eq!(
+      preprocessed_grammar
+        .state_transition_graph
+        .trie_node_mapping,
+      vec![]
     );
   }
 
