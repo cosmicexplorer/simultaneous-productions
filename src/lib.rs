@@ -183,8 +183,13 @@ pub mod lowering_to_indices {
     pub alphabet: Vec<Tok>,
   }
 
+  #[derive(Debug, Clone, PartialEq, Eq)]
+  pub struct GrammarConstructionError(pub String);
+
   impl<Tok: PartialEq+Eq+Hash+Copy+Clone> TokenGrammar<Tok> {
-    fn walk_productions_and_split_literal_strings(prods: &SimultaneousProductions<Tok>) -> Self {
+    fn walk_productions_and_split_literal_strings(
+      prods: &SimultaneousProductions<Tok>,
+    ) -> Result<Self, GrammarConstructionError> {
       // Mapping from strings -> indices (TODO: from a type-indexed map, where each
       // production returns the type!).
       let prod_ref_mapping: HashMap<ProductionReference, usize> = prods
@@ -200,48 +205,59 @@ pub mod lowering_to_indices {
       // tokens.
       let mut all_tokens: IndexSet<Tok> = IndexSet::new();
       // Pretty straightforwardly map the productions into the new space.
-      let new_prods: Vec<_> = prods
+      prods
         .0
         .iter()
         .map(|(_, prod)| {
-          let cases: Vec<_> = prod
+          prod
             .0
             .iter()
             .map(|case| {
-              let case_els: Vec<_> = case
+              case
                 .0
                 .iter()
-                .flat_map(|el| match el {
-                  CaseElement::Lit(literal) => literal
-                    .0
-                    .iter()
-                    .cloned()
-                    .map(|cur_tok| {
-                      let (tok_ind, _) = all_tokens.insert_full(cur_tok);
-                      CaseEl::Tok(TokRef(tok_ind))
-                    })
-                    .collect::<Vec<_>>(),
-                  CaseElement::Prod(prod_ref) => {
-                    let prod_ref_ind = prod_ref_mapping
-                      .get(prod_ref)
-                      .unwrap_or_else(|| panic!("prod ref {:?} not found", prod_ref));
-                    vec![CaseEl::Prod(ProdRef(*prod_ref_ind))]
-                  },
+                .map(|el| match el {
+                  CaseElement::Lit(literal) => Ok(
+                    literal
+                      .0
+                      .iter()
+                      .cloned()
+                      .map(|cur_tok| {
+                        let (tok_ind, _) = all_tokens.insert_full(cur_tok);
+                        CaseEl::Tok(TokRef(tok_ind))
+                      })
+                      .collect::<Vec<_>>(),
+                  ),
+                  CaseElement::Prod(prod_ref) => prod_ref_mapping
+                    .get(prod_ref)
+                    .map(|i| Ok(vec![CaseEl::Prod(ProdRef(*i))]))
+                    .unwrap_or_else(|| {
+                      Err(GrammarConstructionError(format!(
+                        "prod ref {:?} not found!",
+                        prod_ref
+                      )))
+                    }),
                 })
-                .collect();
-              CaseImpl(case_els)
+                .collect::<Result<Vec<Vec<CaseEl>>, _>>()
+                .map(|unflattened_case_els| {
+                  let case_els = unflattened_case_els
+                    .into_iter()
+                    .flat_map(|els| els.into_iter())
+                    .collect::<Vec<CaseEl>>();
+                  CaseImpl(case_els)
+                })
             })
-            .collect();
-          ProductionImpl(cases)
+            .collect::<Result<Vec<CaseImpl>, _>>()
+            .map(|cases| ProductionImpl(cases))
         })
-        .collect();
-      TokenGrammar {
-        graph: LoweredProductions(new_prods),
-        alphabet: all_tokens.iter().cloned().collect(),
-      }
+        .collect::<Result<Vec<ProductionImpl>, _>>()
+        .map(|new_prods| TokenGrammar {
+          graph: LoweredProductions(new_prods),
+          alphabet: all_tokens.iter().cloned().collect(),
+        })
     }
 
-    pub fn new(prods: &SimultaneousProductions<Tok>) -> Self {
+    pub fn new(prods: &SimultaneousProductions<Tok>) -> Result<Self, GrammarConstructionError> {
       Self::walk_productions_and_split_literal_strings(prods)
     }
 
@@ -1146,37 +1162,43 @@ mod tests {
       .collect(),
     );
     let grammar = TokenGrammar::new(&prods);
-    assert_eq!(grammar.clone(), TokenGrammar {
-      alphabet: vec!['c', 'a', 'b'],
-      graph: LoweredProductions(vec![ProductionImpl(vec![CaseImpl(vec![
-        CaseEl::Tok(TokRef(0)),
-        CaseEl::Tok(TokRef(1)),
-        CaseEl::Tok(TokRef(2)),
-      ])])]),
-    });
+    assert_eq!(
+      grammar.clone(),
+      Ok(TokenGrammar {
+        alphabet: vec!['c', 'a', 'b'],
+        graph: LoweredProductions(vec![ProductionImpl(vec![CaseImpl(vec![
+          CaseEl::Tok(TokRef(0)),
+          CaseEl::Tok(TokRef(1)),
+          CaseEl::Tok(TokRef(2)),
+        ])])]),
+      })
+    );
   }
 
   #[test]
   fn token_grammar_construction() {
     let prods = non_cyclic_productions();
     let grammar = TokenGrammar::new(&prods);
-    assert_eq!(grammar.clone(), TokenGrammar {
-      alphabet: vec!['a', 'b'],
-      graph: LoweredProductions(vec![
-        ProductionImpl(vec![CaseImpl(vec![
-          CaseEl::Tok(TokRef(0)),
-          CaseEl::Tok(TokRef(1)),
-        ])]),
-        ProductionImpl(vec![
-          CaseImpl(vec![
+    assert_eq!(
+      grammar.clone(),
+      Ok(TokenGrammar {
+        alphabet: vec!['a', 'b'],
+        graph: LoweredProductions(vec![
+          ProductionImpl(vec![CaseImpl(vec![
             CaseEl::Tok(TokRef(0)),
             CaseEl::Tok(TokRef(1)),
-            CaseEl::Prod(ProdRef(0)),
+          ])]),
+          ProductionImpl(vec![
+            CaseImpl(vec![
+              CaseEl::Tok(TokRef(0)),
+              CaseEl::Tok(TokRef(1)),
+              CaseEl::Prod(ProdRef(0)),
+            ]),
+            CaseImpl(vec![CaseEl::Prod(ProdRef(0)), CaseEl::Tok(TokRef(0))]),
           ]),
-          CaseImpl(vec![CaseEl::Prod(ProdRef(0)), CaseEl::Tok(TokRef(0))]),
         ]),
-      ]),
-    });
+      })
+    );
   }
 
   #[test]
@@ -1184,7 +1206,7 @@ mod tests {
     let prods = non_cyclic_productions();
     let grammar = TokenGrammar::new(&prods);
     assert_eq!(
-      grammar.index_token_states(),
+      grammar.unwrap().index_token_states(),
       [
         ('a', vec![
           TokenPosition::new(0, 0, 0),
@@ -1205,7 +1227,7 @@ mod tests {
   #[test]
   fn terminals_interval_graph() {
     let noncyclic_prods = non_cyclic_productions();
-    let noncyclic_grammar = TokenGrammar::new(&noncyclic_prods);
+    let noncyclic_grammar = TokenGrammar::new(&noncyclic_prods).unwrap();
     let noncyclic_interval_graph =
       PreprocessedGrammar::produce_terminals_interval_graph(&noncyclic_grammar);
 
@@ -1338,7 +1360,7 @@ mod tests {
     /* TODO: test `.find_start_end_indices()` and `.connect_all_vertices()` here
      * too! */
     let prods = basic_productions();
-    let grammar = TokenGrammar::new(&prods);
+    let grammar = TokenGrammar::new(&prods).unwrap();
     let interval_graph = PreprocessedGrammar::produce_terminals_interval_graph(&grammar);
     assert_eq!(
       interval_graph.clone(),
@@ -1417,7 +1439,7 @@ mod tests {
   #[test]
   fn noncyclic_transition_graph() {
     let prods = non_cyclic_productions();
-    let grammar = TokenGrammar::new(&prods);
+    let grammar = TokenGrammar::new(&prods).unwrap();
     let preprocessed_grammar = PreprocessedGrammar::new(&grammar);
     let first_a = LoweredState::Within(TokenPosition::new(0, 0, 0));
     let first_b = LoweredState::Within(TokenPosition::new(0, 0, 1));
@@ -1671,7 +1693,7 @@ mod tests {
   #[test]
   fn cyclic_transition_graph() {
     let prods = basic_productions();
-    let grammar = TokenGrammar::new(&prods);
+    let grammar = TokenGrammar::new(&prods).unwrap();
     let preprocessed_grammar = PreprocessedGrammar::new(&grammar);
 
     let first_a = LoweredState::Within(TokenPosition::new(0, 0, 0));
@@ -2140,7 +2162,6 @@ mod tests {
   }
 
   #[test]
-  #[should_panic(expected = "prod ref ProductionReference(\"c\") not found")]
   fn missing_prod_ref() {
     let prods = SimultaneousProductions(
       [(
@@ -2154,7 +2175,10 @@ mod tests {
       .cloned()
       .collect(),
     );
-    TokenGrammar::new(&prods);
+    assert_eq!(
+      TokenGrammar::new(&prods),
+      Err(GrammarConstructionError(format!("prod ref ProductionReference(\"c\") not found!")))
+    );
   }
 
   fn non_cyclic_productions() -> SimultaneousProductions<char> {
