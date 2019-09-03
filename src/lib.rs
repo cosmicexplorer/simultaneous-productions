@@ -1074,10 +1074,10 @@ pub mod parsing {
   use super::{grammar_indexing::*, lowering_to_indices::*, *};
 
   #[derive(Debug, Clone)]
-  pub struct Input<Tok: Debug+PartialEq+Eq+Hash+Copy+Clone>(Vec<Tok>);
+  pub struct Input<Tok: Debug+PartialEq+Eq+Hash+Copy+Clone>(pub Vec<Tok>);
 
   #[derive(Debug, Copy, Clone, PartialEq, Eq, Hash)]
-  pub struct InputTokenIndex(usize);
+  pub struct InputTokenIndex(pub usize);
 
   #[derive(Debug, Copy, Clone, PartialEq, Eq, Hash)]
   pub struct InputRange {
@@ -1141,10 +1141,10 @@ pub mod parsing {
     }
   }
 
-  #[derive(Debug, Clone)]
+  #[derive(Debug, Clone, PartialEq, Eq)]
   pub struct PossibleStates(pub Vec<LoweredState>);
 
-  #[derive(Debug, Clone)]
+  #[derive(Debug, Clone, PartialEq, Eq)]
   pub struct ParseableGrammar {
     pub input_as_states: Vec<PossibleStates>,
     /* TODO: ignore cycles for now! */
@@ -1237,13 +1237,13 @@ pub mod parsing {
   #[derive(Debug, Clone)]
   pub struct Parse {
     /* NB: Need `left` and `right` indices to know when we're done parsing! */
-    left_index: InputTokenIndex,
-    right_index: InputTokenIndex,
-    spans: PriorityQueue<SpanningSubtree, usize>,
-    grammar: ParseableGrammar,
-    finishes_at_left: IndexMap<InputTokenIndex, IndexSet<SpanningSubtree>>,
-    finishes_at_right: IndexMap<InputTokenIndex, IndexSet<SpanningSubtree>>,
-    spanning_subtree_table: Vec<SpanningSubtree>,
+    pub left_index: InputTokenIndex,
+    pub right_index: InputTokenIndex,
+    pub spans: PriorityQueue<SpanningSubtree, usize>,
+    pub grammar: ParseableGrammar,
+    pub finishes_at_left: IndexMap<InputTokenIndex, IndexSet<SpanningSubtree>>,
+    pub finishes_at_right: IndexMap<InputTokenIndex, IndexSet<SpanningSubtree>>,
+    pub spanning_subtree_table: Vec<SpanningSubtree>,
   }
 
   impl Parse {
@@ -1339,7 +1339,8 @@ pub mod parsing {
       let mut parse = Self::new(left_index, right_index, grammar);
 
       for (i, left_states) in input_as_states.iter().cloned().enumerate() {
-        if i == input_as_states.len() {
+        assert!(i <= input_as_states.len());
+        if i >= input_as_states.len() - 1 {
           break;
         }
         let right_states = input_as_states.get(i + 1).unwrap();
@@ -1428,6 +1429,10 @@ pub mod parsing {
             .collect();
           StackDiffSegment(all_steps)
         })
+    }
+
+    pub fn get_spanning_subtree(&self, span_ref: SpanningSubtreeRef) -> Option<&SpanningSubtree> {
+      self.spanning_subtree_table.get(span_ref.0)
     }
 
     pub fn advance(&mut self) -> Result<ParseResult, ParsingFailure> {
@@ -1571,7 +1576,7 @@ pub mod parsing {
 
 #[cfg(test)]
 mod tests {
-  use super::{grammar_indexing::*, lowering_to_indices::*, user_api::*, *};
+  use super::{grammar_indexing::*, lowering_to_indices::*, parsing::*, user_api::*, *};
 
   /* TODO: uncomment! */
   /* #[test] */
@@ -2717,6 +2722,40 @@ mod tests {
         "prod ref ProductionReference(\"c\") not found!"
       )))
     );
+  }
+
+  #[test]
+  fn initial_parse_state() {
+    let prods = non_cyclic_productions();
+    let token_grammar = TokenGrammar::new(&prods).unwrap();
+    let preprocessed_grammar = PreprocessedGrammar::new(&token_grammar);
+    let string_input = "ab";
+    let input = Input(string_input.chars().collect());
+    let parseable_grammar = ParseableGrammar::new::<char>(&preprocessed_grammar, &input);
+    let Parse {
+      left_index,
+      right_index,
+      spans,
+      grammar: new_parseable_grammar,
+      finishes_at_left,
+      finishes_at_right,
+      spanning_subtree_table,
+    } = Parse::initialize_with_trees_for_adjacent_pairs(&parseable_grammar);
+    assert_eq!(new_parseable_grammar, parseable_grammar);
+
+    assert_eq!(left_index, InputTokenIndex(0));
+    /* We have to add two because the process creates a start and end token! */
+    assert_eq!(right_index, InputTokenIndex((string_input.len() - 1) + 2));
+
+    assert_eq!(spans.into_iter().collect::<Vec<_>>(), vec![]);
+
+    /* NB: These explicit type ascriptions are necessary for some reason... */
+    let expected_at_left: IndexMap<InputTokenIndex, IndexSet<SpanningSubtree>> = IndexMap::new();
+    assert_eq!(finishes_at_left, expected_at_left);
+    let expected_at_right: IndexMap<InputTokenIndex, IndexSet<SpanningSubtree>> = IndexMap::new();
+    assert_eq!(finishes_at_right, expected_at_right);
+
+    assert_eq!(spanning_subtree_table, vec![]);
   }
 
   fn non_cyclic_productions() -> SimultaneousProductions<char> {
