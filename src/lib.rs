@@ -53,9 +53,11 @@
 
 extern crate indexmap;
 extern crate itertools;
+extern crate priority_queue;
 
 use indexmap::{IndexMap, IndexSet};
 use itertools::Itertools;
+use priority_queue::PriorityQueue;
 
 use std::{
   collections::{HashMap, HashSet, VecDeque},
@@ -1077,13 +1079,33 @@ pub mod parsing {
   #[derive(Debug, Copy, Clone, PartialEq, Eq, Hash)]
   pub struct InputTokenIndex(usize);
 
+  #[derive(Debug, Copy, Clone, PartialEq, Eq, Hash)]
+  pub struct InputRange {
+    left_index: InputTokenIndex,
+    right_index: InputTokenIndex,
+  }
+
+  impl InputRange {
+    fn new(left_index: InputTokenIndex, right_index: InputTokenIndex) -> Self {
+      assert!(left_index.0 < right_index.0);
+      InputRange {
+        left_index,
+        right_index,
+      }
+    }
+
+    fn width(&self) -> usize { self.right_index.0 - self.left_index.0 }
+  }
+
+  trait SpansRange {
+    fn range(&self) -> InputRange;
+  }
+
   /* A flattened version of the information in a `SpanningSubtree`. */
   #[derive(Debug, Clone, PartialEq, Eq, Hash)]
   pub struct FlattenedSpanInfo {
-    left: LoweredState,
-    right: LoweredState,
-    left_index: InputTokenIndex,
-    right_index: InputTokenIndex,
+    state_pair: StatePair,
+    input_range: InputRange,
     stack_diff: StackDiffSegment,
   }
 
@@ -1107,6 +1129,16 @@ pub mod parsing {
     pub input_span: FlattenedSpanInfo,
     pub parents: Option<ParentInfo>,
     pub id: SpanningSubtreeRef,
+  }
+
+  impl SpansRange for SpanningSubtree {
+    fn range(&self) -> InputRange {
+      let SpanningSubtree {
+        input_span: FlattenedSpanInfo { input_range, .. },
+        ..
+      } = self;
+      *input_range
+    }
   }
 
   #[derive(Debug, Clone)]
@@ -1207,7 +1239,7 @@ pub mod parsing {
     /* NB: Need `left` and `right` indices to know when we're done parsing! */
     left_index: InputTokenIndex,
     right_index: InputTokenIndex,
-    spans: VecDeque<SpanningSubtree>,
+    spans: PriorityQueue<SpanningSubtree, usize>,
     grammar: ParseableGrammar,
     finishes_at_left: IndexMap<InputTokenIndex, IndexSet<SpanningSubtree>>,
     finishes_at_right: IndexMap<InputTokenIndex, IndexSet<SpanningSubtree>>,
@@ -1224,7 +1256,7 @@ pub mod parsing {
       Parse {
         left_index,
         right_index,
-        spans: vec![].into_iter().collect(),
+        spans: PriorityQueue::new(),
         grammar: grammar.clone(),
         finishes_at_left: IndexMap::new(),
         finishes_at_right: IndexMap::new(),
@@ -1236,8 +1268,11 @@ pub mod parsing {
       let SpanningSubtreeToCreate {
         input_span:
           FlattenedSpanInfo {
-            left_index,
-            right_index,
+            input_range:
+              InputRange {
+                left_index,
+                right_index,
+              },
             ..
           },
         ..
@@ -1262,7 +1297,9 @@ pub mod parsing {
         .or_insert_with(IndexSet::new);
       (*right_entry).insert(new_span.clone());
 
-      self.spans.push_back(new_span);
+      self
+        .spans
+        .push(new_span.clone(), new_span.clone().range().width());
     }
 
     fn generate_subtrees_for_pair(
@@ -1277,10 +1314,11 @@ pub mod parsing {
         .into_iter()
         .map(|stack_diff| SpanningSubtreeToCreate {
           input_span: FlattenedSpanInfo {
-            left: *left,
-            right: *right,
-            left_index,
-            right_index,
+            state_pair: StatePair {
+              left: *left,
+              right: *right,
+            },
+            input_range: InputRange::new(left_index, right_index),
             /* TODO: lexicographically sort these??? */
             stack_diff: stack_diff.clone(),
           },
@@ -1333,8 +1371,8 @@ pub mod parsing {
       parse
     }
 
-    /* Given two adjacent stack diffs, check whether they are compatible, and if so return the
-     * resulting stack diff from joining them. */
+    /* Given two adjacent stack diffs, check whether they are compatible, and if
+     * so return the resulting stack diff from joining them. */
     fn stack_diff_pair_zipper(
       left_diff: StackDiffSegment,
       right_diff: StackDiffSegment,
@@ -1343,18 +1381,20 @@ pub mod parsing {
       let StackDiffSegment(left_steps) = left_diff;
       let StackDiffSegment(right_steps) = right_diff;
 
-      /* "Compatibility" is checked by seeing whether the stack steps up to the minimum length of
-       * both either cancel each other out, or are the same polarity. */
+      /* "Compatibility" is checked by seeing whether the stack steps up to the
+       * minimum length of both either cancel each other out, or are the same
+       * polarity. */
       let min_length = vec![left_steps.len(), right_steps.len()]
         .into_iter()
         .min()
         .unwrap();
-      /* To get the same number of elements in both left and right, we reverse the left, take off
-       * some elements, then reverse it back. */
+      /* To get the same number of elements in both left and right, we reverse the
+       * left, take off some elements, then reverse it back. */
       let rev_left: Vec<_> = left_steps.into_iter().rev().collect();
 
-      /* NB: We keep the left zippered elements reversed so that we compare stack elements outward
-       * from the center along both the left and right sides. */
+      /* NB: We keep the left zippered elements reversed so that we compare stack
+       * elements outward from the center along both the left and right
+       * sides. */
       let cmp_left: Vec<_> = rev_left.iter().cloned().take(min_length).collect();
       let cmp_right: Vec<_> = right_steps.iter().cloned().take(min_length).collect();
 
@@ -1379,7 +1419,8 @@ pub mod parsing {
         })
         .ok()
         .map(|steps: Vec<NamedOrAnonStep>| {
-          /* Put the leftover left and right on the left and right of the resulting stack steps! */
+          /* Put the leftover left and right on the left and right of the resulting
+           * stack steps! */
           let all_steps: Vec<_> = leftover_left
             .into_iter()
             .chain(steps)
@@ -1390,22 +1431,28 @@ pub mod parsing {
     }
 
     pub fn advance(&mut self) -> Result<ParseResult, ParsingFailure> {
-      let maybe_front = self.spans.pop_front();
-      if let Some(cur_span) = maybe_front {
+      let maybe_front = self.spans.pop();
+      if let Some((cur_span, _priority)) = maybe_front {
         let SpanningSubtree {
           input_span:
             FlattenedSpanInfo {
-              left: cur_left,
-              right: cur_right,
-              left_index: InputTokenIndex(cur_left_index),
-              right_index: InputTokenIndex(cur_right_index),
+              state_pair:
+                StatePair {
+                  left: cur_left,
+                  right: cur_right,
+                },
+              input_range:
+                InputRange {
+                  left_index: InputTokenIndex(cur_left_index),
+                  right_index: InputTokenIndex(cur_right_index),
+                },
               stack_diff: cur_stack_diff,
             },
           ..
         } = cur_span.clone();
 
-        /* TODO: ensure all entries of `.finishes_at_left` and `.finishes_at_right` are
-         * lexicographically sorted! */
+        /* TODO: ensure all entries of `.finishes_at_left` and `.finishes_at_right`
+         * are lexicographically sorted! */
         /* Check all right-neighbors for compatible stack diffs. */
         for right_neighbor in self
           .finishes_at_left
@@ -1417,10 +1464,16 @@ pub mod parsing {
           let SpanningSubtree {
             input_span:
               FlattenedSpanInfo {
-                left: _right_left,
-                right: right_right,
-                left_index: InputTokenIndex(right_left_index),
-                right_index: InputTokenIndex(right_right_index),
+                state_pair:
+                  StatePair {
+                    left: _right_left,
+                    right: right_right,
+                  },
+                input_range:
+                  InputRange {
+                    left_index: InputTokenIndex(right_left_index),
+                    right_index: InputTokenIndex(right_right_index),
+                  },
                 stack_diff: right_stack_diff,
               },
             ..
@@ -1432,10 +1485,14 @@ pub mod parsing {
           {
             let new_tree = SpanningSubtreeToCreate {
               input_span: FlattenedSpanInfo {
-                left: cur_left,
-                right: right_right,
-                left_index: InputTokenIndex(cur_left_index),
-                right_index: InputTokenIndex(right_right_index),
+                state_pair: StatePair {
+                  left: cur_left,
+                  right: right_right,
+                },
+                input_range: InputRange {
+                  left_index: InputTokenIndex(cur_left_index),
+                  right_index: InputTokenIndex(right_right_index),
+                },
                 stack_diff: merged_diff,
               },
               parents: Some(ParentInfo {
@@ -1458,10 +1515,16 @@ pub mod parsing {
           let SpanningSubtree {
             input_span:
               FlattenedSpanInfo {
-                left: left_left,
-                right: _left_right,
-                left_index: InputTokenIndex(left_left_index),
-                right_index: InputTokenIndex(left_right_index),
+                state_pair:
+                  StatePair {
+                    left: left_left,
+                    right: _left_right,
+                  },
+                input_range:
+                  InputRange {
+                    left_index: InputTokenIndex(left_left_index),
+                    right_index: InputTokenIndex(left_right_index),
+                  },
                 stack_diff: left_stack_diff,
               },
             ..
@@ -1473,10 +1536,14 @@ pub mod parsing {
           {
             let new_tree = SpanningSubtreeToCreate {
               input_span: FlattenedSpanInfo {
-                left: left_left,
-                right: cur_right,
-                left_index: InputTokenIndex(left_left_index),
-                right_index: InputTokenIndex(cur_right_index),
+                state_pair: StatePair {
+                  left: left_left,
+                  right: cur_right,
+                },
+                input_range: InputRange {
+                  left_index: InputTokenIndex(left_left_index),
+                  right_index: InputTokenIndex(cur_right_index),
+                },
                 stack_diff: merged_diff,
               },
               parents: Some(ParentInfo {
