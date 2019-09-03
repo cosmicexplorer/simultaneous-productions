@@ -1123,10 +1123,52 @@ pub mod parsing {
   }
 
   #[derive(Debug, Clone, PartialEq, Eq, Hash)]
+  pub struct CompletelyFlattenedSubtree {
+    pub states: Vec<LoweredState>,
+    pub input_range: InputRange,
+  }
+
+  pub trait FlattenableToStates {
+    fn flatten_to_states(&self, parse: &Parse) -> CompletelyFlattenedSubtree;
+  }
+
+  #[derive(Debug, Clone, PartialEq, Eq, Hash)]
   pub struct SpanningSubtree {
     pub input_span: FlattenedSpanInfo,
     pub parents: Option<ParentInfo>,
     pub id: SpanningSubtreeRef,
+  }
+
+  impl FlattenableToStates for SpanningSubtree {
+    fn flatten_to_states(&self, parse: &Parse) -> CompletelyFlattenedSubtree {
+      match self.parents {
+        None => CompletelyFlattenedSubtree {
+          states: vec![
+            self.input_span.state_pair.left,
+            self.input_span.state_pair.right,
+          ],
+          input_range: self.input_span.input_range,
+        },
+        Some(ParentInfo {
+          left_parent,
+          right_parent,
+        }) => {
+          let CompletelyFlattenedSubtree {
+            states: left_states,
+            input_range: left_range,
+          } = parse.get_spanning_subtree(left_parent).unwrap().flatten_to_states(&parse);
+          let CompletelyFlattenedSubtree {
+            states: right_states,
+            input_range: right_range,
+          } = parse.get_spanning_subtree(right_parent).unwrap().flatten_to_states(&parse);
+          assert_eq!(left_range.right_index.0 + 1, right_range.left_index.0);
+          CompletelyFlattenedSubtree {
+            states: left_states.into_iter().chain(right_states.into_iter()).collect(),
+            input_range: InputRange::new(left_range.left_index, right_range.right_index),
+          }
+        },
+      }
+    }
   }
 
   impl SpansRange for SpanningSubtree {
@@ -1212,7 +1254,6 @@ pub mod parsing {
           },
         token_states_mapping,
       } = grammar;
-      dbg!(pairwise_state_transitions);
       ParseableGrammar {
         input_as_states: Self::get_possible_states_for_input(token_states_mapping, input),
         pairwise_state_transition_table: Self::connect_stack_diffs(pairwise_state_transitions),
@@ -1556,7 +1597,10 @@ pub mod parsing {
           }
         }
 
-        if cur_left == LoweredState::Start && cur_right == LoweredState::End {
+        if cur_left == LoweredState::Start
+          && cur_right == LoweredState::End
+          && cur_stack_diff.0.is_empty()
+        {
           Ok(ParseResult::Complete(cur_span.id))
         } else {
           Ok(ParseResult::Incomplete)
@@ -3598,28 +3642,51 @@ mod tests {
       id: SpanningSubtreeRef(8),
     };
     assert_eq!(parse.spanning_subtree_table.last(), Some(&expected_subtree));
+    assert_eq!(
+      parse.get_spanning_subtree(SpanningSubtreeRef(8)),
+      Some(&expected_subtree)
+    );
 
-    assert_eq!(parse.advance(), Ok(ParseResult::Complete(SpanningSubtreeRef(7))));
+    assert_eq!(
+      parse.advance(),
+      Ok(ParseResult::Complete(SpanningSubtreeRef(7)))
+    );
     assert_eq!(
       parse.get_spanning_subtree(SpanningSubtreeRef(7)),
       Some(&expected_first_new_subtree),
     );
-
-    assert_eq!(parse.advance(), Ok(ParseResult::Complete(SpanningSubtreeRef(8))));
     assert_eq!(
-      parse.get_spanning_subtree(SpanningSubtreeRef(8)),
-      Some(&expected_subtree)
+      expected_first_new_subtree.flatten_to_states(&parse),
+      CompletelyFlattenedSubtree {
+        states: vec![
+          LoweredState::Start,
+          LoweredState::Within(TokenPosition {
+            prod: ProdRef(0),
+            case: CaseRef(0),
+            case_el: CaseElRef(0)
+          }),
+          LoweredState::Within(TokenPosition {
+            prod: ProdRef(0),
+            case: CaseRef(0),
+            case_el: CaseElRef(1)
+          }),
+          LoweredState::End,
+        ],
+        input_range: InputRange::new(InputTokenIndex(0), InputTokenIndex(3)),
+      }
     );
 
     let mut hit_end: bool = false;
     while !hit_end {
       match parse.advance() {
         Ok(ParseResult::Incomplete) => (),
-        Ok(ParseResult::Complete(_)) => (),
+        /* NB: `expected_subtree` at SpanningSubtreeRef(8) has a non-empty stack diff, so it
+         * shouldn't be counted as a complete parse! */
+        Ok(ParseResult::Complete(SpanningSubtreeRef(i))) => assert!(i != 8),
         Err(_) => {
           hit_end = true;
           break;
-        }
+        },
       }
     }
     assert!(hit_end);
