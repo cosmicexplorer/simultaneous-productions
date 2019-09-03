@@ -1578,79 +1578,6 @@ pub mod parsing {
 mod tests {
   use super::{grammar_indexing::*, lowering_to_indices::*, parsing::*, user_api::*, *};
 
-  /* TODO: uncomment! */
-  /* #[test] */
-  /* fn initialize_parse_state() { */
-  /* // TODO: figure out more complex parsing such as stack cycles/etc before
-   * doing */
-  /* // type-indexed maps, as well as syntax sugar for defining cases. */
-  /* let prods = SimultaneousProductions( */
-  /* [ */
-  /* ( */
-  /* ProductionReference::new("a"), */
-  /* Production(vec![Case(vec![CaseElement::Lit(Literal::new("ab"))])]), */
-  /* ), */
-  /* ( */
-  /* ProductionReference::new("b"), */
-  /* Production(vec![Case(vec![ */
-  /* CaseElement::Lit(Literal::new("ab")), */
-  /* CaseElement::Prod(ProductionReference::new("a")), */
-  /* ])]), */
-  /* ), */
-  /* ].iter() */
-  /* .cloned() */
-  /* .collect(), */
-  /* ); */
-  /* let grammar = TokenGrammar::new(&prods); */
-  /* let preprocessed_grammar = PreprocessedGrammar::new(&grammar); */
-  /* let input: Vec<char> = "abab".chars().collect(); */
-  /* let parse = Parse::new(&preprocessed_grammar, input); */
-  /* let first_a = TokenPosition { */
-  /* prod: ProdRef(0), */
-  /* case: CaseRef(0), */
-  /* case_el: CaseElRef(0), */
-  /* }; */
-  /* let second_a = TokenPosition { */
-  /* prod: ProdRef(1), */
-  /* case: CaseRef(0), */
-  /* case_el: CaseElRef(0), */
-  /* }; */
-  /* let first_b = TokenPosition { */
-  /* prod: ProdRef(0), */
-  /* case: CaseRef(0), */
-  /* case_el: CaseElRef(1), */
-  /* }; */
-  /* let second_b = TokenPosition { */
-  /* prod: ProdRef(1), */
-  /* case: CaseRef(0), */
-  /* case_el: CaseElRef(1), */
-  /* }; */
-  /* let into_a_prod = StackStep::Positive(StackSym(ProdRef(0))); */
-  /* let out_of_a_prod = StackStep::Negative(StackSym(ProdRef(0))); */
-  /* assert_eq!( */
-  /* parse, */
-  /* Parse(vec![ */
-  /* StackTrie { */
-  /* stack_steps: vec![StackDiffSegment(vec![])], */
-  /* terminal_entries: vec![StackTrieTerminalEntry(vec![ */
-  /* UnionRange::new(first_a, InputTokenIndex(1), first_b), */
-  /* UnionRange::new(second_a, InputTokenIndex(1), second_b), */
-  /* ])], */
-  /* }, */
-  /* // StackTrie {}, */
-  /* StackTrie { */
-  /* stack_steps: vec![StackDiffSegment(vec![]),
-   * StackDiffSegment(vec![into_a_prod])], */
-  /* terminal_entries: vec![StackTrieTerminalEntry(vec![ */
-  /* UnionRange::new(first_a, InputTokenIndex(3), first_b), */
-  /* UnionRange::new(second_a, InputTokenIndex(3), second_b), */
-  /* ])], */
-  /* }, */
-  /* // StackTrie {}, */
-  /* ]) */
-  /* ); */
-  /* } */
-
   #[test]
   fn token_grammar_unsorted_alphabet() {
     let prods = SimultaneousProductions(
@@ -1987,7 +1914,8 @@ mod tests {
     /* stack_diff:
      * StackDiffSegment(vec![NamedOrAnonStep::Named(StackStep::
      * Positive(a_prod))]), */
-    /* next_nodes: vec![StackTrieNextEntry::Incomplete(TrieNodeRef(1))] */
+    /* next_nodes: vec![
+    StackTrieNextEntry::Incomplete(TrieNodeRef(1))] */
     /* .iter() */
     /* .cloned() */
     /* .collect::<IndexSet<_>>(), */
@@ -2030,7 +1958,8 @@ mod tests {
     /* .iter() */
     /* .cloned() */
     /* .collect::<IndexSet<_>>(), */
-    /* prev_nodes: vec![StackTrieNextEntry::Completed(LoweredState::Start)] */
+    /* prev_nodes: vec![
+    StackTrieNextEntry::Completed(LoweredState::Start)] */
     /* .iter() */
     /* .cloned() */
     /* .collect::<IndexSet<_>>(), */
@@ -2102,7 +2031,8 @@ mod tests {
     /* .iter() */
     /* .cloned() */
     /* .collect::<IndexSet<_>>(), */
-    /* prev_nodes: vec![StackTrieNextEntry::Incomplete(TrieNodeRef(4))] */
+    /* prev_nodes: vec![
+    StackTrieNextEntry::Incomplete(TrieNodeRef(4))] */
     /* .iter() */
     /* .cloned() */
     /* .collect::<IndexSet<_>>(), */
@@ -2112,11 +2042,13 @@ mod tests {
     /* stack_diff:
      * StackDiffSegment(vec![NamedOrAnonStep::Anon(AnonStep::
      * Positive(AnonSym(1)))]), */
-    /* next_nodes: vec![StackTrieNextEntry::Incomplete(TrieNodeRef(0))] */
+    /* next_nodes: vec![
+    StackTrieNextEntry::Incomplete(TrieNodeRef(0))] */
     /* .iter() */
     /* .cloned() */
     /* .collect::<IndexSet<_>>(), */
-    /* prev_nodes: vec![StackTrieNextEntry::Incomplete(TrieNodeRef(2))] */
+    /* prev_nodes: vec![
+    StackTrieNextEntry::Incomplete(TrieNodeRef(2))] */
     /* .iter() */
     /* .cloned() */
     /* .collect::<IndexSet<_>>(), */
@@ -2144,7 +2076,8 @@ mod tests {
     /* stack_diff:
      * StackDiffSegment(vec![NamedOrAnonStep::Named(StackStep::
      * Negative(b_prod))]), */
-    /* next_nodes: vec![StackTrieNextEntry::Completed(LoweredState::End)] */
+    /* next_nodes: vec![
+    StackTrieNextEntry::Completed(LoweredState::End)] */
     /* .iter() */
     /* .cloned() */
     /* .collect::<IndexSet<_>>(), */
@@ -2161,11 +2094,13 @@ mod tests {
     /* stack_diff:
      * StackDiffSegment(vec![NamedOrAnonStep::Anon(AnonStep::
      * Negative(AnonSym(0)))]), */
-    /* next_nodes: vec![StackTrieNextEntry::Incomplete(TrieNodeRef(9))] */
+    /* next_nodes: vec![
+    StackTrieNextEntry::Incomplete(TrieNodeRef(9))] */
     /* .iter() */
     /* .cloned() */
     /* .collect::<IndexSet<_>>(), */
-    /* prev_nodes: vec![StackTrieNextEntry::Incomplete(TrieNodeRef(6))] */
+    /* prev_nodes: vec![
+    StackTrieNextEntry::Incomplete(TrieNodeRef(6))] */
     /* .iter() */
     /* .cloned() */
     /* .collect::<IndexSet<_>>(), */
@@ -2175,11 +2110,13 @@ mod tests {
     /* stack_diff:
      * StackDiffSegment(vec![NamedOrAnonStep::Anon(AnonStep::
      * Negative(AnonSym(1)))]), */
-    /* next_nodes: vec![StackTrieNextEntry::Incomplete(TrieNodeRef(8))] */
+    /* next_nodes: vec![
+    StackTrieNextEntry::Incomplete(TrieNodeRef(8))] */
     /* .iter() */
     /* .cloned() */
     /* .collect::<IndexSet<_>>(), */
-    /* prev_nodes: vec![StackTrieNextEntry::Incomplete(TrieNodeRef(6))] */
+    /* prev_nodes: vec![
+    StackTrieNextEntry::Incomplete(TrieNodeRef(6))] */
     /* .iter() */
     /* .cloned() */
     /* .collect::<IndexSet<_>>(), */
@@ -2189,11 +2126,13 @@ mod tests {
     /* stack_diff:
      * StackDiffSegment(vec![NamedOrAnonStep::Anon(AnonStep::
      * Positive(AnonSym(0)))]), */
-    /* next_nodes: vec![StackTrieNextEntry::Incomplete(TrieNodeRef(0))] */
+    /* next_nodes: vec![
+    StackTrieNextEntry::Incomplete(TrieNodeRef(0))] */
     /* .iter() */
     /* .cloned() */
     /* .collect::<IndexSet<_>>(), */
-    /* prev_nodes: vec![StackTrieNextEntry::Incomplete(TrieNodeRef(5))] */
+    /* prev_nodes: vec![
+    StackTrieNextEntry::Incomplete(TrieNodeRef(5))] */
     /* .iter() */
     /* .cloned() */
     /* .collect::<IndexSet<_>>(), */
@@ -2302,10 +2241,12 @@ mod tests {
     /* stack_diff:
      * StackDiffSegment(vec![NamedOrAnonStep::Anon(AnonStep::
      * Positive(AnonSym(3)))]), */
-    /* next_nodes: vec![StackTrieNextEntry::Incomplete(TrieNodeRef(0))] */
+    /* next_nodes: vec![
+    StackTrieNextEntry::Incomplete(TrieNodeRef(0))] */
     /* .into_iter() */
     /* .collect::<IndexSet<_>>(), */
-    /* prev_nodes: vec![StackTrieNextEntry::Incomplete(TrieNodeRef(0))] */
+    /* prev_nodes: vec![
+    StackTrieNextEntry::Incomplete(TrieNodeRef(0))] */
     /* .into_iter() */
     /* .collect::<IndexSet<_>>() */
     /* }, */
@@ -2335,10 +2276,12 @@ mod tests {
     /* stack_diff:
      * StackDiffSegment(vec![NamedOrAnonStep::Anon(AnonStep::
      * Negative(AnonSym(3)))]), */
-    /* next_nodes: vec![StackTrieNextEntry::Incomplete(TrieNodeRef(2))] */
+    /* next_nodes: vec![
+    StackTrieNextEntry::Incomplete(TrieNodeRef(2))] */
     /* .into_iter() */
     /* .collect::<IndexSet<_>>(), */
-    /* prev_nodes: vec![StackTrieNextEntry::Incomplete(TrieNodeRef(2))] */
+    /* prev_nodes: vec![
+    StackTrieNextEntry::Incomplete(TrieNodeRef(2))] */
     /* .into_iter() */
     /* .collect::<IndexSet<_>>() */
     /* }, */
@@ -2371,10 +2314,12 @@ mod tests {
     /* stack_diff:
      * StackDiffSegment(vec![NamedOrAnonStep::Anon(AnonStep::
      * Positive(AnonSym(0)))]), */
-    /* next_nodes: vec![StackTrieNextEntry::Incomplete(TrieNodeRef(6))] */
+    /* next_nodes: vec![
+    StackTrieNextEntry::Incomplete(TrieNodeRef(6))] */
     /* .into_iter() */
     /* .collect::<IndexSet<_>>(), */
-    /* prev_nodes: vec![StackTrieNextEntry::Incomplete(TrieNodeRef(4))] */
+    /* prev_nodes: vec![
+    StackTrieNextEntry::Incomplete(TrieNodeRef(4))] */
     /* .into_iter() */
     /* .collect::<IndexSet<_>>() */
     /* }, */
@@ -2405,10 +2350,12 @@ mod tests {
     /* stack_diff:
      * StackDiffSegment(vec![NamedOrAnonStep::Anon(AnonStep::
      * Negative(AnonSym(1)))]), */
-    /* next_nodes: vec![StackTrieNextEntry::Incomplete(TrieNodeRef(8))] */
+    /* next_nodes: vec![
+    StackTrieNextEntry::Incomplete(TrieNodeRef(8))] */
     /* .into_iter() */
     /* .collect::<IndexSet<_>>(), */
-    /* prev_nodes: vec![StackTrieNextEntry::Incomplete(TrieNodeRef(2))] */
+    /* prev_nodes: vec![
+    StackTrieNextEntry::Incomplete(TrieNodeRef(2))] */
     /* .into_iter() */
     /* .collect::<IndexSet<_>>() */
     /* }, */
@@ -2439,10 +2386,12 @@ mod tests {
     /* stack_diff:
      * StackDiffSegment(vec![NamedOrAnonStep::Anon(AnonStep::
      * Negative(AnonSym(2)))]), */
-    /* next_nodes: vec![StackTrieNextEntry::Incomplete(TrieNodeRef(2))] */
+    /* next_nodes: vec![
+    StackTrieNextEntry::Incomplete(TrieNodeRef(2))] */
     /* .into_iter() */
     /* .collect::<IndexSet<_>>(), */
-    /* prev_nodes: vec![StackTrieNextEntry::Incomplete(TrieNodeRef(8))] */
+    /* prev_nodes: vec![
+    StackTrieNextEntry::Incomplete(TrieNodeRef(8))] */
     /* .into_iter() */
     /* .collect::<IndexSet<_>>() */
     /* }, */
@@ -2475,10 +2424,12 @@ mod tests {
     /* stack_diff:
      * StackDiffSegment(vec![NamedOrAnonStep::Anon(AnonStep::
      * Negative(AnonSym(0)))]), */
-    /* next_nodes: vec![StackTrieNextEntry::Incomplete(TrieNodeRef(10))] */
+    /* next_nodes: vec![
+    StackTrieNextEntry::Incomplete(TrieNodeRef(10))] */
     /* .into_iter() */
     /* .collect::<IndexSet<_>>(), */
-    /* prev_nodes: vec![StackTrieNextEntry::Incomplete(TrieNodeRef(8))] */
+    /* prev_nodes: vec![
+    StackTrieNextEntry::Incomplete(TrieNodeRef(8))] */
     /* .into_iter() */
     /* .collect::<IndexSet<_>>() */
     /* }, */
@@ -2607,10 +2558,12 @@ mod tests {
     /* stack_diff:
      * StackDiffSegment(vec![NamedOrAnonStep::Anon(AnonStep::
      * Positive(AnonSym(2)))]), */
-    /* next_nodes: vec![StackTrieNextEntry::Incomplete(TrieNodeRef(6))] */
+    /* next_nodes: vec![
+    StackTrieNextEntry::Incomplete(TrieNodeRef(6))] */
     /* .into_iter() */
     /* .collect::<IndexSet<_>>(), */
-    /* prev_nodes: vec![StackTrieNextEntry::Incomplete(TrieNodeRef(0))] */
+    /* prev_nodes: vec![
+    StackTrieNextEntry::Incomplete(TrieNodeRef(0))] */
     /* .into_iter() */
     /* .collect::<IndexSet<_>>() */
     /* }, */
@@ -2619,10 +2572,12 @@ mod tests {
     /* stack_diff:
      * StackDiffSegment(vec![NamedOrAnonStep::Anon(AnonStep::
      * Positive(AnonSym(4)))]), */
-    /* next_nodes: vec![StackTrieNextEntry::Incomplete(TrieNodeRef(6))] */
+    /* next_nodes: vec![
+    StackTrieNextEntry::Incomplete(TrieNodeRef(6))] */
     /* .into_iter() */
     /* .collect::<IndexSet<_>>(), */
-    /* prev_nodes: vec![StackTrieNextEntry::Incomplete(TrieNodeRef(0))] */
+    /* prev_nodes: vec![
+    StackTrieNextEntry::Incomplete(TrieNodeRef(0))] */
     /* .into_iter() */
     /* .collect::<IndexSet<_>>() */
     /* }, */
@@ -2679,10 +2634,12 @@ mod tests {
     /* stack_diff:
      * StackDiffSegment(vec![NamedOrAnonStep::Anon(AnonStep::
      * Negative(AnonSym(4)))]), */
-    /* next_nodes: vec![StackTrieNextEntry::Incomplete(TrieNodeRef(19))] */
+    /* next_nodes: vec![
+    StackTrieNextEntry::Incomplete(TrieNodeRef(19))] */
     /* .into_iter() */
     /* .collect::<IndexSet<_>>(), */
-    /* prev_nodes: vec![StackTrieNextEntry::Incomplete(TrieNodeRef(8))] */
+    /* prev_nodes: vec![
+    StackTrieNextEntry::Incomplete(TrieNodeRef(8))] */
     /* .into_iter() */
     /* .collect::<IndexSet<_>>() */
     /* }, */
@@ -2691,10 +2648,12 @@ mod tests {
     /* stack_diff:
      * StackDiffSegment(vec![NamedOrAnonStep::Anon(AnonStep::
      * Positive(AnonSym(1)))]), */
-    /* next_nodes: vec![StackTrieNextEntry::Incomplete(TrieNodeRef(0))] */
+    /* next_nodes: vec![
+    StackTrieNextEntry::Incomplete(TrieNodeRef(0))] */
     /* .into_iter() */
     /* .collect::<IndexSet<_>>(), */
-    /* prev_nodes: vec![StackTrieNextEntry::Incomplete(TrieNodeRef(15))] */
+    /* prev_nodes: vec![
+    StackTrieNextEntry::Incomplete(TrieNodeRef(15))] */
     /* .into_iter() */
     /* .collect::<IndexSet<_>>() */
     /* }, */
@@ -2727,11 +2686,164 @@ mod tests {
   #[test]
   fn initial_parse_state() {
     let prods = non_cyclic_productions();
+
     let token_grammar = TokenGrammar::new(&prods).unwrap();
     let preprocessed_grammar = PreprocessedGrammar::new(&token_grammar);
     let string_input = "ab";
     let input = Input(string_input.chars().collect());
     let parseable_grammar = ParseableGrammar::new::<char>(&preprocessed_grammar, &input);
+
+    assert_eq!(parseable_grammar.input_as_states.clone(), vec![
+      PossibleStates(vec![LoweredState::Start]),
+      PossibleStates(vec![
+        LoweredState::Within(TokenPosition::new(0, 0, 0)),
+        LoweredState::Within(TokenPosition::new(1, 0, 0)),
+        LoweredState::Within(TokenPosition::new(1, 1, 1)),
+      ]),
+      PossibleStates(vec![
+        LoweredState::Within(TokenPosition::new(0, 0, 1)),
+        LoweredState::Within(TokenPosition::new(1, 0, 1)),
+      ]),
+      PossibleStates(vec![LoweredState::End]),
+    ]);
+
+    /* TODO: fix the code to make this pass! */
+    assert_eq!(
+      parseable_grammar.pairwise_state_transition_table.clone(),
+      vec![
+        (
+          StatePair {
+            left: LoweredState::Start,
+            right: LoweredState::Within(TokenPosition {
+              prod: ProdRef(0),
+              case: CaseRef(0),
+              case_el: CaseElRef(0)
+            }),
+          },
+          vec![
+            StackDiffSegment(vec![
+              NamedOrAnonStep::Named(StackStep::Positive(StackSym(ProdRef(0))),)
+            ]),
+            StackDiffSegment(vec![
+              NamedOrAnonStep::Named(StackStep::Positive(StackSym(ProdRef(1)))),
+              NamedOrAnonStep::Anon(AnonStep::Positive(AnonSym(1))),
+              NamedOrAnonStep::Named(StackStep::Positive(StackSym(ProdRef(0))),)
+            ]),
+          ]
+        ),
+        (
+          StatePair {
+            left: LoweredState::Start,
+            right: LoweredState::Within(TokenPosition {
+              prod: ProdRef(1),
+              case: CaseRef(0),
+              case_el: CaseElRef(0)
+            }),
+          },
+          vec![StackDiffSegment(vec![NamedOrAnonStep::Named(StackStep::Positive(StackSym(ProdRef(1))))])]
+        ),
+        (
+          StatePair {
+            left: LoweredState::Within(TokenPosition {
+              prod: ProdRef(0),
+              case: CaseRef(0),
+              case_el: CaseElRef(0)
+            }),
+            right: LoweredState::Within(TokenPosition {
+              prod: ProdRef(0),
+              case: CaseRef(0),
+              case_el: CaseElRef(1)
+            }),
+          },
+          vec![StackDiffSegment(vec![]),]
+        ),
+        (
+          StatePair {
+            left: LoweredState::Within(TokenPosition {
+              prod: ProdRef(1),
+              case: CaseRef(0),
+              case_el: CaseElRef(0)
+            }),
+            right: LoweredState::Within(TokenPosition {
+              prod: ProdRef(1),
+              case: CaseRef(0),
+              case_el: CaseElRef(1)
+            }),
+          },
+          vec![StackDiffSegment(vec![]),]
+        ),
+        (
+          StatePair {
+            left: LoweredState::Within(TokenPosition {
+              prod: ProdRef(0),
+              case: CaseRef(0),
+              case_el: CaseElRef(1)
+            }),
+            right: LoweredState::End,
+          },
+          vec![
+            StackDiffSegment(vec![
+              NamedOrAnonStep::Named(StackStep::Negative(StackSym(ProdRef(0))),)
+            ]),
+            StackDiffSegment(vec![
+              NamedOrAnonStep::Named(StackStep::Negative(StackSym(ProdRef(0)))),
+              NamedOrAnonStep::Anon(AnonStep::Negative(AnonSym(0))),
+              NamedOrAnonStep::Named(StackStep::Negative(StackSym(ProdRef(1)))),
+            ]),
+          ]
+        ),
+        (
+          StatePair {
+            left: LoweredState::Within(TokenPosition {
+              prod: ProdRef(1),
+              case: CaseRef(1),
+              case_el: CaseElRef(1)
+            }),
+            right: LoweredState::End,
+          },
+          vec![StackDiffSegment(vec![NamedOrAnonStep::Named(StackStep::Negative(StackSym(ProdRef(1))))])]
+        ),
+        (
+          StatePair {
+            left: LoweredState::Within(TokenPosition {
+              prod: ProdRef(0),
+              case: CaseRef(0),
+              case_el: CaseElRef(1)
+            }),
+            right: LoweredState::Within(TokenPosition {
+              prod: ProdRef(1),
+              case: CaseRef(1),
+              case_el: CaseElRef(1)
+            }),
+          },
+          vec![StackDiffSegment(vec![
+            NamedOrAnonStep::Named(StackStep::Negative(StackSym(ProdRef(0)))),
+            NamedOrAnonStep::Anon(AnonStep::Negative(AnonSym(1))),
+          ]),]
+        ),
+        (
+          StatePair {
+            left: LoweredState::Within(TokenPosition {
+              prod: ProdRef(1),
+              case: CaseRef(0),
+              case_el: CaseElRef(1)
+            }),
+            right: LoweredState::Within(TokenPosition {
+              prod: ProdRef(0),
+              case: CaseRef(0),
+              case_el: CaseElRef(0)
+            }),
+          },
+          vec![StackDiffSegment(vec![
+            NamedOrAnonStep::Anon(AnonStep::Positive(AnonSym(0))),
+            NamedOrAnonStep::Named(StackStep::Positive(StackSym(ProdRef(0)))),
+          ]),]
+        ),
+      ]
+      .into_iter()
+      .collect::<IndexMap<StatePair, Vec<StackDiffSegment>>>()
+    );
+
     let Parse {
       left_index,
       right_index,
