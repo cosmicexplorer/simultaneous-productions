@@ -1333,6 +1333,8 @@ pub mod parsing {
       parse
     }
 
+    /* Given two adjacent stack diffs, check whether they are compatible, and if so return the
+     * resulting stack diff from joining them. */
     fn stack_diff_pair_zipper(
       left_diff: StackDiffSegment,
       right_diff: StackDiffSegment,
@@ -1341,12 +1343,18 @@ pub mod parsing {
       let StackDiffSegment(left_steps) = left_diff;
       let StackDiffSegment(right_steps) = right_diff;
 
+      /* "Compatibility" is checked by seeing whether the stack steps up to the minimum length of
+       * both either cancel each other out, or are the same polarity. */
       let min_length = vec![left_steps.len(), right_steps.len()]
         .into_iter()
         .min()
         .unwrap();
+      /* To get the same number of elements in both left and right, we reverse the left, take off
+       * some elements, then reverse it back. */
       let rev_left: Vec<_> = left_steps.into_iter().rev().collect();
 
+      /* NB: We keep the left zippered elements reversed so that we compare stack elements outward
+       * from the center along both the left and right sides. */
       let cmp_left: Vec<_> = rev_left.iter().cloned().take(min_length).collect();
       let cmp_right: Vec<_> = right_steps.iter().cloned().take(min_length).collect();
 
@@ -1371,6 +1379,7 @@ pub mod parsing {
         })
         .ok()
         .map(|steps: Vec<NamedOrAnonStep>| {
+          /* Put the leftover left and right on the left and right of the resulting stack steps! */
           let all_steps: Vec<_> = leftover_left
             .into_iter()
             .chain(steps)
@@ -1395,6 +1404,9 @@ pub mod parsing {
           ..
         } = cur_span.clone();
 
+        /* TODO: ensure all entries of `.finishes_at_left` and `.finishes_at_right` are
+         * lexicographically sorted! */
+        /* Check all right-neighbors for compatible stack diffs. */
         for right_neighbor in self
           .finishes_at_left
           .get(&InputTokenIndex(cur_right_index + 1))
@@ -1413,7 +1425,6 @@ pub mod parsing {
               },
             ..
           } = right_neighbor.clone();
-
           assert_eq!(right_left_index, (cur_right_index + 1));
 
           if let Some(merged_diff) =
@@ -1436,6 +1447,7 @@ pub mod parsing {
           }
         }
 
+        /* Check all left-neighbors for compatible stack diffs. */
         for left_neighbor in self
           .finishes_at_right
           .get(&InputTokenIndex(cur_left_index - 1))
@@ -1454,11 +1466,10 @@ pub mod parsing {
               },
             ..
           } = left_neighbor.clone();
-
           assert_eq!(left_right_index, (cur_left_index - 1));
 
           if let Some(merged_diff) =
-            Self::stack_diff_pair_zipper(cur_stack_diff.clone(), left_stack_diff)
+            Self::stack_diff_pair_zipper(left_stack_diff, cur_stack_diff.clone())
           {
             let new_tree = SpanningSubtreeToCreate {
               input_span: FlattenedSpanInfo {
