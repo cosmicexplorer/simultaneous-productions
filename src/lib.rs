@@ -1084,7 +1084,7 @@ pub mod parsing {
   }
 
   impl InputRange {
-    fn new(left_index: InputTokenIndex, right_index: InputTokenIndex) -> Self {
+    pub fn new(left_index: InputTokenIndex, right_index: InputTokenIndex) -> Self {
       assert!(left_index.0 < right_index.0);
       InputRange {
         left_index,
@@ -1231,9 +1231,6 @@ pub mod parsing {
 
   #[derive(Debug, Clone)]
   pub struct Parse {
-    /* NB: Need `left` and `right` indices to know when we're done parsing! */
-    pub left_index: InputTokenIndex,
-    pub right_index: InputTokenIndex,
     pub spans: PriorityQueue<SpanningSubtree, usize>,
     pub grammar: ParseableGrammar,
     pub finishes_at_left: IndexMap<InputTokenIndex, IndexSet<SpanningSubtree>>,
@@ -1242,15 +1239,8 @@ pub mod parsing {
   }
 
   impl Parse {
-    fn new(
-      left_index: InputTokenIndex,
-      right_index: InputTokenIndex,
-      grammar: &ParseableGrammar,
-    ) -> Self
-    {
+    fn new(grammar: &ParseableGrammar) -> Self {
       Parse {
-        left_index,
-        right_index,
         spans: PriorityQueue::new(),
         grammar: grammar.clone(),
         finishes_at_left: IndexMap::new(),
@@ -1328,10 +1318,7 @@ pub mod parsing {
         pairwise_state_transition_table,
       } = grammar;
 
-      let left_index = InputTokenIndex(0);
-      let right_index = InputTokenIndex(input_as_states.len() - 1);
-
-      let mut parse = Self::new(left_index, right_index, grammar);
+      let mut parse = Self::new(grammar);
 
       for (i, left_states) in input_as_states.iter().cloned().enumerate() {
         assert!(i <= input_as_states.len());
@@ -1398,32 +1385,45 @@ pub mod parsing {
       let leftover_right: Vec<_> = right_steps.iter().cloned().skip(min_length).collect();
       assert!(leftover_left.is_empty() || leftover_right.is_empty());
 
-      (0..min_length)
-        .map(|i| {
-          (
-            cmp_left.get(i).unwrap().clone(),
-            cmp_right.get(i).unwrap().clone(),
-          )
-        })
-        .map(|(left_step, right_step)| left_step.sequence(right_step))
-        .collect::<Result<Vec<Vec<NamedOrAnonStep>>, _>>()
-        .map(|all_steps| {
-          all_steps
-            .iter()
-            .flat_map(|steps| steps.iter().cloned())
-            .collect()
-        })
-        .ok()
-        .map(|steps: Vec<NamedOrAnonStep>| {
-          /* Put the leftover left and right on the left and right of the resulting
-           * stack steps! */
-          let all_steps: Vec<_> = leftover_left
-            .into_iter()
-            .chain(steps)
-            .chain(leftover_right.into_iter())
-            .collect();
-          StackDiffSegment(all_steps)
-        })
+      let mut connected: Vec<NamedOrAnonStep> = vec![];
+      for (i, left_step, right_step) in (0..min_length).map(|i| {
+        (
+          i,
+          cmp_left.get(i).unwrap().clone(),
+          cmp_right.get(i).unwrap().clone(),
+        )
+      }) {
+        match left_step.sequence(right_step) {
+          Ok(x) => {
+            if x.len() == 2 {
+              connected = cmp_left[(i + 1)..min_length]
+                .iter()
+                .cloned()
+                .rev()
+                .chain(x)
+                .chain(cmp_right[(i + 1)..min_length].iter().cloned())
+                .collect();
+              break;
+            } else if x.len() == 0 {
+              ()
+            } else {
+              panic!("unidentified sequence of stack steps: {:?}", x)
+            }
+          },
+          Err(_) => {
+            return None;
+          },
+        }
+      }
+
+      /* Put the leftover left and right on the left and right of the resulting
+       * stack steps! */
+      let all_steps: Vec<_> = leftover_left
+        .into_iter()
+        .chain(connected)
+        .chain(leftover_right.into_iter())
+        .collect();
+      Some(StackDiffSegment(all_steps))
     }
 
     pub fn get_spanning_subtree(&self, span_ref: SpanningSubtreeRef) -> Option<&SpanningSubtree> {
@@ -1505,13 +1505,14 @@ pub mod parsing {
         }
 
         /* Check all left-neighbors for compatible stack diffs. */
-        for left_neighbor in self
-          .finishes_at_right
-          .get(&InputTokenIndex(cur_left_index - 1))
-          .cloned()
-          .unwrap_or_else(IndexSet::new)
-          .iter()
-        {
+        let maybe_set = if cur_left_index == 0 {
+          None
+        } else {
+          self
+            .finishes_at_right
+            .get(&InputTokenIndex(cur_left_index - 1))
+        };
+        for left_neighbor in maybe_set.cloned().unwrap_or_else(IndexSet::new).iter() {
           let SpanningSubtree {
             input_span:
               FlattenedSpanInfo {
@@ -1555,9 +1556,7 @@ pub mod parsing {
           }
         }
 
-        if (InputTokenIndex(cur_left_index) == self.left_index)
-          && (InputTokenIndex(cur_right_index) == self.right_index)
-        {
+        if cur_left == LoweredState::Start && cur_right == LoweredState::End {
           Ok(ParseResult::Complete(cur_span.id))
         } else {
           Ok(ParseResult::Incomplete)
@@ -2842,20 +2841,15 @@ mod tests {
       .collect::<IndexMap<StatePair, Vec<StackDiffSegment>>>()
     );
 
+    let mut parse = Parse::initialize_with_trees_for_adjacent_pairs(&parseable_grammar);
     let Parse {
-      left_index,
-      right_index,
       spans,
       grammar: new_parseable_grammar,
       finishes_at_left,
       finishes_at_right,
       spanning_subtree_table,
-    } = Parse::initialize_with_trees_for_adjacent_pairs(&parseable_grammar);
+    } = parse.clone();
     assert_eq!(new_parseable_grammar, parseable_grammar);
-
-    assert_eq!(left_index, InputTokenIndex(0));
-    /* We have to add two because the process creates a start and end token! */
-    assert_eq!(right_index, InputTokenIndex((string_input.len() - 1) + 2));
 
     assert_eq!(spans.into_iter().collect::<Vec<_>>(), vec![
       (
@@ -3564,6 +3558,71 @@ mod tests {
         id: SpanningSubtreeRef(6),
       },
     ]);
+
+    let orig_num_subtrees = parse.spanning_subtree_table.len();
+    assert_eq!(parse.advance(), Ok(ParseResult::Incomplete),);
+    assert_eq!(parse.spanning_subtree_table.len(), orig_num_subtrees + 2);
+
+    let expected_first_new_subtree = SpanningSubtree {
+      input_span: FlattenedSpanInfo {
+        state_pair: StatePair {
+          left: LoweredState::Start,
+          right: LoweredState::End,
+        },
+        input_range: InputRange::new(InputTokenIndex(0), InputTokenIndex(3)),
+        stack_diff: StackDiffSegment(vec![]),
+      },
+      parents: Some(ParentInfo {
+        left_parent: SpanningSubtreeRef(0),
+        right_parent: SpanningSubtreeRef(5),
+      }),
+      id: SpanningSubtreeRef(7),
+    };
+
+    let expected_subtree = SpanningSubtree {
+      input_span: FlattenedSpanInfo {
+        state_pair: StatePair {
+          left: LoweredState::Start,
+          right: LoweredState::End,
+        },
+        input_range: InputRange::new(InputTokenIndex(0), InputTokenIndex(3)),
+        stack_diff: StackDiffSegment(vec![
+          NamedOrAnonStep::Anon(AnonStep::Negative(AnonSym(0))),
+          NamedOrAnonStep::Named(StackStep::Negative(StackSym(ProdRef(1)))),
+        ]),
+      },
+      parents: Some(ParentInfo {
+        left_parent: SpanningSubtreeRef(0),
+        right_parent: SpanningSubtreeRef(6),
+      }),
+      id: SpanningSubtreeRef(8),
+    };
+    assert_eq!(parse.spanning_subtree_table.last(), Some(&expected_subtree));
+
+    assert_eq!(parse.advance(), Ok(ParseResult::Complete(SpanningSubtreeRef(7))));
+    assert_eq!(
+      parse.get_spanning_subtree(SpanningSubtreeRef(7)),
+      Some(&expected_first_new_subtree),
+    );
+
+    assert_eq!(parse.advance(), Ok(ParseResult::Complete(SpanningSubtreeRef(8))));
+    assert_eq!(
+      parse.get_spanning_subtree(SpanningSubtreeRef(8)),
+      Some(&expected_subtree)
+    );
+
+    let mut hit_end: bool = false;
+    while !hit_end {
+      match parse.advance() {
+        Ok(ParseResult::Incomplete) => (),
+        Ok(ParseResult::Complete(_)) => (),
+        Err(_) => {
+          hit_end = true;
+          break;
+        }
+      }
+    }
+    assert!(hit_end);
   }
 
   fn non_cyclic_productions() -> SimultaneousProductions<char> {
