@@ -318,15 +318,89 @@ pub mod grammar_indexing {
   pub struct StackSym(pub ProdRef);
 
   #[derive(Debug, Copy, Clone, PartialEq, Eq, Hash)]
+  pub enum UnsignedStep {
+    Named(StackSym),
+    Anon(AnonSym),
+  }
+
+  trait AsUnsignedStep {
+    fn as_unsigned_step(&self) -> UnsignedStep;
+  }
+
+  #[derive(Debug, Copy, Clone, PartialEq, Eq, Hash)]
+  pub enum Polarity {
+    Positive,
+    Negative,
+  }
+
+  trait Polar {
+    fn polarity(&self) -> Polarity;
+  }
+
+  #[derive(Debug, Copy, Clone, PartialEq, Eq, Hash)]
   pub enum StackStep {
     Positive(StackSym),
     Negative(StackSym),
   }
 
+  impl Polar for StackStep {
+    fn polarity(&self) -> Polarity {
+      match self {
+        Self::Positive(_) => Polarity::Positive,
+        Self::Negative(_) => Polarity::Negative,
+      }
+    }
+  }
+
+  impl AsUnsignedStep for StackStep {
+    fn as_unsigned_step(&self) -> UnsignedStep {
+      match self {
+        Self::Positive(sym) => UnsignedStep::Named(*sym),
+        Self::Negative(sym) => UnsignedStep::Named(*sym),
+      }
+    }
+  }
+
+  #[derive(Debug, Clone, PartialEq, Eq, Hash)]
+  pub struct StackStepError(String);
+
   #[derive(Debug, Clone, PartialEq, Eq, Hash)]
   pub enum NamedOrAnonStep {
     Named(StackStep),
     Anon(AnonStep),
+  }
+
+  impl Polar for NamedOrAnonStep {
+    fn polarity(&self) -> Polarity {
+      match self {
+        Self::Named(step) => step.polarity(),
+        Self::Anon(step) => step.polarity(),
+      }
+    }
+  }
+
+  impl AsUnsignedStep for NamedOrAnonStep {
+    fn as_unsigned_step(&self) -> UnsignedStep {
+      match self {
+        Self::Named(step) => step.as_unsigned_step(),
+        Self::Anon(step) => step.as_unsigned_step(),
+      }
+    }
+  }
+
+  impl NamedOrAnonStep {
+    pub fn sequence(self, other: Self) -> Result<Vec<NamedOrAnonStep>, StackStepError> {
+      if self.polarity() == other.polarity() {
+        Ok(vec![self, other])
+      } else if self.as_unsigned_step() == other.as_unsigned_step() {
+        Ok(vec![])
+      } else {
+        Err(StackStepError(format!(
+          "failed to sequence steps {:?} and {:?}",
+          self, other
+        )))
+      }
+    }
   }
 
   #[derive(Debug, Clone, PartialEq, Eq, Hash)]
@@ -472,6 +546,24 @@ pub mod grammar_indexing {
   pub enum AnonStep {
     Positive(AnonSym),
     Negative(AnonSym),
+  }
+
+  impl Polar for AnonStep {
+    fn polarity(&self) -> Polarity {
+      match self {
+        Self::Positive(_) => Polarity::Positive,
+        Self::Negative(_) => Polarity::Negative,
+      }
+    }
+  }
+
+  impl AsUnsignedStep for AnonStep {
+    fn as_unsigned_step(&self) -> UnsignedStep {
+      match self {
+        Self::Positive(anon_sym) => UnsignedStep::Anon(*anon_sym),
+        Self::Negative(anon_sym) => UnsignedStep::Anon(*anon_sym),
+      }
+    }
   }
 
   /* Fun fact: I'm pretty sure this /is/ actually an interval graph,
@@ -1005,9 +1097,16 @@ pub mod parsing {
   }
 
   #[derive(Debug, Clone, PartialEq, Eq, Hash)]
+  pub struct SpanningSubtreeToCreate {
+    pub input_span: FlattenedSpanInfo,
+    pub parents: Option<ParentInfo>,
+  }
+
+  #[derive(Debug, Clone, PartialEq, Eq, Hash)]
   pub struct SpanningSubtree {
     pub input_span: FlattenedSpanInfo,
     pub parents: Option<ParentInfo>,
+    pub id: SpanningSubtreeRef,
   }
 
   #[derive(Debug, Clone)]
@@ -1094,31 +1193,95 @@ pub mod parsing {
     }
   }
 
+  #[derive(Debug, Copy, Clone, PartialEq, Eq, Hash)]
+  pub enum ParseResult {
+    Incomplete,
+    Complete(SpanningSubtreeRef),
+  }
+
   #[derive(Debug, Clone, PartialEq, Eq, Hash)]
+  pub struct ParsingFailure(String);
+
+  #[derive(Debug, Clone)]
   pub struct Parse {
     /* NB: Need `left` and `right` indices to know when we're done parsing! */
     left_index: InputTokenIndex,
     right_index: InputTokenIndex,
-    spans: Vec<SpanningSubtree>,
+    spans: VecDeque<SpanningSubtree>,
+    grammar: ParseableGrammar,
+    finishes_at_left: IndexMap<InputTokenIndex, IndexSet<SpanningSubtree>>,
+    finishes_at_right: IndexMap<InputTokenIndex, IndexSet<SpanningSubtree>>,
+    spanning_subtree_table: Vec<SpanningSubtree>,
   }
 
   impl Parse {
+    fn new(
+      left_index: InputTokenIndex,
+      right_index: InputTokenIndex,
+      grammar: &ParseableGrammar,
+    ) -> Self
+    {
+      Parse {
+        left_index,
+        right_index,
+        spans: vec![].into_iter().collect(),
+        grammar: grammar.clone(),
+        finishes_at_left: IndexMap::new(),
+        finishes_at_right: IndexMap::new(),
+        spanning_subtree_table: vec![],
+      }
+    }
+
+    fn add_spanning_subtree(&mut self, span: &SpanningSubtreeToCreate) {
+      let SpanningSubtreeToCreate {
+        input_span:
+          FlattenedSpanInfo {
+            left_index,
+            right_index,
+            ..
+          },
+        ..
+      } = span.clone();
+
+      let new_ref_id = SpanningSubtreeRef(self.spanning_subtree_table.len());
+      let new_span = SpanningSubtree {
+        input_span: span.input_span.clone(),
+        parents: span.parents.clone(),
+        id: new_ref_id,
+      };
+      self.spanning_subtree_table.push(new_span.clone());
+
+      let left_entry = self
+        .finishes_at_left
+        .entry(left_index)
+        .or_insert_with(IndexSet::new);
+      (*left_entry).insert(new_span.clone());
+      let right_entry = self
+        .finishes_at_right
+        .entry(right_index)
+        .or_insert_with(IndexSet::new);
+      (*right_entry).insert(new_span.clone());
+
+      self.spans.push_back(new_span);
+    }
+
     fn generate_subtrees_for_pair(
       pair: &StatePair,
       left_index: InputTokenIndex,
       right_index: InputTokenIndex,
       diffs: Vec<StackDiffSegment>,
-    ) -> Vec<SpanningSubtree>
+    ) -> IndexSet<SpanningSubtreeToCreate>
     {
       let StatePair { left, right } = pair;
       diffs
         .into_iter()
-        .map(|stack_diff| SpanningSubtree {
+        .map(|stack_diff| SpanningSubtreeToCreate {
           input_span: FlattenedSpanInfo {
             left: *left,
             right: *right,
             left_index,
             right_index,
+            /* TODO: lexicographically sort these??? */
             stack_diff: stack_diff.clone(),
           },
           parents: None,
@@ -1126,13 +1289,17 @@ pub mod parsing {
         .collect()
     }
 
-    pub fn initialize(grammar: &ParseableGrammar) -> Self {
+    pub fn initialize_with_trees_for_adjacent_pairs(grammar: &ParseableGrammar) -> Self {
       let ParseableGrammar {
         input_as_states,
         pairwise_state_transition_table,
       } = grammar;
 
-      let mut spans = vec![];
+      let left_index = InputTokenIndex(0);
+      let right_index = InputTokenIndex(input_as_states.len() - 1);
+
+      let mut parse = Self::new(left_index, right_index, grammar);
+
       for (i, left_states) in input_as_states.iter().cloned().enumerate() {
         if i == input_as_states.len() {
           break;
@@ -1148,23 +1315,177 @@ pub mod parsing {
               .get(&pair)
               .cloned()
               .unwrap_or_else(Vec::new);
-            spans.extend(Self::generate_subtrees_for_pair(
+
+            for new_tree in Self::generate_subtrees_for_pair(
               &pair,
               InputTokenIndex(i),
               InputTokenIndex(i + 1),
               stack_diffs,
-            ));
+            )
+            .into_iter()
+            {
+              parse.add_spanning_subtree(&new_tree);
+            }
           }
         }
       }
 
-      let left_index = InputTokenIndex(0);
-      let right_index = InputTokenIndex(input_as_states.len() - 1);
+      parse
+    }
 
-      Parse {
-        left_index,
-        right_index,
-        spans,
+    fn stack_diff_pair_zipper(
+      left_diff: StackDiffSegment,
+      right_diff: StackDiffSegment,
+    ) -> Option<StackDiffSegment>
+    {
+      let StackDiffSegment(left_steps) = left_diff;
+      let StackDiffSegment(right_steps) = right_diff;
+
+      let min_length = vec![left_steps.len(), right_steps.len()]
+        .into_iter()
+        .min()
+        .unwrap();
+      let rev_left: Vec<_> = left_steps.into_iter().rev().collect();
+
+      let cmp_left: Vec<_> = rev_left.iter().cloned().take(min_length).collect();
+      let cmp_right: Vec<_> = right_steps.iter().cloned().take(min_length).collect();
+
+      let leftover_left: Vec<_> = rev_left.iter().cloned().skip(min_length).rev().collect();
+      let leftover_right: Vec<_> = right_steps.iter().cloned().skip(min_length).collect();
+      assert!(leftover_left.is_empty() || leftover_right.is_empty());
+
+      (0..min_length)
+        .map(|i| {
+          (
+            cmp_left.get(i).unwrap().clone(),
+            cmp_right.get(i).unwrap().clone(),
+          )
+        })
+        .map(|(left_step, right_step)| left_step.sequence(right_step))
+        .collect::<Result<Vec<Vec<NamedOrAnonStep>>, _>>()
+        .map(|all_steps| {
+          all_steps
+            .iter()
+            .flat_map(|steps| steps.iter().cloned())
+            .collect()
+        })
+        .ok()
+        .map(|steps: Vec<NamedOrAnonStep>| {
+          let all_steps: Vec<_> = leftover_left
+            .into_iter()
+            .chain(steps)
+            .chain(leftover_right.into_iter())
+            .collect();
+          StackDiffSegment(all_steps)
+        })
+    }
+
+    pub fn advance(&mut self) -> Result<ParseResult, ParsingFailure> {
+      let maybe_front = self.spans.pop_front();
+      if let Some(cur_span) = maybe_front {
+        let SpanningSubtree {
+          input_span:
+            FlattenedSpanInfo {
+              left: cur_left,
+              right: cur_right,
+              left_index: InputTokenIndex(cur_left_index),
+              right_index: InputTokenIndex(cur_right_index),
+              stack_diff: cur_stack_diff,
+            },
+          ..
+        } = cur_span.clone();
+
+        for right_neighbor in self
+          .finishes_at_left
+          .get(&InputTokenIndex(cur_right_index + 1))
+          .cloned()
+          .unwrap_or_else(IndexSet::new)
+          .iter()
+        {
+          let SpanningSubtree {
+            input_span:
+              FlattenedSpanInfo {
+                left: _right_left,
+                right: right_right,
+                left_index: InputTokenIndex(right_left_index),
+                right_index: InputTokenIndex(right_right_index),
+                stack_diff: right_stack_diff,
+              },
+            ..
+          } = right_neighbor.clone();
+
+          assert_eq!(right_left_index, (cur_right_index + 1));
+
+          if let Some(merged_diff) =
+            Self::stack_diff_pair_zipper(cur_stack_diff.clone(), right_stack_diff)
+          {
+            let new_tree = SpanningSubtreeToCreate {
+              input_span: FlattenedSpanInfo {
+                left: cur_left,
+                right: right_right,
+                left_index: InputTokenIndex(cur_left_index),
+                right_index: InputTokenIndex(right_right_index),
+                stack_diff: merged_diff,
+              },
+              parents: Some(ParentInfo {
+                left_parent: cur_span.id,
+                right_parent: right_neighbor.id,
+              }),
+            };
+            self.add_spanning_subtree(&new_tree);
+          }
+        }
+
+        for left_neighbor in self
+          .finishes_at_right
+          .get(&InputTokenIndex(cur_left_index - 1))
+          .cloned()
+          .unwrap_or_else(IndexSet::new)
+          .iter()
+        {
+          let SpanningSubtree {
+            input_span:
+              FlattenedSpanInfo {
+                left: left_left,
+                right: _left_right,
+                left_index: InputTokenIndex(left_left_index),
+                right_index: InputTokenIndex(left_right_index),
+                stack_diff: left_stack_diff,
+              },
+            ..
+          } = left_neighbor.clone();
+
+          assert_eq!(left_right_index, (cur_left_index - 1));
+
+          if let Some(merged_diff) =
+            Self::stack_diff_pair_zipper(cur_stack_diff.clone(), left_stack_diff)
+          {
+            let new_tree = SpanningSubtreeToCreate {
+              input_span: FlattenedSpanInfo {
+                left: left_left,
+                right: cur_right,
+                left_index: InputTokenIndex(left_left_index),
+                right_index: InputTokenIndex(cur_right_index),
+                stack_diff: merged_diff,
+              },
+              parents: Some(ParentInfo {
+                left_parent: left_neighbor.id,
+                right_parent: cur_span.id,
+              }),
+            };
+            self.add_spanning_subtree(&new_tree);
+          }
+        }
+
+        if (InputTokenIndex(cur_left_index) == self.left_index)
+          && (InputTokenIndex(cur_right_index) == self.right_index)
+        {
+          Ok(ParseResult::Complete(cur_span.id))
+        } else {
+          Ok(ParseResult::Incomplete)
+        }
+      } else {
+        Err(ParsingFailure("no more spans to iterate over!".to_string()))
       }
     }
   }
