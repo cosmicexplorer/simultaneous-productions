@@ -63,7 +63,7 @@ use std::{
   hash::{Hash, Hasher},
 };
 
-pub mod user_api {
+pub mod primitives {
   use super::*;
 
   #[derive(Debug, Clone, PartialEq, Eq, Hash)]
@@ -105,7 +105,8 @@ pub mod user_api {
 
 ///
 /// (I think this is a "model" graph class of some sort, where the model is
-/// this "simultaneous productions" parsing formulation)
+/// this "simultaneous productions" parsing formulation. See Spinrad's book
+/// [???]!)
 ///
 /// Vec<ProductionImpl> = [
 ///   Production([
@@ -115,7 +116,7 @@ pub mod user_api {
 ///   ...,
 /// ]
 pub mod lowering_to_indices {
-  use super::{user_api::*, *};
+  use super::{primitives::*, *};
 
   /// Graph Coordinates
   // NB: all these Refs have nice properties, which includes being storeable
@@ -177,6 +178,14 @@ pub mod lowering_to_indices {
 
   #[derive(Debug, Clone, PartialEq, Eq)]
   pub struct LoweredProductions(pub Vec<ProductionImpl>);
+
+  impl LoweredProductions {
+    pub fn new_production(&mut self) -> (ProdRef, &mut ProductionImpl) {
+      let new_end_index = ProdRef(self.0.len());
+      self.0.push(ProductionImpl(vec![]));
+      (new_end_index, self.0.last_mut().unwrap())
+    }
+  }
 
   /// Mapping to Tokens
 
@@ -1116,6 +1125,8 @@ pub mod parsing {
     pub right_parent: SpanningSubtreeRef,
   }
 
+  /* We want to have a consistent `id` within each `SpanningSubtree`, so we add
+   * new trees via a specific method which assigns them an id. */
   #[derive(Debug, Clone, PartialEq, Eq, Hash)]
   pub struct SpanningSubtreeToCreate {
     pub input_span: FlattenedSpanInfo,
@@ -1156,14 +1167,23 @@ pub mod parsing {
           let CompletelyFlattenedSubtree {
             states: left_states,
             input_range: left_range,
-          } = parse.get_spanning_subtree(left_parent).unwrap().flatten_to_states(&parse);
+          } = parse
+            .get_spanning_subtree(left_parent)
+            .unwrap()
+            .flatten_to_states(&parse);
           let CompletelyFlattenedSubtree {
             states: right_states,
             input_range: right_range,
-          } = parse.get_spanning_subtree(right_parent).unwrap().flatten_to_states(&parse);
+          } = parse
+            .get_spanning_subtree(right_parent)
+            .unwrap()
+            .flatten_to_states(&parse);
           assert_eq!(left_range.right_index.0 + 1, right_range.left_index.0);
           CompletelyFlattenedSubtree {
-            states: left_states.into_iter().chain(right_states.into_iter()).collect(),
+            states: left_states
+              .into_iter()
+              .chain(right_states.into_iter())
+              .collect(),
             input_range: InputRange::new(left_range.left_index, right_range.right_index),
           }
         },
@@ -1274,12 +1294,14 @@ pub mod parsing {
   pub struct Parse {
     pub spans: PriorityQueue<SpanningSubtree, usize>,
     pub grammar: ParseableGrammar,
+    /* TODO: lexicographically sort these! */
     pub finishes_at_left: IndexMap<InputTokenIndex, IndexSet<SpanningSubtree>>,
     pub finishes_at_right: IndexMap<InputTokenIndex, IndexSet<SpanningSubtree>>,
     pub spanning_subtree_table: Vec<SpanningSubtree>,
   }
 
   impl Parse {
+    /* NB: Intentionally private! */
     fn new(grammar: &ParseableGrammar) -> Self {
       Parse {
         spans: PriorityQueue::new(),
@@ -1597,6 +1619,8 @@ pub mod parsing {
           }
         }
 
+        /* Check if we now span across the whole input! */
+        /* NB: It's RIDICULOUS how simple this check is!!! */
         if cur_left == LoweredState::Start
           && cur_right == LoweredState::End
           && cur_stack_diff.0.is_empty()
@@ -1612,9 +1636,109 @@ pub mod parsing {
   }
 }
 
+///
+/// Syntax sugar for inline modifications to productions.
+pub mod operators {
+  use super::lowering_to_indices::*;
+
+  #[derive(Debug, Clone, PartialEq, Eq)]
+  pub struct OperatorResult {
+    pub result: Vec<CaseEl>,
+  }
+
+  pub trait UnaryOperator {
+    fn operate(&self, prods: &mut LoweredProductions) -> OperatorResult;
+  }
+
+  #[derive(Debug, Clone, PartialEq, Eq)]
+  pub struct KleeneStar {
+    pub group: Vec<CaseEl>,
+  }
+
+  impl UnaryOperator for KleeneStar {
+    fn operate(&self, prods: &mut LoweredProductions) -> OperatorResult {
+      let (new_prod_ref, &mut ProductionImpl(ref mut new_prod)) = prods.new_production();
+      /* Add an empty case. */
+      new_prod.push(CaseImpl(vec![]));
+      /* Add a case traversing the initial group! */
+      new_prod.push(CaseImpl(
+        self
+          .group
+          .iter()
+          .cloned()
+          /* Allow circling back at the end! */
+          .chain(vec![CaseEl::Prod(new_prod_ref)])
+          .collect(),
+      ));
+      /* The result is just a single reference to the new production! */
+      OperatorResult {
+        result: vec![CaseEl::Prod(new_prod_ref)],
+      }
+    }
+  }
+
+  #[derive(Debug, Clone, PartialEq, Eq)]
+  pub struct Repeated {
+    pub lower_bound: Option<usize>,
+    pub upper_bound: Option<usize>,
+    pub group: Vec<CaseEl>,
+  }
+
+  impl UnaryOperator for Repeated {
+    fn operate(&self, prods: &mut LoweredProductions) -> OperatorResult {
+      let prologue_length = self
+        .lower_bound
+        .map(|i| if i > 0 { i - 1 } else { i })
+        .unwrap_or(0);
+      let prologue: Vec<CaseEl> = (0..prologue_length)
+        .flat_map(|_| self.group.clone())
+        .collect();
+
+      let epilogue: Vec<CaseEl> = match self.upper_bound {
+        /* If we have a definite upper bound, make up the difference in length from the initial
+         * left side. */
+        Some(upper_bound) => (0..(upper_bound - prologue_length))
+          .flat_map(|_| self.group.clone())
+          .collect(),
+        /* If not, we can go forever, or not at all, so we can just apply a Kleene star to this! */
+        None => {
+          let starred = KleeneStar {
+            group: self.group.clone(),
+          };
+          let OperatorResult { result } = starred.operate(prods);
+          result
+        },
+      };
+
+      OperatorResult {
+        result: prologue.into_iter().chain(epilogue.into_iter()).collect(),
+      }
+    }
+  }
+
+  #[derive(Debug, Clone, PartialEq, Eq)]
+  pub struct Optional {
+    pub group: Vec<CaseEl>,
+  }
+
+  impl UnaryOperator for Optional {
+    fn operate(&self, prods: &mut LoweredProductions) -> OperatorResult {
+      let (new_prod_ref, &mut ProductionImpl(ref mut new_prod)) = prods.new_production();
+      /* Add an empty case. */
+      new_prod.push(CaseImpl(vec![]));
+      /* Add a non-empty case. */
+      new_prod.push(CaseImpl(self.group.clone()));
+
+      OperatorResult {
+        result: vec![CaseEl::Prod(new_prod_ref)],
+      }
+    }
+  }
+}
+
 #[cfg(test)]
 mod tests {
-  use super::{grammar_indexing::*, lowering_to_indices::*, parsing::*, user_api::*, *};
+  use super::{grammar_indexing::*, lowering_to_indices::*, parsing::*, primitives::*, *};
 
   #[test]
   fn token_grammar_unsorted_alphabet() {
@@ -3681,7 +3805,7 @@ mod tests {
       match parse.advance() {
         Ok(ParseResult::Incomplete) => (),
         /* NB: `expected_subtree` at SpanningSubtreeRef(8) has a non-empty stack diff, so it
-         * shouldn't be counted as a complete parse! */
+         * shouldn't be counted as a complete parse! We verify that here. */
         Ok(ParseResult::Complete(SpanningSubtreeRef(i))) => assert!(i != 8),
         Err(_) => {
           hit_end = true;
