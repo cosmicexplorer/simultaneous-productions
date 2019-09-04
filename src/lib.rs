@@ -53,9 +53,12 @@
 
 extern crate indexmap;
 extern crate priority_queue;
+#[macro_use]
+extern crate typename;
 
 use indexmap::{IndexMap, IndexSet};
 use priority_queue::PriorityQueue;
+use typename::TypeName;
 
 use std::{
   collections::{HashMap, HashSet, VecDeque},
@@ -63,42 +66,40 @@ use std::{
   hash::{Hash, Hasher},
 };
 
-pub mod primitives {
+pub mod user_api {
   use super::*;
 
-  #[derive(Debug, Clone, PartialEq, Eq, Hash)]
-  pub struct Literal<Tok: Debug+PartialEq+Eq+Hash+Copy+Clone>(pub Vec<Tok>);
+  #[derive(Debug, Clone, PartialEq, Eq, Hash, TypeName)]
+  pub struct Literal<Tok: Debug+PartialEq+Eq+Hash+Copy+Clone+TypeName>(pub Vec<Tok>);
 
-  // NB: a From impl is usually intended to denote that allocation is /not/
-  // performed, I think: see https://doc.rust-lang.org/std/convert/trait.From.html -- fn new() makes more sense for this use
-  // case.
   impl Literal<char> {
+    /* TODO: rename this to `from` and implement `From`! */
     pub fn new(s: &str) -> Self { Literal(s.chars().collect()) }
   }
 
   // A reference to another production -- the string must match the assigned name
   // of a production in a set of simultaneous productions.
-  #[derive(Debug, Clone, PartialEq, Eq, Hash)]
+  #[derive(Debug, Clone, PartialEq, Eq, Hash, TypeName)]
   pub struct ProductionReference(String);
 
   impl ProductionReference {
     pub fn new(s: &str) -> Self { ProductionReference(s.to_string()) }
   }
 
-  #[derive(Debug, Clone, PartialEq, Eq, Hash)]
-  pub enum CaseElement<Tok: Debug+PartialEq+Eq+Hash+Copy+Clone> {
+  #[derive(Debug, Clone, PartialEq, Eq, Hash, TypeName)]
+  pub enum CaseElement<Tok: Debug+PartialEq+Eq+Hash+Copy+Clone+TypeName> {
     Lit(Literal<Tok>),
     Prod(ProductionReference),
   }
 
-  #[derive(Debug, Clone, PartialEq, Eq, Hash)]
-  pub struct Case<Tok: Debug+PartialEq+Eq+Hash+Copy+Clone>(pub Vec<CaseElement<Tok>>);
+  #[derive(Debug, Clone, PartialEq, Eq, Hash, TypeName)]
+  pub struct Case<Tok: Debug+PartialEq+Eq+Hash+Copy+Clone+TypeName>(pub Vec<CaseElement<Tok>>);
 
-  #[derive(Debug, Clone, PartialEq, Eq, Hash)]
-  pub struct Production<Tok: Debug+PartialEq+Eq+Hash+Copy+Clone>(pub Vec<Case<Tok>>);
+  #[derive(Debug, Clone, PartialEq, Eq, Hash, TypeName)]
+  pub struct Production<Tok: Debug+PartialEq+Eq+Hash+Copy+Clone+TypeName>(pub Vec<Case<Tok>>);
 
   #[derive(Debug, Clone, PartialEq, Eq)]
-  pub struct SimultaneousProductions<Tok: Debug+PartialEq+Eq+Hash+Copy+Clone>(
+  pub struct SimultaneousProductions<Tok: Debug+PartialEq+Eq+Hash+Copy+Clone+TypeName>(
     pub IndexMap<ProductionReference, Production<Tok>>,
   );
 }
@@ -116,7 +117,7 @@ pub mod primitives {
 ///   ...,
 /// ]
 pub mod lowering_to_indices {
-  use super::{primitives::*, *};
+  use super::{user_api::*, *};
 
   /// Graph Coordinates
   // NB: all these Refs have nice properties, which includes being storeable
@@ -190,7 +191,7 @@ pub mod lowering_to_indices {
   /// Mapping to Tokens
 
   #[derive(Debug, Clone, PartialEq, Eq)]
-  pub struct TokenGrammar<Tok: Debug+PartialEq+Eq+Hash+Copy+Clone> {
+  pub struct TokenGrammar<Tok: Debug+PartialEq+Eq+Hash+Copy+Clone+TypeName> {
     pub graph: LoweredProductions,
     pub alphabet: Vec<Tok>,
   }
@@ -198,7 +199,7 @@ pub mod lowering_to_indices {
   #[derive(Debug, Clone, PartialEq, Eq)]
   pub struct GrammarConstructionError(pub String);
 
-  impl<Tok: Debug+PartialEq+Eq+Hash+Copy+Clone> TokenGrammar<Tok> {
+  impl<Tok: Debug+PartialEq+Eq+Hash+Copy+Clone+TypeName> TokenGrammar<Tok> {
     fn walk_productions_and_split_literal_strings(
       prods: &SimultaneousProductions<Tok>,
     ) -> Result<Self, GrammarConstructionError> {
@@ -954,7 +955,7 @@ pub mod grammar_indexing {
   // I believe makes it easier to have the runtime we want just fall out of the
   // code without too much work.
   #[derive(Debug, Clone, PartialEq, Eq)]
-  pub struct PreprocessedGrammar<Tok: Debug+PartialEq+Eq+Hash+Copy+Clone> {
+  pub struct PreprocessedGrammar<Tok: Debug+PartialEq+Eq+Hash+Copy+Clone+TypeName> {
     // These don't need to be quick to access or otherwise optimized for the algorithm until we
     // create a `Parse` -- these are chosen to reduce redundancy.
     // `M: T -> {Q}`, where `{Q}` is sets of states!
@@ -964,7 +965,7 @@ pub mod grammar_indexing {
     pub state_transition_graph: CyclicGraphDecomposition,
   }
 
-  impl<Tok: Debug+PartialEq+Eq+Hash+Copy+Clone> PreprocessedGrammar<Tok> {
+  impl<Tok: Debug+PartialEq+Eq+Hash+Copy+Clone+TypeName> PreprocessedGrammar<Tok> {
     /* Intended to reduce visual clutter in the implementation of interval
      * production. */
     fn make_pos_neg_anon_steps(cur_index: usize) -> (EpsilonGraphVertex, EpsilonGraphVertex) {
@@ -1081,7 +1082,7 @@ pub mod parsing {
   use super::{grammar_indexing::*, lowering_to_indices::*, *};
 
   #[derive(Debug, Clone)]
-  pub struct Input<Tok: Debug+PartialEq+Eq+Hash+Copy+Clone>(pub Vec<Tok>);
+  pub struct Input<Tok: Debug+PartialEq+Eq+Hash+Copy+Clone+TypeName>(pub Vec<Tok>);
 
   #[derive(Debug, Copy, Clone, PartialEq, Eq, Hash)]
   pub struct InputTokenIndex(pub usize);
@@ -1236,7 +1237,7 @@ pub mod parsing {
       paired_segments
     }
 
-    fn get_possible_states_for_input<Tok: Debug+PartialEq+Eq+Hash+Copy+Clone>(
+    fn get_possible_states_for_input<Tok: Debug+PartialEq+Eq+Hash+Copy+Clone+TypeName>(
       mapping: &IndexMap<Tok, Vec<TokenPosition>>,
       input: &Input<Tok>,
     ) -> Vec<PossibleStates>
@@ -1261,7 +1262,7 @@ pub mod parsing {
         .collect()
     }
 
-    pub fn new<Tok: Debug+PartialEq+Eq+Hash+Copy+Clone>(
+    pub fn new<Tok: Debug+PartialEq+Eq+Hash+Copy+Clone+TypeName>(
       grammar: &PreprocessedGrammar<Tok>,
       input: &Input<Tok>,
     ) -> Self
@@ -1636,6 +1637,71 @@ pub mod parsing {
   }
 }
 
+pub mod binding {
+  use super::{lowering_to_indices::*, *};
+
+  #[derive(Debug, Clone, PartialEq, Eq, Hash)]
+  pub struct BindingError(String);
+
+  pub trait Group<T> {
+    /* NB: Non-empty! */
+    fn elements(&self) -> &[CaseEl];
+    fn provides(&self) -> Result<T, BindingError>;
+  }
+
+  #[derive(Debug, Clone, PartialEq, Eq)]
+  pub struct StringGroup<'a, Tok: Debug+PartialEq+Eq+Hash+Copy+Clone+TypeName> {
+    pub els: &'a [CaseEl],
+    pub grammar: &'a TokenGrammar<Tok>,
+  }
+
+  impl<'a, Tok: Debug+PartialEq+Eq+Hash+Copy+Clone+TypeName> Group<Vec<Tok>>
+    for StringGroup<'a, Tok>
+  {
+    fn elements(&self) -> &[CaseEl] { self.els }
+
+    fn provides(&self) -> Result<Vec<Tok>, BindingError> {
+      self
+        .els
+        .iter()
+        .map(|case_el| match case_el {
+          CaseEl::Tok(TokRef(i)) => self
+            .grammar
+            .alphabet
+            .get(*i)
+            .map(|tok| Ok(tok.clone()))
+            .unwrap_or_else(|| {
+              Err(BindingError(format!(
+                "unrecognized token reference {:?}",
+                TokRef(*i)
+              )))
+            }),
+          CaseEl::Prod(_) => Err(BindingError(format!(
+            "only token refs are allowed in a StringGroup! was: {:?}",
+            self
+          ))),
+        })
+        .collect()
+    }
+  }
+
+  #[derive(Debug, Clone, PartialEq, Eq)]
+  pub struct ProdRefGroup<'a, Tok: Debug+PartialEq+Eq+Hash+Copy+Clone+TypeName, T: TypeName> {
+    pub prod_ref: ProdRef,
+    pub grammar: &'a TokenGrammar<Tok>,
+  }
+
+  impl<'a, Tok: Debug+PartialEq+Eq+Hash+Copy+Clone+TypeName, T: TypeName> Group<T>
+    for ProdRefGroup<'a, Tok, T>
+  {
+    fn elements(&self) -> &[CaseEl] { &[CaseEl::Prod(*self.prod_ref)] }
+
+    fn provides(&self) -> Result<T, BindingError> {
+      /* TODO: figure out how to  */
+    }
+  }
+}
+
 ///
 /// Syntax sugar for inline modifications to productions.
 pub mod operators {
@@ -1738,7 +1804,7 @@ pub mod operators {
 
 #[cfg(test)]
 mod tests {
-  use super::{grammar_indexing::*, lowering_to_indices::*, parsing::*, primitives::*, *};
+  use super::{grammar_indexing::*, lowering_to_indices::*, parsing::*, user_api::*, *};
 
   #[test]
   fn token_grammar_unsorted_alphabet() {
