@@ -53,7 +53,6 @@
 
 extern crate indexmap;
 extern crate priority_queue;
-#[macro_use]
 extern crate typename;
 
 use indexmap::{IndexMap, IndexSet};
@@ -72,9 +71,8 @@ pub mod user_api {
   #[derive(Debug, Clone, PartialEq, Eq, Hash, TypeName)]
   pub struct Literal<Tok: Debug+PartialEq+Eq+Hash+Copy+Clone+TypeName>(pub Vec<Tok>);
 
-  impl Literal<char> {
-    /* TODO: rename this to `from` and implement `From`! */
-    pub fn new(s: &str) -> Self { Literal(s.chars().collect()) }
+  impl From<&str> for Literal<char> {
+    fn from(s: &str) -> Self { Literal(s.chars().collect()) }
   }
 
   // A reference to another production -- the string must match the assigned name
@@ -609,16 +607,20 @@ pub mod grammar_indexing {
   pub struct CyclicGraphDecomposition {
     pub cyclic_subgraph: EpsilonNodeStateSubgraph,
     pub pairwise_state_transitions: Vec<CompletedStatePairWithVertices>,
+    pub anon_step_mapping: IndexMap<AnonSym, TokenPosition>,
   }
 
-  #[derive(Debug, Clone, PartialEq, Eq, Hash)]
-  pub struct EpsilonIntervalGraph(pub Vec<ContiguousNonterminalInterval>);
+  #[derive(Debug, Clone, PartialEq, Eq)]
+  pub struct EpsilonIntervalGraph {
+    pub all_intervals: Vec<ContiguousNonterminalInterval>,
+    pub anon_step_mapping: IndexMap<AnonSym, TokenPosition>,
+  }
 
   impl EpsilonIntervalGraph {
     pub fn find_start_end_indices(&self) -> IndexMap<ProdRef, StartEndEpsilonIntervals> {
       let mut epsilon_subscripts_index: IndexMap<ProdRef, StartEndEpsilonIntervals> =
         IndexMap::new();
-      let EpsilonIntervalGraph(all_intervals) = self;
+      let EpsilonIntervalGraph { all_intervals, .. } = self;
       for interval in all_intervals.iter() {
         let ContiguousNonterminalInterval(vertices) = interval.clone();
         /* We should always have a start and end node. */
@@ -641,9 +643,12 @@ pub mod grammar_indexing {
       epsilon_subscripts_index
     }
 
-    pub fn connect_all_vertices(&self) -> CyclicGraphDecomposition {
+    pub fn connect_all_vertices(self) -> CyclicGraphDecomposition {
       let intervals_indexed_by_start_and_end = self.find_start_end_indices();
-      let EpsilonIntervalGraph(all_intervals) = self;
+      let EpsilonIntervalGraph {
+        all_intervals,
+        anon_step_mapping,
+      } = self;
 
       let mut all_completed_pairs_with_vertices: Vec<CompletedStatePairWithVertices> = vec![];
       /* NB: When finding token transitions, we keep track of which intermediate
@@ -710,6 +715,7 @@ pub mod grammar_indexing {
       CyclicGraphDecomposition {
         cyclic_subgraph: merged_stack_cycles,
         pairwise_state_transitions: all_completed_pairs_with_vertices,
+        anon_step_mapping,
       }
     }
   }
@@ -968,10 +974,14 @@ pub mod grammar_indexing {
   impl<Tok: Debug+PartialEq+Eq+Hash+Copy+Clone+TypeName> PreprocessedGrammar<Tok> {
     /* Intended to reduce visual clutter in the implementation of interval
      * production. */
-    fn make_pos_neg_anon_steps(cur_index: usize) -> (EpsilonGraphVertex, EpsilonGraphVertex) {
+    fn make_pos_neg_anon_steps(
+      cur_index: usize,
+    ) -> (AnonSym, EpsilonGraphVertex, EpsilonGraphVertex) {
+      let the_sym = AnonSym(cur_index);
       (
-        EpsilonGraphVertex::Anon(AnonStep::Positive(AnonSym(cur_index))),
-        EpsilonGraphVertex::Anon(AnonStep::Negative(AnonSym(cur_index))),
+        the_sym,
+        EpsilonGraphVertex::Anon(AnonStep::Positive(the_sym)),
+        EpsilonGraphVertex::Anon(AnonStep::Negative(the_sym)),
       )
     }
 
@@ -991,6 +1001,7 @@ pub mod grammar_indexing {
        * outer loop. */
       let mut cur_anon_sym_index: usize = 0;
       let mut really_all_intervals: Vec<ContiguousNonterminalInterval> = vec![];
+      let mut anon_step_mapping: IndexMap<AnonSym, TokenPosition> = IndexMap::new();
       for (prod_ind, the_prod) in prods.iter().enumerate() {
         let cur_prod_ref = ProdRef(prod_ind);
         let ProductionImpl(cases) = the_prod;
@@ -1016,7 +1027,11 @@ pub mod grammar_indexing {
                * onto to satisfy this case of this production. */
               CaseEl::Prod(target_subprod_ref) => {
                 /* Generate anonymous steps for the current subprod split. */
-                let (pos_anon, neg_anon) = Self::make_pos_neg_anon_steps(cur_anon_sym_index);
+                let (new_anon_sym, pos_anon, neg_anon) =
+                  Self::make_pos_neg_anon_steps(cur_anon_sym_index);
+
+                anon_step_mapping.insert(new_anon_sym, cur_pos.clone());
+
                 /* Generate the interval terminating at the current subprod split. */
                 let suffix_for_subprod_split = vec![
                   pos_anon,
@@ -1062,7 +1077,10 @@ pub mod grammar_indexing {
           really_all_intervals.extend(all_intervals_from_this_case);
         }
       }
-      EpsilonIntervalGraph(really_all_intervals)
+      EpsilonIntervalGraph {
+        all_intervals: really_all_intervals,
+        anon_step_mapping,
+      }
     }
 
     pub fn new(grammar: &TokenGrammar<Tok>) -> Self {
@@ -1210,6 +1228,7 @@ pub mod parsing {
     pub input_as_states: Vec<PossibleStates>,
     /* TODO: ignore cycles for now! */
     pub pairwise_state_transition_table: IndexMap<StatePair, Vec<StackDiffSegment>>,
+    pub anon_step_mapping: IndexMap<AnonSym, TokenPosition>,
   }
 
   impl ParseableGrammar {
@@ -1263,7 +1282,7 @@ pub mod parsing {
     }
 
     pub fn new<Tok: Debug+PartialEq+Eq+Hash+Copy+Clone+TypeName>(
-      grammar: &PreprocessedGrammar<Tok>,
+      grammar: PreprocessedGrammar<Tok>,
       input: &Input<Tok>,
     ) -> Self
     {
@@ -1271,13 +1290,15 @@ pub mod parsing {
         state_transition_graph:
           CyclicGraphDecomposition {
             pairwise_state_transitions,
+            anon_step_mapping,
             ..
           },
         token_states_mapping,
       } = grammar;
       ParseableGrammar {
-        input_as_states: Self::get_possible_states_for_input(token_states_mapping, input),
-        pairwise_state_transition_table: Self::connect_stack_diffs(pairwise_state_transitions),
+        input_as_states: Self::get_possible_states_for_input(&token_states_mapping, input),
+        pairwise_state_transition_table: Self::connect_stack_diffs(&pairwise_state_transitions),
+        anon_step_mapping,
       }
     }
   }
@@ -1380,6 +1401,7 @@ pub mod parsing {
       let ParseableGrammar {
         input_as_states,
         pairwise_state_transition_table,
+        ..
       } = grammar;
 
       let mut parse = Self::new(grammar);
@@ -1637,70 +1659,8 @@ pub mod parsing {
   }
 }
 
-pub mod binding {
-  use super::{lowering_to_indices::*, *};
 
-  #[derive(Debug, Clone, PartialEq, Eq, Hash)]
-  pub struct BindingError(String);
 
-  pub trait Group<T> {
-    /* NB: Non-empty! */
-    fn elements(&self) -> &[CaseEl];
-    fn provides(&self) -> Result<T, BindingError>;
-  }
-
-  #[derive(Debug, Clone, PartialEq, Eq)]
-  pub struct StringGroup<'a, Tok: Debug+PartialEq+Eq+Hash+Copy+Clone+TypeName> {
-    pub els: &'a [CaseEl],
-    pub grammar: &'a TokenGrammar<Tok>,
-  }
-
-  impl<'a, Tok: Debug+PartialEq+Eq+Hash+Copy+Clone+TypeName> Group<Vec<Tok>>
-    for StringGroup<'a, Tok>
-  {
-    fn elements(&self) -> &[CaseEl] { self.els }
-
-    fn provides(&self) -> Result<Vec<Tok>, BindingError> {
-      self
-        .els
-        .iter()
-        .map(|case_el| match case_el {
-          CaseEl::Tok(TokRef(i)) => self
-            .grammar
-            .alphabet
-            .get(*i)
-            .map(|tok| Ok(tok.clone()))
-            .unwrap_or_else(|| {
-              Err(BindingError(format!(
-                "unrecognized token reference {:?}",
-                TokRef(*i)
-              )))
-            }),
-          CaseEl::Prod(_) => Err(BindingError(format!(
-            "only token refs are allowed in a StringGroup! was: {:?}",
-            self
-          ))),
-        })
-        .collect()
-    }
-  }
-
-  #[derive(Debug, Clone, PartialEq, Eq)]
-  pub struct ProdRefGroup<'a, Tok: Debug+PartialEq+Eq+Hash+Copy+Clone+TypeName, T: TypeName> {
-    pub prod_ref: ProdRef,
-    pub grammar: &'a TokenGrammar<Tok>,
-  }
-
-  impl<'a, Tok: Debug+PartialEq+Eq+Hash+Copy+Clone+TypeName, T: TypeName> Group<T>
-    for ProdRefGroup<'a, Tok, T>
-  {
-    fn elements(&self) -> &[CaseEl] { &[CaseEl::Prod(*self.prod_ref)] }
-
-    fn provides(&self) -> Result<T, BindingError> {
-      /* TODO: figure out how to  */
-    }
-  }
-}
 
 ///
 /// Syntax sugar for inline modifications to productions.
@@ -1794,7 +1754,6 @@ pub mod operators {
       new_prod.push(CaseImpl(vec![]));
       /* Add a non-empty case. */
       new_prod.push(CaseImpl(self.group.clone()));
-
       OperatorResult {
         result: vec![CaseEl::Prod(new_prod_ref)],
       }
@@ -1811,7 +1770,7 @@ mod tests {
     let prods = SimultaneousProductions(
       [(
         ProductionReference::new("xxx"),
-        Production(vec![Case(vec![CaseElement::Lit(Literal::new("cab"))])]),
+        Production(vec![Case(vec![CaseElement::Lit(Literal::from("cab"))])]),
       )]
       .iter()
       .cloned()
@@ -1919,16 +1878,19 @@ mod tests {
       ContiguousNonterminalInterval(vec![b_start, b_1_anon_0_start, a_start]);
     let a_end_to_b_end_1 = ContiguousNonterminalInterval(vec![a_end, b_1_anon_0_end, b_1_1, b_end]);
 
-    assert_eq!(
-      noncyclic_interval_graph,
-      EpsilonIntervalGraph(vec![
+    assert_eq!(noncyclic_interval_graph, EpsilonIntervalGraph {
+      all_intervals: vec![
         a_0.clone(),
         b_start_to_a_start_0.clone(),
         a_end_to_b_end_0.clone(),
         b_start_to_a_start_1.clone(),
         a_end_to_b_end_1.clone(),
-      ])
-    );
+      ],
+      anon_step_mapping: [
+        (AnonSym(0), TokenPosition::new(1, 0, 2)),
+        (AnonSym(1), TokenPosition::new(1, 1, 0)),
+      ].iter().cloned().collect(),
+    });
 
     /* Now check for indices. */
     let intervals_by_start_and_end = noncyclic_interval_graph.find_start_end_indices();
@@ -1953,12 +1915,17 @@ mod tests {
     let CyclicGraphDecomposition {
       cyclic_subgraph: merged_stack_cycles,
       pairwise_state_transitions: all_completed_pairs_with_vertices,
+      anon_step_mapping,
     } = noncyclic_interval_graph.connect_all_vertices();
     /* There are no stack cycles in the noncyclic graph. */
     assert_eq!(merged_stack_cycles, EpsilonNodeStateSubgraph {
       vertex_mapping: IndexMap::new(),
       trie_node_universe: vec![],
     });
+    assert_eq!(anon_step_mapping, [
+      (AnonSym(0), TokenPosition::new(1, 0, 2)),
+      (AnonSym(1), TokenPosition::new(1, 1, 0)),
+    ].iter().cloned().collect::<IndexMap<_, _>>());
     assert_eq!(all_completed_pairs_with_vertices, vec![
       /* 1 */
       CompletedStatePairWithVertices::new(
@@ -2018,9 +1985,8 @@ mod tests {
     let prods = basic_productions();
     let grammar = TokenGrammar::new(&prods).unwrap();
     let interval_graph = PreprocessedGrammar::produce_terminals_interval_graph(&grammar);
-    assert_eq!(
-      interval_graph.clone(),
-      EpsilonIntervalGraph(vec![
+    assert_eq!(interval_graph.clone(), EpsilonIntervalGraph {
+      all_intervals: vec![
         ContiguousNonterminalInterval(vec![
           EpsilonGraphVertex::Start(ProdRef(0)),
           EpsilonGraphVertex::State(TokenPosition::new(0, 0, 0)),
@@ -2084,8 +2050,15 @@ mod tests {
           EpsilonGraphVertex::State(TokenPosition::new(1, 2, 2)),
           EpsilonGraphVertex::End(ProdRef(1)),
         ]),
-      ])
-    );
+      ],
+      anon_step_mapping: [
+        (AnonSym(0), TokenPosition::new(0, 1, 1)),
+        (AnonSym(1), TokenPosition::new(0, 2, 2)),
+        (AnonSym(2), TokenPosition::new(1, 0, 0)),
+        (AnonSym(3), TokenPosition::new(1, 1, 0)),
+        (AnonSym(4), TokenPosition::new(1, 2, 0)),
+      ].iter().cloned().collect(),
+    });
   }
 
   /* TODO: consider creating/using a generic tree diffing algorithm in case
@@ -2895,7 +2868,7 @@ mod tests {
       [(
         ProductionReference::new("b"),
         Production(vec![Case(vec![
-          CaseElement::Lit(Literal::new("ab")),
+          CaseElement::Lit(Literal::from("ab")),
           CaseElement::Prod(ProductionReference::new("c")),
         ])]),
       )]
@@ -2919,7 +2892,7 @@ mod tests {
     let preprocessed_grammar = PreprocessedGrammar::new(&token_grammar);
     let string_input = "ab";
     let input = Input(string_input.chars().collect());
-    let parseable_grammar = ParseableGrammar::new::<char>(&preprocessed_grammar, &input);
+    let parseable_grammar = ParseableGrammar::new::<char>(preprocessed_grammar, &input);
 
     assert_eq!(parseable_grammar.input_as_states.clone(), vec![
       PossibleStates(vec![LoweredState::Start]),
@@ -3887,18 +3860,18 @@ mod tests {
       [
         (
           ProductionReference::new("a"),
-          Production(vec![Case(vec![CaseElement::Lit(Literal::new("ab"))])]),
+          Production(vec![Case(vec![CaseElement::Lit(Literal::from("ab"))])]),
         ),
         (
           ProductionReference::new("b"),
           Production(vec![
             Case(vec![
-              CaseElement::Lit(Literal::new("ab")),
+              CaseElement::Lit(Literal::from("ab")),
               CaseElement::Prod(ProductionReference::new("a")),
             ]),
             Case(vec![
               CaseElement::Prod(ProductionReference::new("a")),
-              CaseElement::Lit(Literal::new("a")),
+              CaseElement::Lit(Literal::from("a")),
             ]),
           ]),
         ),
@@ -3915,14 +3888,14 @@ mod tests {
         (
           ProductionReference::new("P_1"),
           Production(vec![
-            Case(vec![CaseElement::Lit(Literal::new("abc"))]),
+            Case(vec![CaseElement::Lit(Literal::from("abc"))]),
             Case(vec![
-              CaseElement::Lit(Literal::new("a")),
+              CaseElement::Lit(Literal::from("a")),
               CaseElement::Prod(ProductionReference::new("P_1")),
-              CaseElement::Lit(Literal::new("c")),
+              CaseElement::Lit(Literal::from("c")),
             ]),
             Case(vec![
-              CaseElement::Lit(Literal::new("bc")),
+              CaseElement::Lit(Literal::from("bc")),
               CaseElement::Prod(ProductionReference::new("P_2")),
             ]),
           ]),
@@ -3934,7 +3907,7 @@ mod tests {
             Case(vec![CaseElement::Prod(ProductionReference::new("P_2"))]),
             Case(vec![
               CaseElement::Prod(ProductionReference::new("P_1")),
-              CaseElement::Lit(Literal::new("bc")),
+              CaseElement::Lit(Literal::from("bc")),
             ]),
           ]),
         ),
