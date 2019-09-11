@@ -18,6 +18,7 @@
     along with this program.  If not, see <http://www.gnu.org/licenses/>.
 */
 #![feature(fn_traits)]
+#![feature(trace_macros)]
 /* These clippy lint descriptions are purely non-functional and do not affect the functionality
  * or correctness of the code.
  * TODO: rustfmt breaks multiline comments when used one on top of another! (each with its own
@@ -51,6 +52,9 @@
 // Arc<Mutex> can be more clear than needing to grok Orderings:
 #![allow(clippy::mutex_atomic)]
 
+extern crate frunk;
+/* #[macro_use] */
+/* extern crate gensym; */
 extern crate indexmap;
 extern crate priority_queue;
 extern crate typename;
@@ -65,8 +69,51 @@ use std::{
   hash::{Hash, Hasher},
 };
 
+
+pub mod binding {
+  /* use super::{user_api::*, *}; */
+
+  /* #[derive(Debug, Clone, PartialEq, Eq, Hash)] */
+  /* pub struct BindingError(String); */
+
+  /* pub trait Acceptor<Input, Output> { */
+  /* fn accept(&self, input: Input) -> Result<Output, BindingError>; */
+  /* } */
+}
+
+
 pub mod user_api {
+  /* use super::{binding::*, *}; */
   use super::*;
+
+  /* #[macro_export] */
+  /* macro_rules! productions { */
+  /* ($($production_type:ty => [ */
+  /* $(case ($($a:ident: $t:ty => $x:expr),*) => $case_function_body:block),* */
+  /* ]),*) => {{ */
+  /* SimultaneousProductions([ */
+  /* $((ProductionReference::<$production_type>::new(), */
+  /* Production(vec![ */
+  /* $({ */
+  /* pub struct Args { */
+  /* $(pub $a: $t),* */
+  /* } */
+
+  /* impl Producer<$production_type> for Args { */
+  /* fn produce(&self) -> ProducerResult<$production_type> { */
+  /* match self.clone() { */
+  /* Args { $($a),* } => $case_function_body */
+  /* } */
+  /* } */
+  /* } */
+
+  /* Case::<_, ($($t),*)>(($($x),*): ($($t),*)) */
+  /* }),* */
+  /* ]) */
+  /* )),* */
+  /* ].iter().cloned().collect()) */
+  /* }}; */
+  /* } */
 
   #[derive(Debug, Clone, PartialEq, Eq, Hash, TypeName)]
   pub struct Literal<Tok: Debug+PartialEq+Eq+Hash+Copy+Clone+TypeName>(pub Vec<Tok>);
@@ -321,6 +368,12 @@ pub mod lowering_to_indices {
 /// matter here.
 pub mod grammar_indexing {
   use super::{lowering_to_indices::*, *};
+
+  #[derive(Debug, Copy, Clone, PartialEq, Eq, Hash, TypeName)]
+  pub struct ProdCaseRef {
+    pub prod: ProdRef,
+    pub case: CaseRef,
+  }
 
   #[derive(Debug, Copy, Clone, PartialEq, Eq, Hash)]
   pub struct StackSym(pub ProdRef);
@@ -607,13 +660,13 @@ pub mod grammar_indexing {
   pub struct CyclicGraphDecomposition {
     pub cyclic_subgraph: EpsilonNodeStateSubgraph,
     pub pairwise_state_transitions: Vec<CompletedStatePairWithVertices>,
-    pub anon_step_mapping: IndexMap<AnonSym, TokenPosition>,
+    pub anon_step_mapping: IndexMap<AnonSym, ProdCaseRef>,
   }
 
   #[derive(Debug, Clone, PartialEq, Eq)]
   pub struct EpsilonIntervalGraph {
     pub all_intervals: Vec<ContiguousNonterminalInterval>,
-    pub anon_step_mapping: IndexMap<AnonSym, TokenPosition>,
+    pub anon_step_mapping: IndexMap<AnonSym, ProdCaseRef>,
   }
 
   impl EpsilonIntervalGraph {
@@ -975,11 +1028,15 @@ pub mod grammar_indexing {
     /* Intended to reduce visual clutter in the implementation of interval
      * production. */
     fn make_pos_neg_anon_steps(
-      cur_index: usize,
-    ) -> (AnonSym, EpsilonGraphVertex, EpsilonGraphVertex) {
-      let the_sym = AnonSym(cur_index);
+      cur_index: &mut usize,
+      anon_step_mapping: &mut IndexMap<AnonSym, ProdCaseRef>,
+      cur_case: ProdCaseRef,
+    ) -> (EpsilonGraphVertex, EpsilonGraphVertex)
+    {
+      let the_sym = AnonSym(*cur_index);
+      *cur_index += 1;
+      anon_step_mapping.insert(the_sym, cur_case);
       (
-        the_sym,
         EpsilonGraphVertex::Anon(AnonStep::Positive(the_sym)),
         EpsilonGraphVertex::Anon(AnonStep::Negative(the_sym)),
       )
@@ -1001,7 +1058,7 @@ pub mod grammar_indexing {
        * outer loop. */
       let mut cur_anon_sym_index: usize = 0;
       let mut really_all_intervals: Vec<ContiguousNonterminalInterval> = vec![];
-      let mut anon_step_mapping: IndexMap<AnonSym, TokenPosition> = IndexMap::new();
+      let mut anon_step_mapping: IndexMap<AnonSym, ProdCaseRef> = IndexMap::new();
       for (prod_ind, the_prod) in prods.iter().enumerate() {
         let cur_prod_ref = ProdRef(prod_ind);
         let ProductionImpl(cases) = the_prod;
@@ -1009,8 +1066,18 @@ pub mod grammar_indexing {
           let cur_case_ref = CaseRef(case_ind);
           let CaseImpl(elements_of_case) = the_case;
           let mut all_intervals_from_this_case: Vec<ContiguousNonterminalInterval> = vec![];
+          /* NB: make an anon sym whenever stepping onto a case! */
+          let cur_prod_case = ProdCaseRef {
+            prod: cur_prod_ref,
+            case: cur_case_ref,
+          };
+          let (pos_case_anon, neg_case_anon) = Self::make_pos_neg_anon_steps(
+            &mut cur_anon_sym_index,
+            &mut anon_step_mapping,
+            cur_prod_case,
+          );
           let mut cur_elements: Vec<EpsilonGraphVertex> =
-            vec![EpsilonGraphVertex::Start(cur_prod_ref)];
+            vec![EpsilonGraphVertex::Start(cur_prod_ref), pos_case_anon];
           for (element_of_case_ind, el) in elements_of_case.iter().enumerate() {
             let cur_el_ref = CaseElRef(element_of_case_ind);
             let cur_pos = TokenPosition {
@@ -1027,10 +1094,11 @@ pub mod grammar_indexing {
                * onto to satisfy this case of this production. */
               CaseEl::Prod(target_subprod_ref) => {
                 /* Generate anonymous steps for the current subprod split. */
-                let (new_anon_sym, pos_anon, neg_anon) =
-                  Self::make_pos_neg_anon_steps(cur_anon_sym_index);
-
-                anon_step_mapping.insert(new_anon_sym, cur_pos.clone());
+                let (pos_anon, neg_anon) = Self::make_pos_neg_anon_steps(
+                  &mut cur_anon_sym_index,
+                  &mut anon_step_mapping,
+                  cur_prod_case,
+                );
 
                 /* Generate the interval terminating at the current subprod split. */
                 let suffix_for_subprod_split = vec![
@@ -1055,8 +1123,6 @@ pub mod grammar_indexing {
                   EpsilonGraphVertex::End(*target_subprod_ref),
                   neg_anon,
                 ]);
-                /* Bump the loop-global anonymous symbol index! */
-                cur_anon_sym_index += 1;
                 /* Register the interval we just cut off in the results list. */
                 all_intervals_from_this_case.push(interval_upto_subprod);
               },
@@ -1064,7 +1130,7 @@ pub mod grammar_indexing {
           }
           /* Construct the interval of all remaining nonterminals to the end of the
            * production. */
-          let suffix_for_end_of_case = vec![EpsilonGraphVertex::End(cur_prod_ref)];
+          let suffix_for_end_of_case = vec![neg_case_anon, EpsilonGraphVertex::End(cur_prod_ref)];
           let final_interval = ContiguousNonterminalInterval(
             cur_elements
               .into_iter()
@@ -1228,7 +1294,7 @@ pub mod parsing {
     pub input_as_states: Vec<PossibleStates>,
     /* TODO: ignore cycles for now! */
     pub pairwise_state_transition_table: IndexMap<StatePair, Vec<StackDiffSegment>>,
-    pub anon_step_mapping: IndexMap<AnonSym, TokenPosition>,
+    pub anon_step_mapping: IndexMap<AnonSym, ProdCaseRef>,
   }
 
   impl ParseableGrammar {
@@ -1644,13 +1710,13 @@ pub mod parsing {
 
         /* Check if we now span across the whole input! */
         /* NB: It's RIDICULOUS how simple this check is!!! */
-        if cur_left == LoweredState::Start
-          && cur_right == LoweredState::End
-          && cur_stack_diff.0.is_empty()
-        {
-          Ok(ParseResult::Complete(cur_span.id))
-        } else {
-          Ok(ParseResult::Incomplete)
+        match (cur_left, cur_right, &cur_stack_diff) {
+          (LoweredState::Start, LoweredState::End, &StackDiffSegment(ref stack_diff))
+            if stack_diff.is_empty() =>
+          {
+            Ok(ParseResult::Complete(cur_span.id))
+          },
+          _ => Ok(ParseResult::Incomplete),
         }
       } else {
         Err(ParsingFailure("no more spans to iterate over!".to_string()))
@@ -1659,7 +1725,333 @@ pub mod parsing {
   }
 }
 
+pub mod reconstruction {
+  use super::{grammar_indexing::*, parsing::*, *};
 
+  #[derive(Debug, Clone, PartialEq, Eq, Hash, TypeName)]
+  pub struct ReconstructionError(String);
+
+  #[derive(Debug, Clone, PartialEq, Eq, Hash, TypeName)]
+  pub struct IntermediateReconstruction {
+    pub prod_case: ProdCaseRef,
+    pub args: VecDeque<CompleteSubReconstruction>,
+  }
+
+  impl IntermediateReconstruction {
+    pub fn empty_for_case(prod_case: ProdCaseRef) -> Self {
+      IntermediateReconstruction {
+        prod_case,
+        args: VecDeque::new(),
+      }
+    }
+  }
+
+  #[derive(Debug, Clone, PartialEq, Eq, Hash, TypeName)]
+  pub enum DirectionalIntermediateReconstruction {
+    Rightwards(IntermediateReconstruction),
+    Leftwards(IntermediateReconstruction),
+  }
+
+  impl DirectionalIntermediateReconstruction {
+    pub fn add_completed(self, sub: CompleteSubReconstruction) -> Self {
+      match self {
+        Self::Rightwards(IntermediateReconstruction {
+          prod_case,
+          mut args,
+        }) => {
+          args.push_back(sub);
+          Self::Rightwards(IntermediateReconstruction { prod_case, args })
+        },
+        Self::Leftwards(IntermediateReconstruction {
+          prod_case,
+          mut args,
+        }) => {
+          args.push_front(sub);
+          Self::Leftwards(IntermediateReconstruction { prod_case, args })
+        },
+      }
+    }
+  }
+
+  #[derive(Debug, Clone, PartialEq, Eq, Hash, TypeName)]
+  pub enum ReconstructionElement {
+    Intermediate(DirectionalIntermediateReconstruction),
+    CompletedSub(CompleteSubReconstruction),
+  }
+
+  #[derive(Debug, Clone, PartialEq, Eq, Hash, TypeName)]
+  pub struct InProgressReconstruction {
+    pub elements: VecDeque<ReconstructionElement>,
+  }
+
+  impl InProgressReconstruction {
+    pub fn is_empty(&self) -> bool { self.elements.is_empty() }
+
+    pub fn empty() -> Self {
+      InProgressReconstruction {
+        elements: VecDeque::new(),
+      }
+    }
+
+    pub fn with_elements(elements: Vec<ReconstructionElement>) -> Self {
+      InProgressReconstruction {
+        elements: elements.into_iter().collect(),
+      }
+    }
+
+    pub fn join(mut self, mut other: Self) -> Result<Self, ReconstructionError> {
+      while !self.is_empty() && !other.is_empty() {
+        let left_intermediate = self.elements.pop_back().unwrap();
+        let right_intermediate = other.elements.pop_front().unwrap();
+        match (left_intermediate, right_intermediate) {
+          (
+            ReconstructionElement::Intermediate(DirectionalIntermediateReconstruction::Rightwards(
+              left,
+            )),
+            ReconstructionElement::CompletedSub(complete_right),
+          ) => {
+            let inner_element = ReconstructionElement::Intermediate(
+              DirectionalIntermediateReconstruction::Rightwards(left).add_completed(complete_right),
+            );
+            self.elements.push_back(inner_element);
+          },
+          (
+            ReconstructionElement::CompletedSub(complete_left),
+            ReconstructionElement::Intermediate(DirectionalIntermediateReconstruction::Leftwards(
+              right,
+            )),
+          ) => {
+            let inner_element = ReconstructionElement::Intermediate(
+              DirectionalIntermediateReconstruction::Leftwards(right).add_completed(complete_left),
+            );
+            other.elements.push_front(inner_element);
+          },
+          (
+            ReconstructionElement::Intermediate(DirectionalIntermediateReconstruction::Rightwards(
+              IntermediateReconstruction {
+                prod_case: left_prod_case,
+                args: left_args,
+              },
+            )),
+            ReconstructionElement::Intermediate(DirectionalIntermediateReconstruction::Leftwards(
+              IntermediateReconstruction {
+                prod_case: right_prod_case,
+                args: right_args,
+              },
+            )),
+          ) => {
+            if left_prod_case == right_prod_case {
+              /* Complete the paired group, and push it back onto the left stack. Left was
+               * chosen arbitrarily here. */
+              let inner_element = ReconstructionElement::CompletedSub(
+                CompleteSubReconstruction::Completed(CompletedCaseReconstruction {
+                  prod_case: left_prod_case,
+                  args: left_args
+                    .into_iter()
+                    .chain(right_args.into_iter())
+                    .collect(),
+                }),
+              );
+              self.elements.push_back(inner_element);
+            } else {
+              /* TODO: support non-hierarchical input! */
+              return Err(ReconstructionError(
+                "TODO: non-hierarchical input recovery is not yet supported!".to_string(),
+              ));
+            }
+          },
+          /* Shuffle everything down one! */
+          (
+            ReconstructionElement::Intermediate(DirectionalIntermediateReconstruction::Leftwards(
+              pointing_left,
+            )),
+            x_right,
+          ) => {
+            other.elements.push_front(x_right);
+            other
+              .elements
+              .push_front(ReconstructionElement::Intermediate(
+                DirectionalIntermediateReconstruction::Leftwards(pointing_left),
+              ));
+          },
+          (
+            x_left,
+            ReconstructionElement::Intermediate(DirectionalIntermediateReconstruction::Rightwards(
+              pointing_right,
+            )),
+          ) => {
+            self.elements.push_back(x_left);
+            self.elements.push_back(ReconstructionElement::Intermediate(
+              DirectionalIntermediateReconstruction::Rightwards(pointing_right),
+            ));
+          },
+          (
+            ReconstructionElement::CompletedSub(complete_left),
+            ReconstructionElement::CompletedSub(complete_right),
+          ) => {
+            self
+              .elements
+              .push_back(ReconstructionElement::CompletedSub(complete_left));
+            self
+              .elements
+              .push_back(ReconstructionElement::CompletedSub(complete_right));
+          },
+        }
+      }
+      Ok(InProgressReconstruction::with_elements(
+        self
+          .elements
+          .into_iter()
+          .chain(other.elements.into_iter())
+          .collect(),
+      ))
+    }
+
+    pub fn joined(sub_reconstructions: Vec<Self>) -> Result<Self, ReconstructionError> {
+      sub_reconstructions
+        .into_iter()
+        .fold(Ok(InProgressReconstruction::empty()), |acc, next| {
+          acc.and_then(|acc| acc.join(next))
+        })
+    }
+
+    pub fn new(tree: SpanningSubtreeRef, parse: &Parse) -> Result<Self, ReconstructionError> {
+      let &Parse {
+        grammar: ParseableGrammar {
+          ref anon_step_mapping,
+          ..
+        },
+        ..
+      } = parse;
+      let SpanningSubtree {
+        input_span:
+          FlattenedSpanInfo {
+            stack_diff: StackDiffSegment(stack_diff),
+            ..
+          },
+        parents,
+        ..
+      } = parse
+        .get_spanning_subtree(tree)
+        .map(|x| {
+          eprintln!("tree: {:?}", x);
+          x
+        })
+        .ok_or_else(|| {
+          ReconstructionError(format!(
+            "could not find tree ref {:?} in parse {:?}",
+            tree, parse
+          ))
+        })?;
+      let (prologue, epilogue) = match parents {
+        None => {
+          if stack_diff.is_empty() {
+            panic!("parse: {:?}", parse);
+          }
+          Ok((
+            InProgressReconstruction::empty(),
+            InProgressReconstruction::empty(),
+          ))
+        },
+        Some(ParentInfo {
+          left_parent,
+          right_parent,
+        }) => Self::new(*left_parent, parse)
+          .and_then(|l| Self::new(*right_parent, parse).map(|r| (l, r))),
+      }?;
+      eprintln!("prologue: {:?}, epilogue: {:?}", prologue, epilogue);
+
+      /* Convert the `stack_diff` into its own set of possibly-incomplete
+       * sub-reconstructions, then merge them with `Self::join()`! */
+      let middle_elements: Vec<InProgressReconstruction> = stack_diff
+        .iter()
+        .flat_map(|step| match step {
+          /* NB: "named" steps are only relevant for constructing the interval graph with
+           * anonymous steps, which denote the correct `ProdCaseRef` to use, so we
+           * discard them here. */
+          NamedOrAnonStep::Named(_) => None,
+          NamedOrAnonStep::Anon(anon_step) => match anon_step {
+            AnonStep::Positive(anon_sym) => {
+              let &ProdCaseRef { ref prod, ref case } = anon_step_mapping
+                .get(anon_sym)
+                .expect(format!("no state found for anon sym {:?}", anon_sym).as_str());
+              Some(InProgressReconstruction::with_elements(vec![
+                ReconstructionElement::Intermediate(
+                  DirectionalIntermediateReconstruction::Rightwards(
+                    IntermediateReconstruction::empty_for_case(ProdCaseRef {
+                      prod: *prod,
+                      case: *case,
+                    }),
+                  ),
+                ),
+              ]))
+            },
+            AnonStep::Negative(anon_sym) => {
+              let &ProdCaseRef { ref prod, ref case } = anon_step_mapping
+                .get(anon_sym)
+                .expect(format!("no state found for anon sym {:?}", anon_sym).as_str());
+              Some(InProgressReconstruction::with_elements(vec![
+                ReconstructionElement::Intermediate(
+                  DirectionalIntermediateReconstruction::Leftwards(
+                    IntermediateReconstruction::empty_for_case(ProdCaseRef {
+                      prod: *prod,
+                      case: *case,
+                    }),
+                  ),
+                ),
+              ]))
+            },
+          },
+        })
+        .collect();
+      eprintln!("middle_elements: {:?}", middle_elements);
+
+      InProgressReconstruction::joined(
+        vec![prologue]
+          .into_iter()
+          .chain(middle_elements.into_iter())
+          .chain(vec![epilogue])
+          .collect(),
+      )
+    }
+  }
+
+  #[derive(Debug, Clone, PartialEq, Eq, Hash, TypeName)]
+  pub struct CompletedCaseReconstruction {
+    prod_case: ProdCaseRef,
+    args: Vec<CompleteSubReconstruction>,
+  }
+
+  #[derive(Debug, Clone, PartialEq, Eq, Hash, TypeName)]
+  pub enum CompleteSubReconstruction {
+    State(LoweredState),
+    Completed(CompletedCaseReconstruction),
+  }
+
+  #[derive(Debug, Clone, PartialEq, Eq, Hash, TypeName)]
+  pub struct CompletedWholeReconstruction(pub Vec<CompleteSubReconstruction>);
+
+  impl CompletedWholeReconstruction {
+    pub fn new(
+      maybe_completed_constructions: InProgressReconstruction,
+    ) -> Result<Self, ReconstructionError> {
+      let sub_constructions: Vec<_> = maybe_completed_constructions
+        .elements
+        .into_iter()
+        .map(|el| match el {
+          ReconstructionElement::Intermediate(intermediate_reconstruction) => {
+            Err(ReconstructionError(format!(
+              "expected all sub constructions to be completed! intermediate: {:?}",
+              intermediate_reconstruction
+            )))
+          },
+          ReconstructionElement::CompletedSub(x) => Ok(x),
+        })
+        .collect::<Result<Vec<_>, _>>()?;
+      Ok(CompletedWholeReconstruction(sub_constructions))
+    }
+  }
+}
 
 
 ///
@@ -1763,7 +2155,9 @@ pub mod operators {
 
 #[cfg(test)]
 mod tests {
-  use super::{grammar_indexing::*, lowering_to_indices::*, parsing::*, user_api::*, *};
+  use super::{
+    grammar_indexing::*, lowering_to_indices::*, parsing::*, reconstruction::*, user_api::*, *,
+  };
 
   #[test]
   fn token_grammar_unsorted_alphabet() {
@@ -1887,9 +2281,18 @@ mod tests {
         a_end_to_b_end_1.clone(),
       ],
       anon_step_mapping: [
-        (AnonSym(0), TokenPosition::new(1, 0, 2)),
-        (AnonSym(1), TokenPosition::new(1, 1, 0)),
-      ].iter().cloned().collect(),
+        (AnonSym(0), ProdCaseRef {
+          prod: ProdRef(1),
+          case: CaseRef(0)
+        }),
+        (AnonSym(1), ProdCaseRef {
+          prod: ProdRef(1),
+          case: CaseRef(1)
+        }),
+      ]
+      .iter()
+      .cloned()
+      .collect(),
     });
 
     /* Now check for indices. */
@@ -1922,10 +2325,22 @@ mod tests {
       vertex_mapping: IndexMap::new(),
       trie_node_universe: vec![],
     });
-    assert_eq!(anon_step_mapping, [
-      (AnonSym(0), TokenPosition::new(1, 0, 2)),
-      (AnonSym(1), TokenPosition::new(1, 1, 0)),
-    ].iter().cloned().collect::<IndexMap<_, _>>());
+    assert_eq!(
+      anon_step_mapping,
+      [
+        (AnonSym(0), ProdCaseRef {
+          prod: ProdRef(1),
+          case: CaseRef(0)
+        }),
+        (AnonSym(1), ProdCaseRef {
+          prod: ProdRef(1),
+          case: CaseRef(1)
+        }),
+      ]
+      .iter()
+      .cloned()
+      .collect::<IndexMap<_, _>>()
+    );
     assert_eq!(all_completed_pairs_with_vertices, vec![
       /* 1 */
       CompletedStatePairWithVertices::new(
@@ -2052,12 +2467,30 @@ mod tests {
         ]),
       ],
       anon_step_mapping: [
-        (AnonSym(0), TokenPosition::new(0, 1, 1)),
-        (AnonSym(1), TokenPosition::new(0, 2, 2)),
-        (AnonSym(2), TokenPosition::new(1, 0, 0)),
-        (AnonSym(3), TokenPosition::new(1, 1, 0)),
-        (AnonSym(4), TokenPosition::new(1, 2, 0)),
-      ].iter().cloned().collect(),
+        (AnonSym(0), ProdCaseRef {
+          prod: ProdRef(0),
+          case: CaseRef(1)
+        }),
+        (AnonSym(1), ProdCaseRef {
+          prod: ProdRef(0),
+          case: CaseRef(2)
+        }),
+        (AnonSym(2), ProdCaseRef {
+          prod: ProdRef(1),
+          case: CaseRef(0)
+        }),
+        (AnonSym(3), ProdCaseRef {
+          prod: ProdRef(1),
+          case: CaseRef(1)
+        }),
+        (AnonSym(4), ProdCaseRef {
+          prod: ProdRef(1),
+          case: CaseRef(2)
+        }),
+      ]
+      .iter()
+      .cloned()
+      .collect(),
     });
   }
 
@@ -3854,6 +4287,76 @@ mod tests {
     }
     assert!(hit_end);
   }
+
+  #[test]
+  fn reconstructs_from_parse() {
+    let prods = non_cyclic_productions();
+    let token_grammar = TokenGrammar::new(&prods).unwrap();
+    let preprocessed_grammar = PreprocessedGrammar::new(&token_grammar);
+    let string_input = "ab";
+    let input = Input(string_input.chars().collect());
+    let parseable_grammar = ParseableGrammar::new::<char>(preprocessed_grammar, &input);
+
+    let mut parse = Parse::initialize_with_trees_for_adjacent_pairs(&parseable_grammar);
+
+    let mut spanning_subtree_ref: Option<SpanningSubtreeRef> = None;
+    while spanning_subtree_ref.is_none() {
+      match parse.advance() {
+        Ok(ParseResult::Incomplete) => (),
+        Ok(ParseResult::Complete(tree_ref)) => {
+          spanning_subtree_ref = Some(tree_ref);
+          break;
+        },
+        Err(e) => panic!(e),
+      }
+    }
+
+    let reconstructed =
+      InProgressReconstruction::new(spanning_subtree_ref.unwrap(), &parse).unwrap();
+    let completely_reconstructed = CompletedWholeReconstruction::new(reconstructed).unwrap();
+    /* FIXME: make this construction work!!! the `args` field is empty... */
+    assert_eq!(
+      completely_reconstructed,
+      CompletedWholeReconstruction(vec![])
+    );
+  }
+
+  /* #[test] */
+  /* fn idk() { */
+  /* assert_eq!( */
+  /* Something("".to_string()).join(hlist![4.0, 3, "a", Literal::from("a")]), */
+  /* CaseResult("a".to_string()) */
+  /* ); */
+
+  /* use super::user_api::*; */
+  /* assert_eq!( */
+  /* { */
+  /* trace_macros!(true); */
+  /* let res = productions![ */
+  /* Vec<i64> => [ */
+  /* case ( */
+  /* x: Vec<char> => CaseElement::Lit(Literal::from("a")), */
+  /* y: u32 => CaseElement::Prod(ProductionReference::<u32>::new()), */
+  /* z: Vec<char> => CaseElement::Lit(Literal::from("a")) */
+  /* ) => { */
+  /* asdf(); */
+  /* } */
+  /* ] */
+  /* ]; */
+  /* trace_macros!(false); */
+  /* res */
+  /* }, */
+  /* SimultaneousProductions( */
+  /* [( */
+  /* ProductionReference::new("std::vec::Vec<i64>"), */
+  /* Production(vec![Case(vec![CaseElement::Lit(Literal::from("a"))])]) */
+  /* ),] */
+  /* .iter() */
+  /* .cloned() */
+  /* .collect() */
+  /* ) */
+  /* ); */
+  /* } */
 
   fn non_cyclic_productions() -> SimultaneousProductions<char> {
     SimultaneousProductions(
