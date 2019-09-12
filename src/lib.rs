@@ -1734,14 +1734,14 @@ pub mod reconstruction {
   #[derive(Debug, Clone, PartialEq, Eq, Hash, TypeName)]
   pub struct IntermediateReconstruction {
     pub prod_case: ProdCaseRef,
-    pub args: VecDeque<CompleteSubReconstruction>,
+    pub args: Vec<CompleteSubReconstruction>,
   }
 
   impl IntermediateReconstruction {
     pub fn empty_for_case(prod_case: ProdCaseRef) -> Self {
       IntermediateReconstruction {
         prod_case,
-        args: VecDeque::new(),
+        args: vec![],
       }
     }
   }
@@ -1755,19 +1755,17 @@ pub mod reconstruction {
   impl DirectionalIntermediateReconstruction {
     pub fn add_completed(self, sub: CompleteSubReconstruction) -> Self {
       match self {
-        Self::Rightwards(IntermediateReconstruction {
-          prod_case,
-          mut args,
-        }) => {
-          args.push_back(sub);
-          Self::Rightwards(IntermediateReconstruction { prod_case, args })
+        Self::Rightwards(IntermediateReconstruction { prod_case, args }) => {
+          Self::Rightwards(IntermediateReconstruction {
+            prod_case,
+            args: args.into_iter().chain(vec![sub]).collect(),
+          })
         },
-        Self::Leftwards(IntermediateReconstruction {
-          prod_case,
-          mut args,
-        }) => {
-          args.push_front(sub);
-          Self::Leftwards(IntermediateReconstruction { prod_case, args })
+        Self::Leftwards(IntermediateReconstruction { prod_case, args }) => {
+          Self::Leftwards(IntermediateReconstruction {
+            prod_case,
+            args: vec![sub].into_iter().chain(args).collect(),
+          })
         },
       }
     }
@@ -1781,17 +1779,11 @@ pub mod reconstruction {
 
   #[derive(Debug, Clone, PartialEq, Eq, Hash, TypeName)]
   pub struct InProgressReconstruction {
-    pub elements: VecDeque<ReconstructionElement>,
+    pub elements: Vec<ReconstructionElement>,
   }
 
   impl InProgressReconstruction {
-    pub fn is_empty(&self) -> bool { self.elements.is_empty() }
-
-    pub fn empty() -> Self {
-      InProgressReconstruction {
-        elements: VecDeque::new(),
-      }
-    }
+    pub fn empty() -> Self { InProgressReconstruction { elements: vec![] } }
 
     pub fn with_elements(elements: Vec<ReconstructionElement>) -> Self {
       InProgressReconstruction {
@@ -1799,10 +1791,33 @@ pub mod reconstruction {
       }
     }
 
-    pub fn join(mut self, mut other: Self) -> Result<Self, ReconstructionError> {
-      while !self.is_empty() && !other.is_empty() {
-        let left_intermediate = self.elements.pop_back().unwrap();
-        let right_intermediate = other.elements.pop_front().unwrap();
+    pub fn join(self, other: Self) -> Result<Self, ReconstructionError> {
+      dbg!(&self);
+      dbg!(&other);
+      let InProgressReconstruction {
+        elements: left_initial_elements,
+      } = self;
+      let InProgressReconstruction {
+        elements: right_initial_elements,
+      } = other;
+
+      /* Initialize two queues, with the left empty, and the right containing the
+       * concatenation of both objects. */
+      let mut right_side: VecDeque<_> = left_initial_elements
+        .into_iter()
+        .chain(right_initial_elements.into_iter())
+        .collect();
+      let mut left_side: VecDeque<ReconstructionElement> = VecDeque::new();
+      /* TODO: document how this zippering works with two queues! */
+      while !right_side.is_empty() {
+        if left_side.is_empty() {
+          left_side.push_back(right_side.pop_front().unwrap());
+          continue;
+        }
+        let left_intermediate = left_side.pop_back().unwrap();
+        let right_intermediate = right_side.pop_front().unwrap();
+        dbg!(&left_intermediate);
+        dbg!(&right_intermediate);
         match (left_intermediate, right_intermediate) {
           (
             ReconstructionElement::Intermediate(DirectionalIntermediateReconstruction::Rightwards(
@@ -1813,7 +1828,7 @@ pub mod reconstruction {
             let inner_element = ReconstructionElement::Intermediate(
               DirectionalIntermediateReconstruction::Rightwards(left).add_completed(complete_right),
             );
-            self.elements.push_back(inner_element);
+            left_side.push_back(inner_element);
           },
           (
             ReconstructionElement::CompletedSub(complete_left),
@@ -1824,7 +1839,7 @@ pub mod reconstruction {
             let inner_element = ReconstructionElement::Intermediate(
               DirectionalIntermediateReconstruction::Leftwards(right).add_completed(complete_left),
             );
-            other.elements.push_front(inner_element);
+            right_side.push_front(inner_element);
           },
           (
             ReconstructionElement::Intermediate(DirectionalIntermediateReconstruction::Rightwards(
@@ -1852,7 +1867,7 @@ pub mod reconstruction {
                     .collect(),
                 }),
               );
-              self.elements.push_back(inner_element);
+              left_side.push_back(inner_element);
             } else {
               /* TODO: support non-hierarchical input! */
               return Err(ReconstructionError(
@@ -1867,12 +1882,10 @@ pub mod reconstruction {
             )),
             x_right,
           ) => {
-            other.elements.push_front(x_right);
-            other
-              .elements
-              .push_front(ReconstructionElement::Intermediate(
-                DirectionalIntermediateReconstruction::Leftwards(pointing_left),
-              ));
+            left_side.push_back(ReconstructionElement::Intermediate(
+              DirectionalIntermediateReconstruction::Leftwards(pointing_left),
+            ));
+            left_side.push_back(x_right);
           },
           (
             x_left,
@@ -1880,8 +1893,8 @@ pub mod reconstruction {
               pointing_right,
             )),
           ) => {
-            self.elements.push_back(x_left);
-            self.elements.push_back(ReconstructionElement::Intermediate(
+            left_side.push_back(x_left);
+            left_side.push_back(ReconstructionElement::Intermediate(
               DirectionalIntermediateReconstruction::Rightwards(pointing_right),
             ));
           },
@@ -1889,21 +1902,13 @@ pub mod reconstruction {
             ReconstructionElement::CompletedSub(complete_left),
             ReconstructionElement::CompletedSub(complete_right),
           ) => {
-            self
-              .elements
-              .push_back(ReconstructionElement::CompletedSub(complete_left));
-            self
-              .elements
-              .push_back(ReconstructionElement::CompletedSub(complete_right));
+            left_side.push_back(ReconstructionElement::CompletedSub(complete_left));
+            left_side.push_back(ReconstructionElement::CompletedSub(complete_right));
           },
         }
       }
       Ok(InProgressReconstruction::with_elements(
-        self
-          .elements
-          .into_iter()
-          .chain(other.elements.into_iter())
-          .collect(),
+        left_side.into_iter().collect(),
       ))
     }
 
@@ -1926,6 +1931,7 @@ pub mod reconstruction {
       let SpanningSubtree {
         input_span:
           FlattenedSpanInfo {
+            state_pair: StatePair { left, right },
             stack_diff: StackDiffSegment(stack_diff),
             ..
           },
@@ -1949,8 +1955,12 @@ pub mod reconstruction {
             panic!("parse: {:?}", parse);
           }
           Ok((
-            InProgressReconstruction::empty(),
-            InProgressReconstruction::empty(),
+            InProgressReconstruction::with_elements(vec![ReconstructionElement::CompletedSub(
+              CompleteSubReconstruction::State(*left),
+            )]),
+            InProgressReconstruction::with_elements(vec![ReconstructionElement::CompletedSub(
+              CompleteSubReconstruction::State(*right),
+            )]),
           ))
         },
         Some(ParentInfo {
@@ -2018,8 +2028,8 @@ pub mod reconstruction {
 
   #[derive(Debug, Clone, PartialEq, Eq, Hash, TypeName)]
   pub struct CompletedCaseReconstruction {
-    prod_case: ProdCaseRef,
-    args: Vec<CompleteSubReconstruction>,
+    pub prod_case: ProdCaseRef,
+    pub args: Vec<CompleteSubReconstruction>,
   }
 
   #[derive(Debug, Clone, PartialEq, Eq, Hash, TypeName)]
@@ -4317,7 +4327,28 @@ mod tests {
     /* FIXME: make this construction work!!! the `args` field is empty... */
     assert_eq!(
       completely_reconstructed,
-      CompletedWholeReconstruction(vec![])
+      CompletedWholeReconstruction(vec![
+        CompleteSubReconstruction::State(LoweredState::Start),
+        CompleteSubReconstruction::Completed(CompletedCaseReconstruction {
+          prod_case: ProdCaseRef {
+            prod: ProdRef(0),
+            case: CaseRef(0)
+          },
+          args: vec![
+            CompleteSubReconstruction::State(LoweredState::Within(TokenPosition {
+              prod: ProdRef(0),
+              case: CaseRef(0),
+              case_el: CaseElRef(0)
+            })),
+            CompleteSubReconstruction::State(LoweredState::Within(TokenPosition {
+              prod: ProdRef(0),
+              case: CaseRef(0),
+              case_el: CaseElRef(1)
+            })),
+          ]
+        }),
+        CompleteSubReconstruction::State(LoweredState::End),
+      ])
     );
   }
 
