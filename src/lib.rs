@@ -1739,12 +1739,12 @@ pub mod reconstruction {
 
   #[derive(Debug, Clone, PartialEq, Eq, Hash, TypeName)]
   pub struct IntermediateReconstruction {
-    pub prod_case: UnflattenedProdCaseRef,
+    pub prod_case: ProdCaseRef,
     pub args: Vec<CompleteSubReconstruction>,
   }
 
   impl IntermediateReconstruction {
-    pub fn empty_for_case(prod_case: UnflattenedProdCaseRef) -> Self {
+    pub fn empty_for_case(prod_case: ProdCaseRef) -> Self {
       IntermediateReconstruction {
         prod_case,
         args: vec![],
@@ -1913,6 +1913,7 @@ pub mod reconstruction {
           },
         }
       }
+      dbg!(&left_side);
       Ok(InProgressReconstruction::with_elements(
         left_side.into_iter().collect(),
       ))
@@ -1955,6 +1956,7 @@ pub mod reconstruction {
             tree, parse
           ))
         })?;
+
       let (prologue, epilogue) = match parents {
         None => {
           if stack_diff.is_empty() {
@@ -1975,45 +1977,62 @@ pub mod reconstruction {
         }) => Self::new(*left_parent, parse)
           .and_then(|l| Self::new(*right_parent, parse).map(|r| (l, r))),
       }?;
-      eprintln!("prologue: {:?}, epilogue: {:?}", prologue, epilogue);
 
-      /* Convert the `stack_diff` into its own set of possibly-incomplete
-       * sub-reconstructions, then merge them with `Self::join()`! */
-      let middle_elements: Vec<InProgressReconstruction> = stack_diff
-        .iter()
-        .flat_map(|step| match step {
-          /* NB: "named" steps are only relevant for constructing the interval graph with
-           * anonymous steps, which denote the correct `ProdCaseRef` to use, so we
-           * discard them here. */
-          NamedOrAnonStep::Named(_) => None,
-          NamedOrAnonStep::Anon(anon_step) => match anon_step {
-            AnonStep::Positive(anon_sym) => {
-              let maybe_ref: &UnflattenedProdCaseRef = anon_step_mapping
-                .get(anon_sym)
-                .expect(format!("no state found for anon sym {:?}", anon_sym).as_str());
-              Some(InProgressReconstruction::with_elements(vec![
-                ReconstructionElement::Intermediate(
-                  DirectionalIntermediateReconstruction::Rightwards(
-                    IntermediateReconstruction::empty_for_case(*maybe_ref),
-                  ),
-                ),
-              ]))
+      dbg!(&prologue);
+      dbg!(&epilogue);
+      dbg!(&stack_diff);
+      let middle_elements: Vec<InProgressReconstruction> = match parents {
+        /* The `stack_diff` is just a flattened version of the parents' diffs -- we don't add it
+         * twice! */
+        Some(_) => vec![],
+        /* Convert the `stack_diff` into its own set of possibly-incomplete
+         * sub-reconstructions! */
+        None => stack_diff
+          .iter()
+          .flat_map(|step| match step {
+            /* NB: "named" steps are only relevant for constructing the interval graph with
+             * anonymous steps, which denote the correct `ProdCaseRef` to use, so we
+             * discard them here. */
+            NamedOrAnonStep::Named(_) => None,
+            NamedOrAnonStep::Anon(anon_step) => match anon_step {
+              AnonStep::Positive(anon_sym) => {
+                let maybe_ref: &UnflattenedProdCaseRef = anon_step_mapping
+                  .get(anon_sym)
+                  .expect(format!("no state found for anon sym {:?}", anon_sym).as_str());
+                match maybe_ref {
+                  &UnflattenedProdCaseRef::PassThrough => None,
+                  &UnflattenedProdCaseRef::Case(ref x) => {
+                    Some(InProgressReconstruction::with_elements(vec![
+                      ReconstructionElement::Intermediate(
+                        DirectionalIntermediateReconstruction::Rightwards(
+                          IntermediateReconstruction::empty_for_case(*x),
+                        ),
+                      ),
+                    ]))
+                  },
+                }
+              },
+              AnonStep::Negative(anon_sym) => {
+                let maybe_ref: &UnflattenedProdCaseRef = anon_step_mapping
+                  .get(anon_sym)
+                  .expect(format!("no state found for anon sym {:?}", anon_sym).as_str());
+                match maybe_ref {
+                  &UnflattenedProdCaseRef::PassThrough => None,
+                  &UnflattenedProdCaseRef::Case(ref x) => {
+                    Some(InProgressReconstruction::with_elements(vec![
+                      ReconstructionElement::Intermediate(
+                        DirectionalIntermediateReconstruction::Leftwards(
+                          IntermediateReconstruction::empty_for_case(*x),
+                        ),
+                      ),
+                    ]))
+                  },
+                }
+              },
             },
-            AnonStep::Negative(anon_sym) => {
-              let maybe_ref: &UnflattenedProdCaseRef = anon_step_mapping
-                .get(anon_sym)
-                .expect(format!("no state found for anon sym {:?}", anon_sym).as_str());
-              Some(InProgressReconstruction::with_elements(vec![
-                ReconstructionElement::Intermediate(
-                  DirectionalIntermediateReconstruction::Leftwards(
-                    IntermediateReconstruction::empty_for_case(*maybe_ref),
-                  ),
-                ),
-              ]))
-            },
-          },
-        })
-        .collect();
+          })
+          .collect(),
+      };
       eprintln!("middle_elements: {:?}", middle_elements);
 
       InProgressReconstruction::joined(
@@ -2028,7 +2047,7 @@ pub mod reconstruction {
 
   #[derive(Debug, Clone, PartialEq, Eq, Hash, TypeName)]
   pub struct CompletedCaseReconstruction {
-    pub prod_case: UnflattenedProdCaseRef,
+    pub prod_case: ProdCaseRef,
     pub args: Vec<CompleteSubReconstruction>,
   }
 
@@ -2374,19 +2393,28 @@ mod tests {
     assert_eq!(
       anon_step_mapping,
       [
-        (AnonSym(0), UnflattenedProdCaseRef::Case(ProdCaseRef {
-          prod: ProdRef(0),
-          case: CaseRef(0)
-        })),
-        (AnonSym(1), UnflattenedProdCaseRef::Case(ProdCaseRef {
-          prod: ProdRef(1),
-          case: CaseRef(0)
-        })),
+        (
+          AnonSym(0),
+          UnflattenedProdCaseRef::Case(ProdCaseRef {
+            prod: ProdRef(0),
+            case: CaseRef(0)
+          })
+        ),
+        (
+          AnonSym(1),
+          UnflattenedProdCaseRef::Case(ProdCaseRef {
+            prod: ProdRef(1),
+            case: CaseRef(0)
+          })
+        ),
         (AnonSym(2), UnflattenedProdCaseRef::PassThrough),
-        (AnonSym(3), UnflattenedProdCaseRef::Case(ProdCaseRef {
-          prod: ProdRef(1),
-          case: CaseRef(1)
-        })),
+        (
+          AnonSym(3),
+          UnflattenedProdCaseRef::Case(ProdCaseRef {
+            prod: ProdRef(1),
+            case: CaseRef(1)
+          })
+        ),
         (AnonSym(4), UnflattenedProdCaseRef::PassThrough),
       ]
       .iter()
@@ -2428,7 +2456,14 @@ mod tests {
       /* 7 */
       CompletedStatePairWithVertices::new(
         StatePair::new(LoweredState::Start, LoweredState::Within(s_0)),
-        ContiguousNonterminalInterval(vec![b_start, b_1_anon_0_start, b_1_anon_0_start_2, a_start, a_prod_anon_start, a_0_0]),
+        ContiguousNonterminalInterval(vec![
+          b_start,
+          b_1_anon_0_start,
+          b_1_anon_0_start_2,
+          a_start,
+          a_prod_anon_start,
+          a_0_0
+        ]),
       ),
       /* 8 */
       CompletedStatePairWithVertices::new(
@@ -2438,12 +2473,25 @@ mod tests {
       /* 9 */
       CompletedStatePairWithVertices::new(
         StatePair::new(LoweredState::Within(s_3), LoweredState::Within(s_0)),
-        ContiguousNonterminalInterval(vec![b_0_1, b_0_anon_0_start, a_start, a_prod_anon_start, a_0_0]),
+        ContiguousNonterminalInterval(vec![
+          b_0_1,
+          b_0_anon_0_start,
+          a_start,
+          a_prod_anon_start,
+          a_0_0
+        ]),
       ),
       /* 10 */
       CompletedStatePairWithVertices::new(
         StatePair::new(LoweredState::Within(s_1), LoweredState::End),
-        ContiguousNonterminalInterval(vec![a_0_1, a_prod_anon_end, a_end, b_0_anon_0_end, b_prod_anon_end, b_end]),
+        ContiguousNonterminalInterval(vec![
+          a_0_1,
+          a_prod_anon_end,
+          a_end,
+          b_0_anon_0_end,
+          b_prod_anon_end,
+          b_end
+        ]),
       ),
     ]);
 
@@ -2532,34 +2580,52 @@ mod tests {
         ]),
       ],
       anon_step_mapping: [
-        (AnonSym(0), UnflattenedProdCaseRef::Case(ProdCaseRef {
-          prod: ProdRef(0),
-          case: CaseRef(0)
-        })),
-        (AnonSym(1), UnflattenedProdCaseRef::Case(ProdCaseRef {
-          prod: ProdRef(0),
-          case: CaseRef(1)
-        })),
+        (
+          AnonSym(0),
+          UnflattenedProdCaseRef::Case(ProdCaseRef {
+            prod: ProdRef(0),
+            case: CaseRef(0)
+          })
+        ),
+        (
+          AnonSym(1),
+          UnflattenedProdCaseRef::Case(ProdCaseRef {
+            prod: ProdRef(0),
+            case: CaseRef(1)
+          })
+        ),
         (AnonSym(2), UnflattenedProdCaseRef::PassThrough),
-        (AnonSym(3), UnflattenedProdCaseRef::Case(ProdCaseRef {
-          prod: ProdRef(0),
-          case: CaseRef(2)
-        })),
+        (
+          AnonSym(3),
+          UnflattenedProdCaseRef::Case(ProdCaseRef {
+            prod: ProdRef(0),
+            case: CaseRef(2)
+          })
+        ),
         (AnonSym(4), UnflattenedProdCaseRef::PassThrough),
-        (AnonSym(5), UnflattenedProdCaseRef::Case(ProdCaseRef {
-          prod: ProdRef(1),
-          case: CaseRef(0)
-        })),
+        (
+          AnonSym(5),
+          UnflattenedProdCaseRef::Case(ProdCaseRef {
+            prod: ProdRef(1),
+            case: CaseRef(0)
+          })
+        ),
         (AnonSym(6), UnflattenedProdCaseRef::PassThrough),
-        (AnonSym(7), UnflattenedProdCaseRef::Case(ProdCaseRef {
-          prod: ProdRef(1),
-          case: CaseRef(1)
-        })),
+        (
+          AnonSym(7),
+          UnflattenedProdCaseRef::Case(ProdCaseRef {
+            prod: ProdRef(1),
+            case: CaseRef(1)
+          })
+        ),
         (AnonSym(8), UnflattenedProdCaseRef::PassThrough),
-        (AnonSym(9), UnflattenedProdCaseRef::Case(ProdCaseRef {
-          prod: ProdRef(1),
-          case: CaseRef(2)
-        })),
+        (
+          AnonSym(9),
+          UnflattenedProdCaseRef::Case(ProdCaseRef {
+            prod: ProdRef(1),
+            case: CaseRef(2)
+          })
+        ),
         (AnonSym(10), UnflattenedProdCaseRef::PassThrough),
       ]
       .iter()
@@ -3901,35 +3967,34 @@ mod tests {
     let preprocessed_grammar = PreprocessedGrammar::new(&token_grammar);
     let string_input = "ab";
     let input = Input(string_input.chars().collect());
-    let parseable_grammar = ParseableGrammar::new::<char>(preprocessed_grammar, &input);
+    let parseable_grammar = ParseableGrammar::new::<char>(preprocessed_grammar.clone(), &input);
 
     let mut parse = Parse::initialize_with_trees_for_adjacent_pairs(&parseable_grammar);
 
-    let mut spanning_subtree_ref: Option<SpanningSubtreeRef> = None;
-    while spanning_subtree_ref.is_none() {
-      match parse.advance() {
-        Ok(ParseResult::Incomplete) => (),
-        Ok(ParseResult::Complete(tree_ref)) => {
-          spanning_subtree_ref = Some(tree_ref);
-          break;
-        },
-        Err(e) => panic!(e),
+    fn get_next_parse(parse: &mut Parse) -> SpanningSubtreeRef {
+      loop {
+        match parse.advance() {
+          Ok(ParseResult::Incomplete) => (),
+          Ok(ParseResult::Complete(tree_ref)) => {
+            return tree_ref;
+          },
+          Err(e) => panic!(e),
+        }
       }
     }
 
-    let reconstructed =
-      InProgressReconstruction::new(spanning_subtree_ref.unwrap(), &parse).unwrap();
+    let spanning_subtree_ref = get_next_parse(&mut parse);
+    let reconstructed = InProgressReconstruction::new(spanning_subtree_ref, &parse).unwrap();
     let completely_reconstructed = CompletedWholeReconstruction::new(reconstructed).unwrap();
-    /* FIXME: make this construction work!!! the `args` field is empty... */
     assert_eq!(
       completely_reconstructed,
       CompletedWholeReconstruction(vec![
         CompleteSubReconstruction::State(LoweredState::Start),
         CompleteSubReconstruction::Completed(CompletedCaseReconstruction {
-          prod_case: UnflattenedProdCaseRef::Case(ProdCaseRef {
+          prod_case: ProdCaseRef {
             prod: ProdRef(0),
             case: CaseRef(0)
-          }),
+          },
           args: vec![
             CompleteSubReconstruction::State(LoweredState::Within(TokenPosition {
               prod: ProdRef(0),
@@ -3942,6 +4007,46 @@ mod tests {
               case_el: CaseElRef(1)
             })),
           ]
+        }),
+        CompleteSubReconstruction::State(LoweredState::End),
+      ])
+    );
+
+    /* Try it again, crossing productions this time. */
+    let longer_string_input = "abab";
+    let longer_input = Input(longer_string_input.chars().collect());
+    let longer_parseable_grammar =
+      ParseableGrammar::new::<char>(preprocessed_grammar, &longer_input);
+    let mut longer_parse =
+      Parse::initialize_with_trees_for_adjacent_pairs(&longer_parseable_grammar);
+    let first_parsed_longer_string = get_next_parse(&mut longer_parse);
+    let longer_reconstructed =
+      InProgressReconstruction::new(first_parsed_longer_string, &longer_parse).unwrap();
+    let longer_completely_reconstructed =
+      CompletedWholeReconstruction::new(longer_reconstructed).unwrap();
+    assert_eq!(
+      longer_completely_reconstructed,
+      CompletedWholeReconstruction(vec![
+        CompleteSubReconstruction::State(LoweredState::Start),
+        CompleteSubReconstruction::Completed(CompletedCaseReconstruction {
+          prod_case: ProdCaseRef {
+            prod: ProdRef(1),
+            case: CaseRef(0),
+          },
+          args: vec![
+            CompleteSubReconstruction::State(LoweredState::Within(TokenPosition::new(1, 0, 0))),
+            CompleteSubReconstruction::State(LoweredState::Within(TokenPosition::new(1, 0, 1))),
+            CompleteSubReconstruction::Completed(CompletedCaseReconstruction {
+              prod_case: ProdCaseRef {
+                prod: ProdRef(0),
+                case: CaseRef(0),
+              },
+              args: vec![
+                CompleteSubReconstruction::State(LoweredState::Within(TokenPosition::new(0, 0, 0))),
+                CompleteSubReconstruction::State(LoweredState::Within(TokenPosition::new(0, 0, 1))),
+              ],
+            })
+          ],
         }),
         CompleteSubReconstruction::State(LoweredState::End),
       ])
