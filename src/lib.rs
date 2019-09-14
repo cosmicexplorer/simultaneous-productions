@@ -2260,27 +2260,48 @@ mod tests {
     let b_prod = ProdRef(1);
 
     let a_start = EpsilonGraphVertex::Start(a_prod);
+    let a_prod_anon_start = EpsilonGraphVertex::Anon(AnonStep::Positive(AnonSym(0)));
     let a_0_0 = EpsilonGraphVertex::State(s_0);
     let a_0_1 = EpsilonGraphVertex::State(s_1);
+    let a_prod_anon_end = EpsilonGraphVertex::Anon(AnonStep::Negative(AnonSym(0)));
     let a_end = EpsilonGraphVertex::End(a_prod);
 
     let b_start = EpsilonGraphVertex::Start(b_prod);
+    let b_prod_anon_start = EpsilonGraphVertex::Anon(AnonStep::Positive(AnonSym(1)));
     let b_0_0 = EpsilonGraphVertex::State(s_2);
     let b_0_1 = EpsilonGraphVertex::State(s_3);
-    let b_0_anon_0_start = EpsilonGraphVertex::Anon(AnonStep::Positive(AnonSym(0)));
-    let b_0_anon_0_end = EpsilonGraphVertex::Anon(AnonStep::Negative(AnonSym(0)));
-    let b_1_anon_0_start = EpsilonGraphVertex::Anon(AnonStep::Positive(AnonSym(1)));
-    let b_1_anon_0_end = EpsilonGraphVertex::Anon(AnonStep::Negative(AnonSym(1)));
+    let b_0_anon_0_start = EpsilonGraphVertex::Anon(AnonStep::Positive(AnonSym(2)));
+    let b_0_anon_0_end = EpsilonGraphVertex::Anon(AnonStep::Negative(AnonSym(2)));
+    let b_1_anon_0_start = EpsilonGraphVertex::Anon(AnonStep::Positive(AnonSym(3)));
+    let b_1_anon_0_start_2 = EpsilonGraphVertex::Anon(AnonStep::Positive(AnonSym(4)));
+    let b_1_anon_0_end = EpsilonGraphVertex::Anon(AnonStep::Negative(AnonSym(3)));
+    let b_1_anon_0_end_2 = EpsilonGraphVertex::Anon(AnonStep::Negative(AnonSym(4)));
     let b_1_1 = EpsilonGraphVertex::State(s_4);
+    let b_prod_anon_end = EpsilonGraphVertex::Anon(AnonStep::Negative(AnonSym(1)));
     let b_end = EpsilonGraphVertex::End(b_prod);
 
-    let a_0 = ContiguousNonterminalInterval(vec![a_start, a_0_0, a_0_1, a_end]);
-    let b_start_to_a_start_0 =
-      ContiguousNonterminalInterval(vec![b_start, b_0_0, b_0_1, b_0_anon_0_start, a_start]);
-    let a_end_to_b_end_0 = ContiguousNonterminalInterval(vec![a_end, b_0_anon_0_end, b_end]);
+    let a_0 = ContiguousNonterminalInterval(vec![
+      a_start,
+      a_prod_anon_start,
+      a_0_0,
+      a_0_1,
+      a_prod_anon_end,
+      a_end,
+    ]);
+    let b_start_to_a_start_0 = ContiguousNonterminalInterval(vec![
+      b_start,
+      b_prod_anon_start,
+      b_0_0,
+      b_0_1,
+      b_0_anon_0_start,
+      a_start,
+    ]);
+    let a_end_to_b_end_0 =
+      ContiguousNonterminalInterval(vec![a_end, b_0_anon_0_end, b_prod_anon_end, b_end]);
     let b_start_to_a_start_1 =
-      ContiguousNonterminalInterval(vec![b_start, b_1_anon_0_start, a_start]);
-    let a_end_to_b_end_1 = ContiguousNonterminalInterval(vec![a_end, b_1_anon_0_end, b_1_1, b_end]);
+      ContiguousNonterminalInterval(vec![b_start, b_1_anon_0_start, b_1_anon_0_start_2, a_start]);
+    let a_end_to_b_end_1 =
+      ContiguousNonterminalInterval(vec![a_end, b_1_anon_0_end_2, b_1_1, b_1_anon_0_end, b_end]);
 
     assert_eq!(noncyclic_interval_graph, EpsilonIntervalGraph {
       all_intervals: vec![
@@ -2292,13 +2313,25 @@ mod tests {
       ],
       anon_step_mapping: [
         (AnonSym(0), ProdCaseRef {
-          prod: ProdRef(1),
+          prod: ProdRef(0),
           case: CaseRef(0)
         }),
         (AnonSym(1), ProdCaseRef {
           prod: ProdRef(1),
+          case: CaseRef(0)
+        }),
+        (AnonSym(2), ProdCaseRef {
+          prod: ProdRef(1),
+          case: CaseRef(0)
+        }),
+        (AnonSym(3), ProdCaseRef {
+          prod: ProdRef(1),
           case: CaseRef(1)
         }),
+        (AnonSym(4), ProdCaseRef {
+          prod: ProdRef(1),
+          case: CaseRef(1)
+        })
       ]
       .iter()
       .cloned()
