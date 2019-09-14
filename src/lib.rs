@@ -2457,89 +2457,110 @@ mod tests {
       all_intervals: vec![
         ContiguousNonterminalInterval(vec![
           EpsilonGraphVertex::Start(ProdRef(0)),
+          EpsilonGraphVertex::Anon(AnonStep::Positive(AnonSym(0))),
           EpsilonGraphVertex::State(TokenPosition::new(0, 0, 0)),
           EpsilonGraphVertex::State(TokenPosition::new(0, 0, 1)),
           EpsilonGraphVertex::State(TokenPosition::new(0, 0, 2)),
-          EpsilonGraphVertex::End(ProdRef(0)),
-        ]),
-        ContiguousNonterminalInterval(vec![
-          EpsilonGraphVertex::Start(ProdRef(0)),
-          EpsilonGraphVertex::State(TokenPosition::new(0, 1, 0)),
-          EpsilonGraphVertex::Anon(AnonStep::Positive(AnonSym(0))),
-          EpsilonGraphVertex::Start(ProdRef(0)),
-        ]),
-        ContiguousNonterminalInterval(vec![
-          EpsilonGraphVertex::End(ProdRef(0)),
           EpsilonGraphVertex::Anon(AnonStep::Negative(AnonSym(0))),
-          EpsilonGraphVertex::State(TokenPosition::new(0, 1, 2)),
           EpsilonGraphVertex::End(ProdRef(0)),
         ]),
         ContiguousNonterminalInterval(vec![
           EpsilonGraphVertex::Start(ProdRef(0)),
-          EpsilonGraphVertex::State(TokenPosition::new(0, 2, 0)),
-          EpsilonGraphVertex::State(TokenPosition::new(0, 2, 1)),
           EpsilonGraphVertex::Anon(AnonStep::Positive(AnonSym(1))),
-          EpsilonGraphVertex::Start(ProdRef(1)),
-        ]),
-        ContiguousNonterminalInterval(vec![
-          EpsilonGraphVertex::End(ProdRef(1)),
-          EpsilonGraphVertex::Anon(AnonStep::Negative(AnonSym(1))),
-          EpsilonGraphVertex::End(ProdRef(0)),
-        ]),
-        ContiguousNonterminalInterval(vec![
-          EpsilonGraphVertex::Start(ProdRef(1)),
+          EpsilonGraphVertex::State(TokenPosition::new(0, 1, 0)),
           EpsilonGraphVertex::Anon(AnonStep::Positive(AnonSym(2))),
           EpsilonGraphVertex::Start(ProdRef(0)),
         ]),
         ContiguousNonterminalInterval(vec![
           EpsilonGraphVertex::End(ProdRef(0)),
           EpsilonGraphVertex::Anon(AnonStep::Negative(AnonSym(2))),
-          EpsilonGraphVertex::End(ProdRef(1)),
+          EpsilonGraphVertex::State(TokenPosition::new(0, 1, 2)),
+          EpsilonGraphVertex::Anon(AnonStep::Negative(AnonSym(1))),
+          EpsilonGraphVertex::End(ProdRef(0)),
         ]),
         ContiguousNonterminalInterval(vec![
-          EpsilonGraphVertex::Start(ProdRef(1)),
+          EpsilonGraphVertex::Start(ProdRef(0)),
           EpsilonGraphVertex::Anon(AnonStep::Positive(AnonSym(3))),
-          EpsilonGraphVertex::Start(ProdRef(1)),
-        ]),
-        ContiguousNonterminalInterval(vec![
-          EpsilonGraphVertex::End(ProdRef(1)),
-          EpsilonGraphVertex::Anon(AnonStep::Negative(AnonSym(3))),
-          EpsilonGraphVertex::End(ProdRef(1)),
-        ]),
-        ContiguousNonterminalInterval(vec![
-          EpsilonGraphVertex::Start(ProdRef(1)),
+          EpsilonGraphVertex::State(TokenPosition::new(0, 2, 0)),
+          EpsilonGraphVertex::State(TokenPosition::new(0, 2, 1)),
           EpsilonGraphVertex::Anon(AnonStep::Positive(AnonSym(4))),
+          EpsilonGraphVertex::Start(ProdRef(1)),
+        ]),
+        ContiguousNonterminalInterval(vec![
+          EpsilonGraphVertex::End(ProdRef(1)),
+          EpsilonGraphVertex::Anon(AnonStep::Negative(AnonSym(4))),
+          EpsilonGraphVertex::Anon(AnonStep::Negative(AnonSym(3))),
+          EpsilonGraphVertex::End(ProdRef(0)),
+        ]),
+        ContiguousNonterminalInterval(vec![
+          EpsilonGraphVertex::Start(ProdRef(1)),
+          EpsilonGraphVertex::Anon(AnonStep::Positive(AnonSym(5))),
+          EpsilonGraphVertex::Anon(AnonStep::Positive(AnonSym(6))),
           EpsilonGraphVertex::Start(ProdRef(0)),
         ]),
         ContiguousNonterminalInterval(vec![
           EpsilonGraphVertex::End(ProdRef(0)),
-          EpsilonGraphVertex::Anon(AnonStep::Negative(AnonSym(4))),
+          EpsilonGraphVertex::Anon(AnonStep::Negative(AnonSym(6))),
+          EpsilonGraphVertex::Anon(AnonStep::Negative(AnonSym(5))),
+          EpsilonGraphVertex::End(ProdRef(1)),
+        ]),
+        ContiguousNonterminalInterval(vec![
+          EpsilonGraphVertex::Start(ProdRef(1)),
+          EpsilonGraphVertex::Anon(AnonStep::Positive(AnonSym(7))),
+          EpsilonGraphVertex::Anon(AnonStep::Positive(AnonSym(8))),
+          EpsilonGraphVertex::Start(ProdRef(1)),
+        ]),
+        ContiguousNonterminalInterval(vec![
+          EpsilonGraphVertex::End(ProdRef(1)),
+          EpsilonGraphVertex::Anon(AnonStep::Negative(AnonSym(8))),
+          EpsilonGraphVertex::Anon(AnonStep::Negative(AnonSym(7))),
+          EpsilonGraphVertex::End(ProdRef(1)),
+        ]),
+        ContiguousNonterminalInterval(vec![
+          EpsilonGraphVertex::Start(ProdRef(1)),
+          EpsilonGraphVertex::Anon(AnonStep::Positive(AnonSym(9))),
+          EpsilonGraphVertex::Anon(AnonStep::Positive(AnonSym(10))),
+          EpsilonGraphVertex::Start(ProdRef(0)),
+        ]),
+        ContiguousNonterminalInterval(vec![
+          EpsilonGraphVertex::End(ProdRef(0)),
+          EpsilonGraphVertex::Anon(AnonStep::Negative(AnonSym(10))),
           EpsilonGraphVertex::State(TokenPosition::new(1, 2, 1)),
           EpsilonGraphVertex::State(TokenPosition::new(1, 2, 2)),
+          EpsilonGraphVertex::Anon(AnonStep::Negative(AnonSym(9))),
           EpsilonGraphVertex::End(ProdRef(1)),
         ]),
       ],
       anon_step_mapping: [
         (AnonSym(0), UnflattenedProdCaseRef::Case(ProdCaseRef {
           prod: ProdRef(0),
-          case: CaseRef(1)
+          case: CaseRef(0)
         })),
         (AnonSym(1), UnflattenedProdCaseRef::Case(ProdCaseRef {
           prod: ProdRef(0),
+          case: CaseRef(1)
+        })),
+        (AnonSym(2), UnflattenedProdCaseRef::PassThrough),
+        (AnonSym(3), UnflattenedProdCaseRef::Case(ProdCaseRef {
+          prod: ProdRef(0),
           case: CaseRef(2)
         })),
-        (AnonSym(2), UnflattenedProdCaseRef::Case(ProdCaseRef {
+        (AnonSym(4), UnflattenedProdCaseRef::PassThrough),
+        (AnonSym(5), UnflattenedProdCaseRef::Case(ProdCaseRef {
           prod: ProdRef(1),
           case: CaseRef(0)
         })),
-        (AnonSym(3), UnflattenedProdCaseRef::Case(ProdCaseRef {
+        (AnonSym(6), UnflattenedProdCaseRef::PassThrough),
+        (AnonSym(7), UnflattenedProdCaseRef::Case(ProdCaseRef {
           prod: ProdRef(1),
           case: CaseRef(1)
         })),
-        (AnonSym(4), UnflattenedProdCaseRef::Case(ProdCaseRef {
+        (AnonSym(8), UnflattenedProdCaseRef::PassThrough),
+        (AnonSym(9), UnflattenedProdCaseRef::Case(ProdCaseRef {
           prod: ProdRef(1),
           case: CaseRef(2)
         })),
+        (AnonSym(10), UnflattenedProdCaseRef::PassThrough),
       ]
       .iter()
       .cloned()
