@@ -167,7 +167,7 @@ pub mod binding {
     pub fn reconstruct<Output: TypeName+'static>(
       &self,
       reconstruction: &CompletedWholeReconstruction,
-    ) -> Result<Box<Output>, BindingError>
+    ) -> Result<Output, BindingError>
     {
       let mut reconstruction = reconstruction
         .clone()
@@ -207,6 +207,7 @@ pub mod binding {
                     )))
                   })
                 })
+                .map(|x| *x)
             }
           },
           x => Err(BindingError(format!(
@@ -1979,6 +1980,9 @@ pub mod parsing {
     }
 
     pub fn advance(&mut self) -> Result<ParseResult, ParsingFailure> {
+      dbg!(&self.spans);
+      dbg!(&self.finishes_at_left);
+      dbg!(&self.finishes_at_right);
       let maybe_front = self.spans.pop();
       if let Some((cur_span, _priority)) = maybe_front {
         let SpanningSubtree {
@@ -1999,16 +2003,19 @@ pub mod parsing {
           ..
         } = cur_span.clone();
 
+        dbg!(&cur_span);
+
         /* TODO: ensure all entries of `.finishes_at_left` and `.finishes_at_right`
          * are lexicographically sorted! */
         /* Check all right-neighbors for compatible stack diffs. */
         for right_neighbor in self
           .finishes_at_left
-          .get(&InputTokenIndex(cur_right_index + 1))
+          .get(&InputTokenIndex(cur_right_index))
           .cloned()
           .unwrap_or_else(IndexSet::new)
           .iter()
         {
+          dbg!(&right_neighbor);
           let SpanningSubtree {
             input_span:
               FlattenedSpanInfo {
@@ -2026,7 +2033,7 @@ pub mod parsing {
               },
             ..
           } = right_neighbor.clone();
-          assert_eq!(right_left_index, (cur_right_index + 1));
+          assert_eq!(right_left_index, cur_right_index);
 
           if let Some(merged_diff) =
             Self::stack_diff_pair_zipper(cur_stack_diff.clone(), right_stack_diff)
@@ -2052,15 +2059,17 @@ pub mod parsing {
           }
         }
 
+        dbg!(cur_left_index);
         /* Check all left-neighbors for compatible stack diffs. */
         let maybe_set = if cur_left_index == 0 {
           None
         } else {
           self
             .finishes_at_right
-            .get(&InputTokenIndex(cur_left_index - 1))
+            .get(&InputTokenIndex(cur_left_index))
         };
         for left_neighbor in maybe_set.cloned().unwrap_or_else(IndexSet::new).iter() {
+          dbg!(&left_neighbor);
           let SpanningSubtree {
             input_span:
               FlattenedSpanInfo {
@@ -2078,7 +2087,7 @@ pub mod parsing {
               },
             ..
           } = left_neighbor.clone();
-          assert_eq!(left_right_index, (cur_left_index - 1));
+          assert_eq!(left_right_index, cur_left_index);
 
           if let Some(merged_diff) =
             Self::stack_diff_pair_zipper(left_stack_diff, cur_stack_diff.clone())
@@ -2103,6 +2112,8 @@ pub mod parsing {
             self.add_spanning_subtree(&new_tree);
           }
         }
+
+        dbg!((&cur_left, &cur_right, &cur_stack_diff));
 
         /* Check if we now span across the whole input! */
         /* NB: It's RIDICULOUS how simple this check is!!! */
@@ -4438,7 +4449,7 @@ mod tests {
       TypedSimultaneousProductions::new(vec_box_rc![TypedProduction::new::<usize>(vec![
         TypedCase {
           /* FIXME: this breaks when we try to use a 1-length string!!! */
-          case: Case(vec![CaseElement::Lit(Literal::from("ab"))]),
+          case: Case(vec![CaseElement::Lit(Literal::from("2"))]),
           acceptor: Rc::new(Box::new({
             struct GeneratedStruct;
             impl PointerBoxingAcceptor for GeneratedStruct {
@@ -4455,7 +4466,10 @@ mod tests {
               {
                 /* FIXME: how do i get access to the states we've traversed at all? Do I
                  * care? */
-                Ok(Box::new({ 1 as usize }))
+                Ok(Box::new({
+                  let res: usize = { 2 as usize };
+                  res
+                }))
               }
             }
             GeneratedStruct
@@ -4464,7 +4478,7 @@ mod tests {
       ])]);
     let token_grammar = TokenGrammar::new(&example.underlying).unwrap();
     let preprocessed_grammar = PreprocessedGrammar::new(&token_grammar);
-    let string_input = "ab";
+    let string_input = "2";
     let input = Input(string_input.chars().collect());
     let parseable_grammar = ParseableGrammar::new::<char>(preprocessed_grammar, &input);
     let mut parse = Parse::initialize_with_trees_for_adjacent_pairs(&parseable_grammar);
@@ -4473,10 +4487,10 @@ mod tests {
     let completely_reconstructed_parse =
       CompletedWholeReconstruction::new(reconstructed_parse).unwrap();
     assert_eq!(
-      *example
+      example
         .reconstruct::<usize>(&completely_reconstructed_parse)
         .unwrap(),
-      1 as usize
+      2 as usize
     );
 
     /* assert_eq!( */
