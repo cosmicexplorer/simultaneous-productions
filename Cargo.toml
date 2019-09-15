@@ -8,5 +8,4 @@ frunk = "0.1.9"
 gensym = "0.1.0"
 indexmap = { version = "1.0.2" }
 priority-queue = "0.6.0"
-quote = "1.0"
 typename = "0.1.1"

@@ -77,7 +77,7 @@ use std::{
 
 
 pub mod binding {
-  use super::{grammar_indexing::*, lowering_to_indices::*, user_api::*, *};
+  use super::{grammar_indexing::*, lowering_to_indices::*, reconstruction::*, user_api::*, *};
 
   #[derive(Debug, Clone, PartialEq, Eq, Hash)]
   pub struct BindingError(String);
@@ -107,8 +107,17 @@ pub mod binding {
 
   #[derive(Debug, Clone, PartialEq, Eq, TypeName)]
   pub struct TypedProduction<Tok: Debug+PartialEq+Eq+Hash+Copy+Clone+TypeName> {
-    pub cases: Vec<TypedCase<Tok>>,
-    pub output_type: TypeNameWrapper,
+    cases: Vec<TypedCase<Tok>>,
+    output_type: TypeNameWrapper,
+  }
+
+  impl<Tok: Debug+PartialEq+Eq+Hash+Copy+Clone+TypeName> TypedProduction<Tok> {
+    pub fn new<Output: TypeName>(cases: Vec<TypedCase<Tok>>) -> Self {
+      TypedProduction {
+        cases,
+        output_type: TypeNameWrapper::for_type::<Output>(),
+      }
+    }
   }
 
   impl<Tok: Debug+PartialEq+Eq+Hash+Copy+Clone+TypeName> ProvidesProduction<Tok>
@@ -142,8 +151,8 @@ pub mod binding {
     Tok: Debug+PartialEq+Eq+Hash+Copy+Clone+TypeName,
     /* Members: HList, */
   > {
-    underlying: SimultaneousProductions<Tok>,
-    bindings: IndexMap<ProdCaseRef, Rc<Box<dyn PointerBoxingAcceptor>>>,
+    pub underlying: SimultaneousProductions<Tok>,
+    pub bindings: IndexMap<ProdCaseRef, Rc<Box<dyn PointerBoxingAcceptor>>>,
   }
 
   impl<
@@ -155,6 +164,97 @@ pub mod binding {
       /* Members, */
     >
   {
+    pub fn reconstruct<Output: TypeName+'static>(
+      &self,
+      reconstruction: &CompletedWholeReconstruction,
+    ) -> Result<Box<Output>, BindingError>
+    {
+      let mut reconstruction = reconstruction
+        .clone()
+        .0
+        .into_iter()
+        .collect::<VecDeque<_>>();
+      if reconstruction.len() == 3
+        && reconstruction.pop_front().unwrap()
+          == CompleteSubReconstruction::State(LoweredState::Start)
+        && reconstruction.pop_back().unwrap() == CompleteSubReconstruction::State(LoweredState::End)
+      {
+        match reconstruction.pop_front().unwrap() {
+          CompleteSubReconstruction::Completed(CompletedCaseReconstruction { prod_case, args }) => {
+            let acceptor_for_outer = self.bindings.get(&prod_case).ok_or_else(|| {
+              BindingError(format!("no case found for prod case ref {:?}!", prod_case))
+            })?;
+            let TypedProductionParamsDescription { output_type, .. } =
+              acceptor_for_outer.type_params();
+            let expected_output_type = TypeNameWrapper::for_type::<Output>();
+            if output_type != expected_output_type {
+              /* FIXME: how do we reasonably accept a type parameter upon reconstruction of
+               * a parse? */
+              Err(BindingError(format!(
+                "output type {:?} for case {:?} did not match expected output type {:?}",
+                output_type, prod_case, expected_output_type
+              )))
+            } else {
+              self
+                .reconstruct_sub(acceptor_for_outer.clone(), &args)
+                .and_then(|result_rc: Box<dyn std::any::Any>| {
+                  result_rc.downcast::<Output>().or_else(|_| {
+                    Err(BindingError(format!(
+                      "prod case {:?} with args {:?} could not be downcast to {:?}",
+                      prod_case,
+                      args,
+                      TypeNameWrapper::for_type::<Output>()
+                    )))
+                  })
+                })
+            }
+          },
+          x => Err(BindingError(format!(
+            "element {:?} in complete reconstruction {:?} was not recognized",
+            x, reconstruction
+          ))),
+        }
+      } else {
+        Err(BindingError(format!("reconstruction {:?} was not recognized as a top-level reconstruction (with 3 elements, beginning at Start and ending at End)", reconstruction)))
+      }
+    }
+
+    fn reconstruct_sub(
+      &self,
+      acceptor: Rc<Box<dyn PointerBoxingAcceptor>>,
+      args: &Vec<CompleteSubReconstruction>,
+    ) -> Result<Box<dyn std::any::Any>, BindingError>
+    {
+      let sub_args: Vec<Box<dyn std::any::Any>> = args
+        .iter()
+        .flat_map(|x| match x {
+          CompleteSubReconstruction::State(_) => Ok(None),
+          CompleteSubReconstruction::Completed(CompletedCaseReconstruction { prod_case, args }) => {
+            let acceptor_for_outer = self.bindings.get(prod_case).ok_or_else(|| {
+              BindingError(format!("no case found for prod case ref {:?}!", prod_case))
+            })?;
+            self
+              .reconstruct_sub(acceptor_for_outer.clone(), args)
+              .map(|x| Some(x))
+          },
+        })
+        .flat_map(|x| x)
+        .collect();
+      let TypedProductionParamsDescription { params, .. } = acceptor.type_params();
+      if sub_args.len() != params.len() {
+        Err(BindingError(format!(
+          "{:?} args for acceptor {:?} (expected {:?})",
+          sub_args.len(),
+          &acceptor,
+          params.len()
+        )))
+      } else {
+        acceptor
+          .accept_erased(sub_args)
+          .or_else(|e| Err(BindingError(format!("acceptance error {:?}", e))))
+      }
+    }
+
     pub fn new(production_boxes: Vec<Rc<Box<dyn ProvidesProduction<Tok>>>>) -> Self {
       let underlying = SimultaneousProductions(
         production_boxes
@@ -168,27 +268,26 @@ pub mod binding {
           })
           .collect(),
       );
-      let bindings: IndexMap<ProdCaseRef, Rc<Box<dyn PointerBoxingAcceptor>>> =
-        production_boxes
-          .iter()
-          .cloned()
-          .enumerate()
-          .flat_map(|(prod_ind, prod)| {
-            let cur_prod_ref = ProdRef(prod_ind);
-            prod
-              .get_acceptors()
-              .into_iter()
-              .enumerate()
-              .map(move |(case_ind, acceptor)| {
-                let cur_prod_case_ref = ProdCaseRef {
-                  prod: cur_prod_ref,
-                  case: CaseRef(case_ind),
-                };
-                (cur_prod_case_ref, acceptor)
-              })
-              .collect::<Vec<_>>()
-          })
-          .collect();
+      let bindings: IndexMap<ProdCaseRef, Rc<Box<dyn PointerBoxingAcceptor>>> = production_boxes
+        .iter()
+        .cloned()
+        .enumerate()
+        .flat_map(|(prod_ind, prod)| {
+          let cur_prod_ref = ProdRef(prod_ind);
+          prod
+            .get_acceptors()
+            .into_iter()
+            .enumerate()
+            .map(move |(case_ind, acceptor)| {
+              let cur_prod_case_ref = ProdCaseRef {
+                prod: cur_prod_ref,
+                case: CaseRef(case_ind),
+              };
+              (cur_prod_case_ref, acceptor)
+            })
+            .collect::<Vec<_>>()
+        })
+        .collect();
       TypedSimultaneousProductions {
         underlying,
         bindings,
@@ -233,13 +332,16 @@ pub mod binding {
     }
   }
 
+  #[derive(Debug, Clone, PartialEq, Eq, Hash)]
+  pub struct AcceptanceError(String);
+
   pub trait PointerBoxingAcceptor {
     fn identity_salt(&self) -> &str;
     fn type_params(&self) -> TypedProductionParamsDescription;
     fn accept_erased(
       &self,
-      args: Vec<Rc<Box<dyn std::any::Any>>>,
-    ) -> Rc<Box<dyn std::any::Any>>;
+      args: Vec<Box<dyn std::any::Any>>,
+    ) -> Result<Box<dyn std::any::Any>, AcceptanceError>;
   }
 
   impl Debug for dyn PointerBoxingAcceptor {
@@ -258,6 +360,17 @@ pub mod binding {
     fn fmt(f: &mut fmt::Formatter<'_>) -> fmt::Result {
       write!(f, "dyn {}::PointerBoxingAcceptor", module_path!())
     }
+  }
+
+  #[macro_export]
+  macro_rules! vec_box_rc {
+    ($($x:expr),+) => {
+      vec![
+        $(
+          Rc::new(Box::new($x))
+        ),+
+      ]
+    };
   }
 
   /* #[macro_export] */
@@ -299,8 +412,8 @@ pub mod binding {
   /* [$arg_name: $arg_type] */
   /* }; */
 
-  /* ([$_literal:expr], $($rest:tt)+) => { _extract_typed_params![$($rest)+]
-   * }; */
+  /* ([$_literal:expr], $($rest:tt)+) => { _extract_typed_params![$($rest)+] */
+  /* }; */
   /* } */
 
   /* fn wow() { */
@@ -325,8 +438,8 @@ pub mod binding {
 
   /* #[macro_export] */
   /* macro_rules! _generate_case { */
-  /* ($gen_id:ident, $production_type:ty => [$($decl:tt)+] => $body:block) =>
-   * {{ */
+  /* ($gen_id:ident, $production_type:ty => [$($decl:tt)+] => $body:block) => */
+  /* {{ */
   /* pub struct $gen_id(pub String); */
   /* impl PointerBoxingAcceptor> for $gen_id { */
   /* fn identity_salt(&self) -> &str { */
@@ -334,8 +447,8 @@ pub mod binding {
   /* } */
 
   /* fn type_params(&self) -> TypedProductionParamsDescription { */
-  /* _generate_typed_params_description![$production_type,
-   * _extract_typed_params![$($decl)+]] */
+  /* _generate_typed_params_description![$production_type, */
+  /* _extract_typed_params![$($decl)+]] */
   /* } */
 
   /* fn accept(args: Vec<Box<dyn std::any::Any>>) -> $production_type { */
@@ -349,10 +462,10 @@ pub mod binding {
   /* $body */
   /* } */
   /* } */
-  /* let acceptor = Rc::<dyn
-   * PointerBoxingAcceptor>>::new( */
-  /* $gen_id(format!("anonymous class at {}::{}", module_path!(),
-   * stringify!($gen_id)))); */
+  /* let acceptor = Rc::<dyn */
+  /* PointerBoxingAcceptor>>::new( */
+  /* $gen_id(format!("anonymous class at {}::{}", module_path!(), */
+  /* stringify!($gen_id)))); */
   /* let case = Case(vec![$($x),*]); */
   /* TypedCase { case, acceptor } */
   /* }}; */
@@ -1659,6 +1772,19 @@ pub mod parsing {
   }
 
   impl Parse {
+    #[cfg(test)]
+    pub fn get_next_parse(&mut self) -> SpanningSubtreeRef {
+      loop {
+        match self.advance() {
+          Ok(ParseResult::Incomplete) => (),
+          Ok(ParseResult::Complete(tree_ref)) => {
+            return tree_ref;
+          },
+          Err(e) => panic!(e),
+        }
+      }
+    }
+
     /* NB: Intentionally private! */
     fn new(grammar: &ParseableGrammar) -> Self {
       Parse {
@@ -2449,7 +2575,8 @@ pub mod operators {
 #[cfg(test)]
 mod tests {
   use super::{
-    grammar_indexing::*, lowering_to_indices::*, parsing::*, reconstruction::*, user_api::*, *,
+    binding::*, grammar_indexing::*, lowering_to_indices::*, parsing::*, reconstruction::*,
+    user_api::*, *,
   };
 
   #[test]
@@ -4235,19 +4362,7 @@ mod tests {
 
     let mut parse = Parse::initialize_with_trees_for_adjacent_pairs(&parseable_grammar);
 
-    fn get_next_parse(parse: &mut Parse) -> SpanningSubtreeRef {
-      loop {
-        match parse.advance() {
-          Ok(ParseResult::Incomplete) => (),
-          Ok(ParseResult::Complete(tree_ref)) => {
-            return tree_ref;
-          },
-          Err(e) => panic!(e),
-        }
-      }
-    }
-
-    let spanning_subtree_ref = get_next_parse(&mut parse);
+    let spanning_subtree_ref = parse.get_next_parse();
     let reconstructed = InProgressReconstruction::new(spanning_subtree_ref, &parse).unwrap();
     let completely_reconstructed = CompletedWholeReconstruction::new(reconstructed).unwrap();
     assert_eq!(
@@ -4283,7 +4398,7 @@ mod tests {
       ParseableGrammar::new::<char>(preprocessed_grammar, &longer_input);
     let mut longer_parse =
       Parse::initialize_with_trees_for_adjacent_pairs(&longer_parseable_grammar);
-    let first_parsed_longer_string = get_next_parse(&mut longer_parse);
+    let first_parsed_longer_string = longer_parse.get_next_parse();
     let longer_reconstructed =
       InProgressReconstruction::new(first_parsed_longer_string, &longer_parse).unwrap();
     let longer_completely_reconstructed =
@@ -4317,44 +4432,79 @@ mod tests {
     );
   }
 
-  /* #[test] */
-  /* fn idk() { */
-  /* assert_eq!( */
-  /* { */
-  /* trace_macros!(true); */
-  /* let res = productions![ */
-  /* u32 => [ */
-  /* case ( */
-  /* _x: Vec<char> => CaseElement::Lit(Literal::from("1")) */
-  /* ) => { */
-  /* 1 */
-  /* } */
-  /* ], */
-  /* Vec<i64> => [ */
-  /* case ( */
-  /* _x: Vec<char> => CaseElement::Lit(Literal::from("a")), */
-  /* y: u32 => CaseElement::Prod(ProductionReference::<u32>::new()), */
-  /* _z: Vec<char> => CaseElement::Lit(Literal::from("a")) */
-  /* ) => { */
-  /* asdf(); */
-  /* } */
-  /* ] */
-  /* ]; */
-  /* trace_macros!(false); */
-  /* let res2 = ; */
-  /* res */
-  /* }, */
-  /* SimultaneousProductions( */
-  /* [( */
-  /* ProductionReference::new("std::vec::Vec<i64>"), */
-  /* Production(vec![Case(vec![CaseElement::Lit(Literal::from("a"))])]) */
-  /* ),] */
-  /* .iter() */
-  /* .cloned() */
-  /* .collect() */
-  /* ) */
-  /* ); */
-  /* } */
+  #[test]
+  fn idk() {
+    let example =
+      TypedSimultaneousProductions::new(vec_box_rc![TypedProduction::new::<usize>(vec![
+        TypedCase {
+          /* FIXME: this breaks when we try to use a 1-length string!!! */
+          case: Case(vec![CaseElement::Lit(Literal::from("ab"))]),
+          acceptor: Rc::new(Box::new({
+            struct GeneratedStruct;
+            impl PointerBoxingAcceptor for GeneratedStruct {
+              fn identity_salt(&self) -> &str { "?????????????!" }
+
+              fn type_params(&self) -> TypedProductionParamsDescription {
+                TypedProductionParamsDescription::new::<usize>(vec![])
+              }
+
+              fn accept_erased(
+                &self,
+                _args: Vec<Box<dyn std::any::Any>>,
+              ) -> Result<Box<dyn std::any::Any>, AcceptanceError>
+              {
+                /* FIXME: how do i get access to the states we've traversed at all? Do I
+                 * care? */
+                Ok(Box::new({ 1 as usize }))
+              }
+            }
+            GeneratedStruct
+          }))
+        }
+      ])]);
+    let token_grammar = TokenGrammar::new(&example.underlying).unwrap();
+    let preprocessed_grammar = PreprocessedGrammar::new(&token_grammar);
+    let string_input = "ab";
+    let input = Input(string_input.chars().collect());
+    let parseable_grammar = ParseableGrammar::new::<char>(preprocessed_grammar, &input);
+    let mut parse = Parse::initialize_with_trees_for_adjacent_pairs(&parseable_grammar);
+    let parsed_string = parse.get_next_parse();
+    let reconstructed_parse = InProgressReconstruction::new(parsed_string, &parse).unwrap();
+    let completely_reconstructed_parse =
+      CompletedWholeReconstruction::new(reconstructed_parse).unwrap();
+    assert_eq!(
+      *example
+        .reconstruct::<usize>(&completely_reconstructed_parse)
+        .unwrap(),
+      1 as usize
+    );
+
+    /* assert_eq!( */
+    /* { */
+    /* trace_macros!(true); */
+    /* let res = productions![ */
+    /* u32 => [ */
+    /* case ( */
+    /* _x: Vec<char> => CaseElement::Lit(Literal::from("1")) */
+    /* ) => { */
+    /* 1 */
+    /* } */
+    /* ], */
+    /* Vec<i64> => [ */
+    /* case ( */
+    /* _x: Vec<char> => CaseElement::Lit(Literal::from("a")), */
+    /* y: u32 => CaseElement::Prod(ProductionReference::<u32>::new()), */
+    /* _z: Vec<char> => CaseElement::Lit(Literal::from("a")) */
+    /* ) => { */
+    /* asdf(); */
+    /* } */
+    /* ] */
+    /* ]; */
+    /* trace_macros!(false); */
+    /* }, */
+    /* example */
+    /* ); */
+  }
 
   fn non_cyclic_productions() -> SimultaneousProductions<char> {
     SimultaneousProductions(
