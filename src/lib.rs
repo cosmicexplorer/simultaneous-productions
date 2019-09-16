@@ -4521,6 +4521,15 @@ mod tests {
       ]);
     let token_grammar = TokenGrammar::new(&example.underlying).unwrap();
     let preprocessed_grammar = PreprocessedGrammar::new(&token_grammar);
+    /* FIXME: THE ERROR OUTPUT FOR THIS IS INCREDIBLE -- PLEASE TEST IT!!!!
+
+        let string_input = "2+1";
+
+    `cargo test` then produces:
+
+        thread 'tests::extract_typed_production' panicked at 'no tokens found for token '1' in input Input(['2', '+', '1'])', src/libcore/option.rs:1166:5
+
+     */
     let string_input = "2+2";
     let input = Input(string_input.chars().collect());
     let parseable_grammar = ParseableGrammar::new::<char>(preprocessed_grammar, &input);
