@@ -6,7 +6,78 @@
 
 \begin{document}
 \maketitle
+\section{Background}
+This paper will prove that the \textit{S.P.} parsing algorithm is \textit{streamable} and \textit{cacheable}, and that the \textit{S.P.} grammar-grammar is recursively enumerable (i.e. that \textit{T.M.} can be reduced to \textit{S.P.}). We will then prove that \textit{streamability} and \textit{cacheability} are sufficient to produce a parsing algorithm that can handle stack cycles in linear (???/whatever runtime we find) time. Finally, we will demonstrate that a \textit{T.M.}'s runtime increases superlinearly (???) as $k$-context-sensitivity increases, thereby defining a strict superset of \textit{T.M.}s called \textit{S.P}s, of which \textit{S.P.} is a member.
 
-\section{This is the only section}
-hello!
+\section{Concepts}
+\subsection{The S.P. Grammar-Grammar}
+\begin{itemize}
+  \item \textit{Describe why it's called a grammar-grammar, then describe the elements of the (simple) grammar-grammar, including nonterminals, terminals, ellipses, cases, and productions.}
+  \item \textit{Describe the relationship to the Chomsky formulation.}
+  \item \textit{Describe what differs from the Chomsky formulation.}
+  \item \textit{Describe the concept of stack cycles in an S.P. grammar.}
+  \item \textit{Describe the grammar-grammar in relationship to an S.P. fully-realized ``grammar'' vs e.g. a context-free grammar.}
+\end{itemize}
+
+\subsection{\textit{Streamability} and \textit{Cacheability}}
+\begin{itemize}
+  \item \textit{Define streamability and cacheability as mathematical properties in terms of parsing algorithms in general.}
+  \item \textit{The point of these is to parameterize the qualities that S.P. has which other parsing algorithms lack. The idea is to make it more clear that S.P. is a *paradigm* of parsing, not a single algorithm.}
+  \item \textit{If possible, we want to prove the performance characteristics and correctness *in terms of* streamability and cacheability to demonstrate how to slot in a new ``backend'' for the algorithm.}
+\end{itemize}
+
+\subsection{$k$-context-sensitivity}
+A context-sensitive language has at least one situation in which the parse tree can have multiple valid values for a sub-parse depending on the status of a super-parse. A $k$-context-sensitive language is one in which the depth of the stack that determines a sub-parse is bounded by a constant $k$. \textbf{TODO: VALIDATE!} In recursively enumerable languages, the depth of the stack of symbols needed to determine the correct sub-parse is instead bounded by the length of the input $n$.
+
+\section{The S.P. Parsing Algorithm}
+\subsection{Architecture Overview}
+\textit{List and briefly describe the phases of the algorithm.}
+
+\subsection{Data Structures and Techniques}
+\begin{itemize}
+  \item \textit{lexicographic BFS / partitioning (cite Spinrad's book, etc)}
+\end{itemize}
+
+\subsection{Phases}
+\textit{This part should be useful for implementors of the algorithm.}
+\subsubsection{Preprocessing the S.P. Grammar}
+\subsubsection{Setting up a Parse}
+\subsubsection{Parsing}
+\subsubsection{Resolving the Matched Input}
+
+\section{Correctness}
+\subsection{Proof of Streamability and Cacheability}
+\subsection{Equivalence of S.P and T.M.}
+\begin{itemize}
+  \item \textit{This demonstrates that S.P. can parse recursively enumerable languages.}
+\end{itemize}
+\subsection{Equivalence of Stack Cycles and $k$-context-sensitivity}
+
+\section{Performance}
+\subsection{Parsing a Context-Free Language}
+\subsection{Parsing a $k$-Context-Sensitive Language}
+\subsection{Parsing a Recursively Enumerable Language}
+\textit{If ``$k$-context-sensitivity'' is general enough to cover this, we may not need a separate section.}
+
+\subsection{Parallelism}
+\textit{Describe the runtime of the algorithm if $k$ independent CPUs are provided.}
+
+\section{Effect on the Halting Problem}
+\begin{itemize}
+  \item \textit{Describe/Prove how the Halting Problem applies to T.M.s vs S.P.s, referencing the Performance section.}
+  \item \textit{Describe how S.P. was created by just thinking about having more than one state at a time (so giving insight into what underlying issues caused S.P. not to be found until now, and how others could have figured this out instead of me).}
+  \item \textit{Technically, this makes T.M.s a strict subset (!!!) of S.P.s that can only have a single state at a time and can only respond to the halting problem by running forever.} \textbf{THIS IS SUPER IMPORTANT AND POWERFUL!!!} \textit{Make it clear that this applies to any construct that satisfies ``streamability'' and ``cacheability''.}
+\end{itemize}
+
+\section{Conclusions and Future Work}
+\begin{itemize}
+  \item \textit{Contrast S.P. to the Chomsky formulation.}
+  \item \textit{We define the ``streamability'' and ``cacheability'' properties.}
+  \item \textit{Those properties are shown to be (???) sufficient to create a construct better than a T.M.}
+  \item \textit{S.P. is an example of this superior construct.}
+  \item \textit{Describe how S.P. is the ``holy grail'' of parsing algorithms, and what parsing theory should focus on next.}
+  \item \textit{Mention the benchmarks paper.}
+  \item \textit{Mention running it backwards into a Monte Carlo Search Tree.}
+\end{itemize}
+
 \end{document}
