@@ -60,7 +60,9 @@ A context-sensitive language has at least one situation in which the parse tree 
 \textit{If ``$k$-context-sensitivity'' is general enough to cover this, we may not need a separate section.}
 
 \subsection{Parallelism}
-\textit{Describe the runtime of the algorithm if $k$ independent CPUs are provided.}
+\textit{Describe the runtime of the algorithm if $k$ independent CPUs are provided, taking into account the cost of moving data across cores.}
+
+\textit{This section will likely require an entirely separate analysis.} \textbf{NOTE: It might be extremely enlightening to make this the first goal in analyzing the algorithm, and then consider the single-CPU case as a special case.}
 
 \section{Effect on the Halting Problem}
 \begin{itemize}
