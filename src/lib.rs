@@ -1902,7 +1902,7 @@ pub mod parsing {
     }
 
     /* Given two adjacent stack diffs, check whether they are compatible, and if
-     * so return the resulting stack diff from joining them. */
+     * so, return the resulting stack diff from joining them. */
     fn stack_diff_pair_zipper(
       left_diff: StackDiffSegment,
       right_diff: StackDiffSegment,
