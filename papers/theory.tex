@@ -1,5 +1,7 @@
 \documentclass{article}
 
+\usepackage{hyperref}
+
 \title{Simultaneous Productions: \\ a Fully General Parsing Method to Make Progress on the Halting Problem}
 \date{2020-06-08}
 \author{Daniel McClanahan}
@@ -8,10 +10,17 @@
 \maketitle
 
 \section{Relevant Prior Art / Notes}
+\subsection{Overview}
+
+\textbf{Recall that since we tried comparing the S.P. parsing algorithm to a T.M., there are two completely different use cases we run into with prior art: \textit{parsing} and \textit{execution}.}
+
+A \ref{petri-net} \textbf{Petri Net} is the closest model I have found to S.P.'s current \textit{evaluation} method, i.e. how it models the parsing algorithm \textit{after} preprocessing the provided S.P grammar, \textit{upon} a given input. However, a \ref{rcg} \textbf{Range Concatenation Grammar} appears to be the closest model I have found to the S.P. grammar-grammar (how grammars can be specified), and it seems close enough that \textbf{proofs of the RCG's Turing-equivalence may be transferable to S.P. (!!!!)}.
+
 \subsection{Papers}
 \begin{itemize}
   \item \textbf{Freedom from the diagonal argument for circle-free Turing Machines:} \textit{../literature/Martin Davis - The Undecidable\_ Basic Papers on Undecidable Propositions, Unsolvable Problems and Computable Functions (2004)\_ocr.pdf} -- pages 137-138
-  \item \textbf{Strong similarity to Petri Nets:} \textit{../literature/Memo-95-decision-problems-petri-nets\_ocr.pdf} -- pages 21-22
+  \item \phantomsection \label{petri-net} \textbf{Strong similarity to Petri Nets:} \textit{../literature/Memo-95-decision-problems-petri-nets\_ocr.pdf} -- pages 21-22
+    \textit{../literature/tr63\_ocr.pdf} -- ``the reachability problem for vector addition systems is shown to require at least exponential space'' -- unclear still how vector addition systems relate to S.P.
   \item \textbf{Potential freedom from principles II, III, IV of the Gandy automata criterion for computability:} \textit{../literature/gandy1980.pdf} -- specifically page 133, but really all four principles. further inline notes in notability app
   \item \textbf{Potential termination proof (or not) from plotkin's powerdomains:} \textit{../literature/plotkin-powerdomains-1976.pdf} -- page 4, specifically ``Now Konig’s
 lemma says that if every branch of a finitary tree is finite, then so is the tree
@@ -20,18 +29,19 @@ itself.''
 
 \subsection{Wikipedia}
 \begin{itemize}
-  \item \textbf{descriptions of unbounded automata, especially regarding termination of ``infinite'' sequences:} \textit{https://en.wikipedia.org/wiki/Fair\_nondeterminism} -- notes on plotkin's result, as well as clinger: ``Though each node on an infinite branch must lie on a branch with a limit, the infinite branch need not itself have a limit. Thus the existence of an infinite branch does not necessarily imply a nonterminating computation.''
-  \item \textbf{strong similarity to petri nets:} \textit{https://en.wikipedia.org/wiki/Petri\_nets}
-  \item \textbf{the actor model doesn't really seem applicable, but the semantics of it might be:} \textit{https://en.wikipedia.org/wiki/Denotational\_semantics\_of\_the\_Actor\_model}
-  \item \textbf{a closed actor system may represent S.P.:} \textit{https://en.wikipedia.org/wiki/Indeterminacy\_in\_concurrent\_computation}
-  \item \textbf{chaitin's constant may be interesting:} \textit{https://en.wikipedia.org/wiki/Chaitin\%27s\_constant}
-  \item \textbf{it seems godel's results may imply that computability is ``absolute'' -- is S.P. absolute?} \textit{https://en.wikipedia.org/wiki/Church\%E2\%80\%93Turing\_thesis\#complexity-theoretic\_Church\%E2\%80\%93Turing\_thesis}
-  \item \textbf{recursively enumerable sets:} \textit{https://en.wikipedia.org/wiki/Recursively\_enumerable}
-  \item \textbf{cantor's diagonal argument:} \textit{https://en.wikipedia.org/wiki/Cantor\%27s\_diagonal\_argument}
-  \item \textbf{halting problem:} \textit{https://en.wikipedia.org/wiki/Halting\_problem} -- it's possible S.P. is immune to the naive result, as it can ``analyze'' the ``else: loop forever'' statement independently of the first branch
-  \item \textbf{turing machine:} \textit{https://en.wikipedia.org/wiki/Turing\_machine}
-  \item \textbf{quantified boolean formula:} \textit{https://en.wikipedia.org/wiki/Quantified\_Boolean\_formula\_problem} -- interesting thought experiment for universal quantifier -- is that the same power that S.P. has to infer a T.M.?
-  \item \textbf{savitch's theorem:} \textit{https://en.wikipedia.org/wiki/Savitch\%27s\_theorem} (!!!) -- nondeterministic T.M.s only use a square root of the space of a deterministic T.M., as opposed to the possibly-exponential time bound difference between the two (!!!)
+  \item \phantomsection \label{rcg} \textbf{description of a grammar-grammar VERY VERY SIMILAR to S.P.'s, which allows negation:} \url{https://en.wikipedia.org/wiki/Range_concatenation_grammars} -- \textit{without} negations is equivalent to a T.M., and a proof of equivalence could apply to S.P. (\textit{separate} from the question of termination)
+  \item \textbf{descriptions of unbounded automata, especially regarding termination of ``infinite'' sequences:} \url{https://en.wikipedia.org/wiki/Fair_nondeterminism} -- notes on plotkin's result, as well as clinger: ``Though each node on an infinite branch must lie on a branch with a limit, the infinite branch need not itself have a limit. Thus the existence of an infinite branch does not necessarily imply a nonterminating computation.''
+  \item \textbf{strong similarity to petri nets:} \url{https://en.wikipedia.org/wiki/Petri\_nets}
+  \item \textbf{the actor model doesn't really seem applicable, but the semantics of it might be:} \url{https://en.wikipedia.org/wiki/Denotational\_semantics\_of\_the\_Actor\_model}
+  \item \textbf{a closed actor system may represent S.P.:} \url{https://en.wikipedia.org/wiki/Indeterminacy\_in\_concurrent\_computation}
+  \item \textbf{chaitin's constant may be interesting:} \url{https://en.wikipedia.org/wiki/Chaitin\%27s\_constant}
+  \item \textbf{it seems godel's results may imply that computability is ``absolute'' -- is S.P. absolute?} \url{https://en.wikipedia.org/wiki/Church\%E2\%80\%93Turing\_thesis\#complexity-theoretic\_Church\%E2\%80\%93Turing\_thesis}
+  \item \textbf{recursively enumerable sets:} \url{https://en.wikipedia.org/wiki/Recursively\_enumerable}
+  \item \textbf{cantor's diagonal argument:} \url{https://en.wikipedia.org/wiki/Cantor\%27s\_diagonal\_argument}
+  \item \textbf{halting problem:} \url{https://en.wikipedia.org/wiki/Halting\_problem} -- it's possible S.P. is immune to the naive result, as it can ``analyze'' the ``else: loop forever'' statement independently of the first branch
+  \item \textbf{turing machine:} \url{https://en.wikipedia.org/wiki/Turing\_machine}
+  \item \textbf{quantified boolean formula:} \url{https://en.wikipedia.org/wiki/Quantified\_Boolean\_formula\_problem} -- interesting thought experiment for universal quantifier -- is that the same power that S.P. has to infer a T.M.?
+  \item \textbf{savitch's theorem:} \url{https://en.wikipedia.org/wiki/Savitch\%27s\_theorem} (!!!) -- nondeterministic T.M.s only use a square root of the space of a deterministic T.M., as opposed to the possibly-exponential time bound difference between the two (!!!)
 \end{itemize}
 
 \section{Background}
