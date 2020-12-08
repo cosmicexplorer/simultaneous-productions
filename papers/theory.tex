@@ -12,9 +12,17 @@
 \section{Relevant Prior Art / Notes}
 \subsection{Overview}
 
-\textbf{Recall that since we tried comparing the S.P. parsing algorithm to a T.M., there are two completely different use cases we run into with prior art: \textit{parsing} and \textit{execution}.}
+\textbf{Recall that since we tried comparing the S.P. parsing algorithm to a T.M., there are two completely different use cases we run into with prior art: \textit{parsing} and \textit{execution}.} Similarly, we find that references \textit{so far} can be divided into two categories: useful for \textit{completing the actual proof} and \textit{making the proof familiar to experts}.
+
+\subsubsection{For Completing the Proof}
+\label{completing-the-proof}
 
 A \ref{petri-net} \textbf{Petri Net} is the closest model I have found to S.P.'s current \textit{evaluation} method, i.e. how it models the parsing algorithm \textit{after} preprocessing the provided S.P grammar, \textit{upon} a given input. However, a \ref{rcg} \textbf{Range Concatenation Grammar} appears to be the closest model I have found to the S.P. grammar-grammar (how grammars can be specified), and it seems close enough that \textbf{proofs of the RCG's Turing-equivalence may be transferable to S.P. (!!!!)}.
+
+\subsubsection{For Making it Familiar}
+\label{making-it-familiar}
+
+The preprocessing phase of an S.P. grammar (TODO: write!) involves lots of graphs which may be unfamiliar to people more familiar with the Chomsky definition of a formal language. Defining it as a \ref{graph-rewriting} \textbf{Graph Rewriting System} (also called a ``graph grammar'') may help to explain the process that is being performed (TODO: write preprocessing section, describe it as \textit{performing a reachability analysis which also marks where any loops occur between ``states'' so the parsing process can know \textbf{in advance} before it goes into a loop mode!!!!!!!!!!!! this may be what makes it better than a T.M. aka fix the halting problem!!!!! this also may be what makes it ``less powerful'' than a T.M. \^\_\^}).
 
 \subsection{Papers}
 \begin{itemize}
@@ -30,6 +38,7 @@ itself.''
 \subsection{Wikipedia}
 \begin{itemize}
   \item \phantomsection \label{rcg} \textbf{description of a grammar-grammar VERY VERY SIMILAR to S.P.'s, which allows negation:} \url{https://en.wikipedia.org/wiki/Range_concatenation_grammars} -- \textit{without} negations is equivalent to a T.M., and a proof of equivalence could apply to S.P. (\textit{separate} from the question of termination)
+  \item \phantomsection \label{graph-rewriting} \textbf{the concept of graph rewrite rules} \url{https://en.wikipedia.org/wiki/Graph\_grammar} -- intended to emphasize similarity to how grammars are defined as constructions/productions
   \item \textbf{descriptions of unbounded automata, especially regarding termination of ``infinite'' sequences:} \url{https://en.wikipedia.org/wiki/Fair_nondeterminism} -- notes on plotkin's result, as well as clinger: ``Though each node on an infinite branch must lie on a branch with a limit, the infinite branch need not itself have a limit. Thus the existence of an infinite branch does not necessarily imply a nonterminating computation.''
   \item \textbf{strong similarity to petri nets:} \url{https://en.wikipedia.org/wiki/Petri\_nets}
   \item \textbf{the actor model doesn't really seem applicable, but the semantics of it might be:} \url{https://en.wikipedia.org/wiki/Denotational\_semantics\_of\_the\_Actor\_model}
