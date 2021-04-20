@@ -188,20 +188,8 @@ The tuple $SP^*$ formed from the selection of $p^*$ is referred to as a \textit{
 At this stage, we note two important points:
 \begin{enumerate}
   \item A production $p$ may match a finite or countably infinite number of subsequences $\overbar{I}$ of $I$, not just one. So, if we say $p$ \textit{matches} $\overbar{I}$ for some case $c_p$, it may still match other substrings $\overbar{I}'$, either for the same case $c_p$, or other cases $c'_p \in \scr{C}_p$.
-  \item We have not yet described a method to \textbf{actually find all of the adjacent states of a given grammar}. That is out of scope for this paper.
+  \item We have not yet described a method to \textbf{actually construct an adjacency mapping $\overbar{I}^*$ for a given grammar and input}. That is out of scope for this paper.
 \end{enumerate}
-
-\section{Graph Formulation}
-\label{sec:graph-formulation}
-
-We will take a moment to conceptualize the act of parsing the input $I$ from the grammar $(\Sigma, P, p)$ in terms of a graph $G_{P,I}$, abbreviated as simply $G$. This graph is defined as follows:
-\begin{itemize}
-  \item $V(G) = I$, where $V(G)$ is the vertices of $G$, which correspond to the consecutive tokens of $I$. This implies that the vertices $V(G)$ are fully ordered, and can be mapped to the integers $i \in [1,n]$, where $n = \abs{I}$.
-  \item The edges $E(G)$ correspond to \textit{adjacent states} from the set of productions $P$. Adjacency is defined as in \explicitsecref{sec:adjacency}. \textbf{Due to the definition of adjacency, $E(G)$ may be either finite or countably infinite.}
-  \item \textbf{A \textit{successful parse} over the graph $G$ is a hamiltonian path $H_G$ over the vertices $V(G)$, in the ordering prescribed by $I$.}
-\end{itemize}
-
-\textbf{TODO: describe how the path starts and ends!!!}
 
 \section{Chomsky Equivalence}
 \label{sec:chomsky-equivalence}
@@ -213,6 +201,18 @@ The alphabet $\Sigma$ used in both S.P. and the Chomsky formulation is exactly t
 \begin{equation}\label{eq:alphabet}
   \Sigma = \Sigma
 \end{equation}
+
+\subsection{Graph Formulation}
+\label{sec:graph-formulation}
+
+We will take a moment to conceptualize the act of parsing the input $I$ from the grammar $(\Sigma, P, p)$ in terms of a graph $G_{P,I}$, abbreviated as simply $G$. This graph is defined as follows:
+\begin{itemize}
+  \item $V(G) = I$, where $V(G)$ is the vertices of $G$, which correspond to the consecutive tokens of $I$. This implies that the vertices $V(G)$ are fully ordered, and can be mapped to the integers $i \in [1,n]$, where $n = \abs{I}$.
+  \item The edges $E(G)$ correspond to \textit{adjacent states} from the set of productions $P$. Adjacency is defined as in \explicitsecref{sec:adjacency}. \textbf{Due to the definition of adjacency, $E(G)$ may be either finite or countably infinite.}
+  \item \textbf{A \textit{successful parse} over the graph $G$ is a hamiltonian path $H_G$ over the vertices $V(G)$, in the ordering prescribed by $I$.}
+\end{itemize}
+
+\textbf{TODO: describe how the path starts and ends!!!}
 
 \section{Relevant Prior Art / Notes}
 \subsection{Overview}
