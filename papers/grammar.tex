@@ -150,8 +150,8 @@ We construct the predicate to answer the matching question for a production $\te
 \begin{equation}
   \label{eq:matches-prod}
   \begin{array}{rl}
-    \text{matches}_{(\scr{P})} &= \{SP\} \times \scr{P} \times \{I\} \rightarrow \binaryspace \\
-    \text{matches}_{(\scr{P})}(SP, p, I) &= \{ \exists p \in \scr{P}, c_p \in \scr{C}_p \pipe \text{matches}_{(\scr{C}_p)}(c_p, I) \Leftrightarrow \true \}
+    \text{matches}_{(\scr{P})} &: \{SP\} \times \scr{P} \times \{I\} \rightarrow \binaryspace. \\
+    \text{matches}_{(\scr{P})}(SP, p, I) &= \{ \exists p \in \scr{P}, c_p \in \scr{C}_p \pipe \text{matches}_{(\scr{C}_p)}(c_p, I) \Leftrightarrow \true \}.
   \end{array}
 \end{equation}
 A production $p \in \scr{P}$ \textit{matches} an input string $I$ when any of its cases $c_p \in \scr{C}_p$ match $I$ as defined in \expliciteqnref{eq:matches-case}.
@@ -159,8 +159,8 @@ A production $p \in \scr{P}$ \textit{matches} an input string $I$ when any of it
 \begin{equation}
   \label{eq:matches-case}
   \begin{array}{rl}
-    \text{matches}_{(\scr{C}_p)} &= \scr{C}_p \times \{I\} \rightarrow \binaryspace \\
-    \text{matches}_{(\scr{C}_p)}(c_p, I) &= \{ \exists \overbar{I}^*_m \pipe \text{matches}_{(e_j)}(e_j, \overbar{I}_j) \forall j \in [m] \Leftrightarrow \true \}
+    \text{matches}_{(\scr{C}_p)} &: \scr{C}_p \times \{I\} \rightarrow \binaryspace. \\
+    \text{matches}_{(\scr{C}_p)}(c_p, I) &= \{ \exists \overbar{I}^*_m \pipe \text{matches}_{(e_j)}(e_j, \overbar{I}_j) \forall j \in [m] \Leftrightarrow \true \}.
   \end{array}
 \end{equation}
 A case $c_p \in \scr{C}_p$ \textit{matches} an input string $I$ when there exists an adjacency mapping $\overbar{I}^*_m$ of length $m = \abs{c_p}$ which maps each case element $e_j$ to a subsequence $\overbar{I}_j$ such that every case element matches its assigned subsequence from the adjacency mapping as defined in \expliciteqnref{eq:matches-element}.
@@ -168,11 +168,11 @@ A case $c_p \in \scr{C}_p$ \textit{matches} an input string $I$ when there exist
 \begin{equation}
   \label{eq:matches-element}
   \begin{array}{rl}
-    \text{matches}_{(e_j)} &= [m] \times \{\overbar{I}\} \rightarrow \binaryspace \\
-    \text{matches}_{(e_j)}(j, \overbar{I}) &= \begin{alignedcases}{lcrcl}
+    [m] \times \{\overbar{I}\} \rightarrow \binaryspace &: \text{matches}_{(e_j)}. \\
+    \begin{alignedcases}{lcrcl}
       e_j = t \in \Sigma &\Rightarrow& \overbar{I} = \overbar{I}_{l_1,l_2}, l_1 = l_2, I_{l_1} = t &\Leftrightarrow& \true, \\
       e_j = p' \in \scr{P} &\Rightarrow& \text{matches}_{(\scr{P})}(SP, p', \overbar{I}) &\Leftrightarrow& \true.
-    \end{alignedcases}
+    \end{alignedcases} &= \text{matches}_{(e_j)}(j, \overbar{I}).
   \end{array}
 \end{equation}
 A case element $e_j$ matches an input subsequence $\overbar{I}$ when $e_j$ is a token $t \in \Sigma$, in which case $\overbar{I}$ is a length-1 substring of $I$ containing the single token $t$, or when $e_j$ is a production $p'$, in which case the subsequence $\overbar{I}$ must match the production $p'$ as defined in \expliciteqnref{eq:matches-prod}.
@@ -182,13 +182,13 @@ A case element $e_j$ matches an input subsequence $\overbar{I}$ when $e_j$ is a 
 
 \begin{equation}
   \label{eq:p-top}
-  p^* \in \scr{P}
+  p^* \in \scr{P}.
 \end{equation}
 As described in \explicitsecref{sec:matching-a-prod}, an S.P. grammar $SP$ alone is not sufficient information to unambiguously parse a string -- a single production must also be specified. Therefore to get an \textit{executable grammar}, we select a single ``top'' production $p^* \in \scr{P}$, corresponding to the \textit{start symbol} found in Chomsky grammars \explicitsecref{sec:chomsky-equivalence}.
 
 \begin{equation}
   \label{eq:specialized}
-  SP^* = (\Sigma, \scr{P}, p^*)
+  SP^* = (\Sigma, \scr{P}, p^*).
 \end{equation}
 The tuple $SP^*$ formed from the selection of $p^*$ is referred to as a \textit{specialized grammar}. For this reason, we may also refer to a grammar $SP$ (without having chosen any $p^*$ yet) as an \textit{unspecialized grammar}.
 
