@@ -8,6 +8,40 @@
 
 \newcommand{\todocite}[1]{\footnote{cite: #1}}
 
+\newcommand{\leftmost}[1]{\text{leftmost}(#1)}
+\newcommand{\rightmost}[1]{\text{rightmost}(#1)}
+\newcommand{\generalsubseq}{\overbar{I}}
+\newcommand{\leftsubseq}{\generalsubseq}
+\newcommand{\rightsubseq}{\generalsubseq'}
+
+\newcommand{\leftleft}{\leftmost{\leftsubseq}}
+\newcommand{\leftrignt}{\leftmost{\rightsubseq}}
+\newcommand{\rightleft}{\rightmost{\leftsubseq}}
+\newcommand{\rightright}{\rightmost{\rightsubseq}}
+
+\newcommand{\lookingleft}{\text{Left}}
+\newcommand{\lookingright}{\text{Right}}
+\newcommand{\lookingat}{L_{\updownarrow}}
+\newcommand{\lookdirection}{\{\lookingleft, \lookingright\}}
+\newcommand{\lookdirectionset}{\{ \text{LookDirection} \}}
+
+\newcommand{\subseqset}{\{\generalsubseq\}}
+\newcommand{\subseqsetpair}{\subseqset \times \subseqset}
+
+\newcommand{\opsuccess}{\text{Success}}
+\newcommand{\opfailure}{\text{Failure}}
+\newcommand{\ophasnoclue}{\text{IDK}}
+\newcommand{\maybeopspace}{\{\opsuccess, \opfailure, \ophasnoclue\}}
+\newcommand{\opresultset}{\{ \text{Result} \}}
+
+\newcommand{\substringwith}[2]{\overbar{I}_{(#1,#2)}}
+\newcommand{\canonicalleftend}{l_1}
+\newcommand{\canonicalrightend}{l_2}
+\newcommand{\canonicalsubstring}{\substringwith{\canonicalleftend}{\canonicalrightend}}
+\newcommand{\bookmarkwith}[1]{\widehat{I}_{(#1)}}
+\newcommand{\canonicalbookmarkindex}{l^+}
+\newcommand{\canonicalbookmark}{\bookmarkwith{\canonicalbookmarkindex}}
+
 \begin{document}
 \maketitle
 
@@ -47,7 +81,6 @@ We first define the \textit{S.P. grammar-grammar}, as a kind of meta-grammar whi
 
 \subsection{S.P. Grammar-Grammar}
 \label{sec:grammar-grammar}
-
 \begin{equation}
   \label{eq:sp}
   SP = (\Sigma, \scr{P}).
@@ -83,7 +116,6 @@ In short, each production $p \in \scr{P}$ can be \textit{matched} against some i
 
 \subsection{Input Specification}
 \label{sec:input-specification}
-
 \begin{equation}
   \label{eq:input-string-tokens}
   I = \{t_i\}_{i=1}^n \pipe t_i \in \Sigma \forall i \in [n].
@@ -92,59 +124,111 @@ An \textit{input string} $I$ is a finite sequence of \textit{tokens} $\{t_i\}_{i
 
 \subsection{Partitioning the Input}
 \label{sec:partitioning-the-input}
-We want to
-
-In order to model a partitioning of
+We would like to be able to reason independently about how different subsequences $\generalsubseq$ of the input $I$ may match a certain production $p \in \scr{P}$. We eventually make use of this reasoning in \explicitsecref{sec:matching-a-prod}, where we describe how to check whether an arbitrary production $p$ matches an arbitrary $\generalsubseq$. In later work we hope to show that this enables highly scalable performance gains through caching and parallelism techniques.
 
 \subsubsection{Substrings, Bookmarks, and Subsequences}
 \label{sec:subsequences}
+We define two methods to represent a \textit{subsequence} $\generalsubseq$ of the input string $I$: \textit{substrings} $\canonicalsubstring$ and \textit{bookmarks} $\canonicalbookmark$.
 
 \begin{align}
   \label{eq:subsequences}
-  \overbar{I}_{l_1,l_2} &= \{t_i\}_{i=l_1}^{l_2} &&= \text{substring}(I, l_1, l_2) &&&\pipe &&&l_1 \le l_2 \le n \in \N. \\
-  \widehat{I}_{l^+} &= \{\} &&= \text{bookmark}(I, l^+) &&&\pipe &&&l^+ \in [n + 1]. \\
-  \{\overbar{I}\} &= \{\overbar{I}_{l_1,l_2}\} \disjcup \{\widehat{I}_{l^+}\} &&= \text{subsequences}(I).
+  \generalsubseq_{\canonicalleftend,l_2} &= \{t_i\}_{i=\canonicalleftend}^{l_2} &&= \text{substring}(I, \canonicalleftend, l_2) &&&\pipe &&&\canonicalleftend \le l_2 \le n \in \N. \\
+  \canonicalbookmark &= \{\} &&= \text{bookmark}(I, \canonicalbookmarkindex) &&&\pipe &&&\canonicalbookmarkindex \in [n + 1]. \\
+  \subseqset &= \{\generalsubseq_{\canonicalleftend,l_2}\} \disjcup \{\canonicalbookmark\} &&= \text{subsequences}(I).
 \end{align}
-The \textit{substring} $\overbar{I}_{l_1,l_2}$ is the subsequence of $I$ from indices $l_1$ to $l_2$, inclusive. The \textit{bookmark} $\widehat{I}_{l^+}$ is an empty sequence (technically an empty subsequence of $I$) which is inserted \textbf{before} the index $l^+$. In the case that $l^+ = n + 1$, the bookmark $\widehat{I}_{l^+}$ is considered to be at the \textbf{end} of the input string $I$.
+The \textit{substring} $\generalsubseq_{\canonicalleftend,l_2}$ is the subsequence of $I$ from indices $\canonicalleftend$ to $l_2$, inclusive. The \textit{bookmark} $\canonicalbookmark$ is an empty sequence (technically an empty subsequence of $I$) which is inserted \textbf{before} the index $\canonicalbookmarkindex$. In the case that $\canonicalbookmarkindex = n + 1$, the bookmark $\canonicalbookmark$ is considered to be at the \textbf{end} of the input string $I$.
 
-We use the notation $\{\overbar{I}\}$ to denote the disjoint union of these two types of \textit{subsequences} of $I$.
+We use the notation $\subseqset$ to denote the disjoint union of these two types of \textit{subsequences} of $I$. Bookmarks are essentially only needed to represent productions which match the empty string (which are perfectly legal): see the matching process in \explicitsecref{sec:matching-a-prod}.
 
-\subsubsection{Adjacent Subsequences}
-\label{sec:adjacent-subsequences}
+% \subsubsection{Sorting Subsequences}
+% \label{sec:sorting-subsequences}
+% We would like to be able to compare subsequences from separate, possibly-overlapping parts of the string, in order to produce a data structure that looks like a ``parse tree'', but which can also represent non-local dependencies, such as those found in context-sensitive and recursively enumerable languages \todocite{cite or prove for context-sensitivity requiring non-local deps!}.
 
-\begin{equation}
-  \label{eq:adjacent-subsequences}
-  \begin{array}{rl}
-    \{\overbar{I}\} \times \{\overbar{I}\} \rightarrow \binaryspace &= \text{adjacent}. \\
-    \begin{alignedcases}{lcrcr}
-      \overbar{I} = \widehat{I}_{l^+}, \overbar{I}' = \widehat{I}_{{l^+}'} &\Rightarrow& l^+ = {l^+}' &\Leftrightarrow& \true, \\
-      \overbar{I} = \widehat{I}_{l^+}, \overbar{I}' = \overbar{I}_{l_1',l_2'} &\Rightarrow& l^+ = l_1' &\Leftrightarrow& \true, \\
-      \overbar{I} = \overbar{I}_{l_1,l_2}, \overbar{I}' = \widehat{I}_{{l^+}'} &\Rightarrow& l_2 = {l^+}' + 1 &\Leftrightarrow& \true, \\
-      \overbar{I} = \overbar{I}_{l_1,l_2}, \overbar{I}' = \overbar{I}_{l_1',l_2'} &\Rightarrow& l_1' = l_2 + 1 &\Leftrightarrow& \true.
-    \end{alignedcases} &= \text{adjacent}(\overbar{I}, \overbar{I}').
-  \end{array}
-\end{equation}
-Two subsequences $\overbar{I}$ and $\overbar{I}'$ of $I$ are defined to be \textit{adjacent} when $\text{adjacent}(\overbar{I}, \overbar{I'}) = \true$. As shown in \expliciteqnref{eq:adjacent-subsequences}, a bookmark is adjacent to another bookmark when they occupy the same position within $I$. A bookmark is adjacent to a substring when it is immediately before or immediately after the substring. Two substrings are adjacent when the end of one substring is immediately before the beginning of the other.
+% We first establish the ``leftmost'' and ``rightmost'' functions, and introduce the concept of ``adjacency'' for subsequences. We then produce an ``adjacency mapping'' construct which splits up the input $I$  \explicitsecref{sec:adjacency-mapping}.
 
-\begin{equation}
-  \label{eq:adjacency-mapping}
-  \overbar{I}^*_k = \{\overbar{I}_q\}_{q=1}^k \pipe \begin{alignedcases}{rl}
-    \text{adjacent}(\overbar{I}_q, \overbar{I}_{q + 1}) &= \true \forall q \in [k - 1], \\
-    \overbar{I}_1 &= \begin{alignedcases}{c}
-      \widehat{I}_{(l^+ = 1)}, \text{ or} \\
-      \overbar{I}_{(l_1=1),(l_2 \in [n])}.
-    \end{alignedcases}, \\
-    \overbar{I}_k &= \begin{alignedcases}{c}
-      \widehat{I}_{(l^+ = n+1)}, \text{ or} \\
-      \overbar{I}_{(l_1 \in [n]),(l_2=n)}.
-    \end{alignedcases}
-  \end{alignedcases}
-\end{equation}
-The \textit{adjacency mapping} $\overbar{I}^*$ is a \textit{contiguous} or consecutively adjacent sequence of length $k$ of subsequences $\{\overbar{I}_q\}_{q=1}^k$ of the input string $I$, in which the first element $\overbar{I}_1$ is adjacent to, or contains, the first element $t_1$ of $I$, and the final element $\overbar{I}_k$ is adjacent to, or contains, the last element $t_n$ of $I$. A bookmark for $\overbar{I}_1$ or $\overbar{I}_k$ would be adjacent to $t_1$ or $t_n$, while a substring would contain $t_1$ or $t_n$. We say that $\overbar{I}^*_k$ \textit{spans} the tokens of $I$.
+% \begin{align}
+%   \label{eq:leftmost-rightmost-span}
+%   \begin{array}{rcl}
+%     \begin{alignedcases}{lclcl}
+%       \leftmost{\canonicalbookmark} &=& \canonicalbookmarkindex &\in& [n + 1], \\
+%       \leftmost{\canonicalsubstring} &=& \canonicalleftend &\in& [n].
+%     \end{alignedcases} &=& \leftmost{\generalsubseq} \forall \generalsubseq \in \subseqset. \\
+%     \leftmost{\generalsubseq} &:& \subseqset \rightarrow [n + 1].
+%   \end{array} \\
+%   \begin{array}{rcl}
+%     \begin{alignedcases}{lclcl}
+%       \rightmost{\canonicalbookmark} &=& \canonicalbookmarkindex &\in& [n + 1], \\
+%       \rightmost{\canonicalsubstring} &=& \canonicalrightend &\in& [n].
+%     \end{alignedcases} &=& \rightmost{\generalsubseq} \forall \generalsubseq \in \subseqset. \\
+%     \rightmost{\generalsubseq} &:& \subseqset \rightarrow [n + 1].
+%   \end{array}
+% \end{align}
+% \textbf{TODO: ???}
+
+% \begin{align}
+%   \label{eq:f-minus}
+%   \lookdirectionset &= \lookdirection. \\
+%   \opresultset &= \maybeopspace. \\
+%   F_-^+ &: \p{\subseqsetpair \times \lookdirection} \rightarrow \maybeopspace. \\
+%   F_-(\leftsubseq, \rightsubseq) &= F_-^+(\leftsubseq, \rightsubseq, \lookingleft). \\
+%   F^+(\leftsubseq, \rightsubseq) &= F_-^+(\leftsubseq, \rightsubseq, \lookingright). \\
+%   F_-(\leftsubseq, \rightsubseq) &= \begin{alignedcases}{lcr}
+%     \leftleft = \leftrignt &\Rightarrow& \opfailure, \\
+%     \leftleft < \leftrignt &\Rightarrow& \opsuccess, \\
+%     F_-(\rightsubseq, \leftsubseq) = \opsuccess &\Rightarrow& \opfailure, \\
+%     \otherwise &\Rightarrow& \ophasnoclue.
+%   \end{alignedcases} \\
+%   F^+(\leftsubseq, \rightsubseq) &= \begin{alignedcases}{lcr}
+%     \rightleft = \rightright &\Rightarrow& \opfailure, \\
+%     \rightleft < \rightright &\Rightarrow& \opsuccess, \\
+%     F^+(\rightsubseq, \leftsubseq) = \opsuccess &\Rightarrow& \opfailure, \\
+%     \otherwise &\Rightarrow& \ophasnoclue.
+%   \end{alignedcases}
+% \end{align}
+% The functions $F_-$ and $F^+$ provide ``less than'' and ``greater than'' operators which can compare any two subsequences of $I$, but may return an $\ophasnoclue$ result.
+
+% \subsection{Adjacency}
+% \label{sec:adjacency}
+% We now attempt to strengthen our concept of ordering to represent \textit{adjacent} subsequences $\generalsubseq$ of $I$. We use this later in our definition of an adjacency mapping $\generalsubseq^*_k$ which ``spans'' the entire input $I$ \explicitsecref{sec:adjacency-mapping}.
+
+% \subsubsection{Adjacent Subsequences}
+% \label{sec:adjacent-subsequences}
+% \begin{equation}
+%   \label{eq:adjacent-subsequences}
+%   \begin{array}{rl}
+%     \subseqset \times \subseqset \rightarrow \ternarylogicspace &: \text{adjacent}. \\
+%     \begin{alignedcases}{lcrcr}
+%       \generalsubseq = \canonicalbookmark, \generalsubseq' = \widehat{I}_{{\canonicalbookmarkindex}'} &\Rightarrow& \canonicalbookmarkindex = {\canonicalbookmarkindex}' &\Leftrightarrow& \true, \\
+%       \generalsubseq = \canonicalbookmark, \generalsubseq' = \generalsubseq_{\canonicalleftend',l_2'} &\Rightarrow& \canonicalbookmarkindex = \canonicalleftend' &\Leftrightarrow& \true, \\
+%       \generalsubseq = \generalsubseq_{\canonicalleftend,l_2}, \generalsubseq' = \widehat{I}_{{\canonicalbookmarkindex}'} &\Rightarrow& l_2 = {\canonicalbookmarkindex}' + 1 &\Leftrightarrow& \true, \\
+%       \generalsubseq = \generalsubseq_{\canonicalleftend,l_2}, \generalsubseq' = \generalsubseq_{\canonicalleftend',l_2'} &\Rightarrow& \canonicalleftend' = l_2 + 1 &\Leftrightarrow& \true, \\
+%       \otherwise &\Rightarrow& && \undefval.
+%     \end{alignedcases} &= \text{adjacent}(\generalsubseq, \generalsubseq').
+%   \end{array}
+% \end{equation}
+% Two subsequences $\generalsubseq$ and $\generalsubseq'$ of $I$ are \textit{adjacent} when $\text{adjacent}(\generalsubseq, \overbar{I'}) = \true$. A bookmark is adjacent to another bookmark when they occupy the same position within $I$. A bookmark is adjacent to a substring when it is immediately before or immediately after the substring. Two substrings are adjacent when the end of one substring is immediately before the beginning of the other.
+
+% \subsubsection{Adjacency Mapping}
+% \label{sec:adjacency-mapping}
+% \begin{align}
+%   \label{eq:adjacency-mapping}
+%   \{\generalsubseq_q\}_{q=1}^k &= \generalsubseq^*_k. \\
+%   \begin{alignedcases}{rl}
+%     \text{left boundary condition: } \generalsubseq_1 &= \begin{alignedcases}{c}
+%       \widehat{I}_{(\canonicalbookmarkindex = 1)}, \text{ or} \\
+%       \generalsubseq_{(\canonicalleftend=1),(l_2 \in [n])}.
+%     \end{alignedcases},\text{ and} \\
+%     \text{right boundary condition: } \generalsubseq_k &= \begin{alignedcases}{c}
+%       \widehat{I}_{(\canonicalbookmarkindex = n+1)}, \text{ or} \\
+%       \generalsubseq_{(\canonicalleftend \in [n]),(l_2=n)}.
+%     \end{alignedcases},\text{ and} \\
+%     \text{contiguous: } \text{adjacent}(\generalsubseq_q, \generalsubseq_{q + 1}) &= \true \forall q \in [k - 1].
+%   \end{alignedcases} &\Leftrightarrow \generalsubseq^*_k \text{ spans } I.
+% \end{align}
+% An \textit{adjacency mapping} $\generalsubseq^*_k$ is a \textit{contiguous} or \textit{consecutively adjacent} sequence of length $k$ of subsequences $\{\generalsubseq_q\}_{q=1}^k$ of the input string $I$, in which the first element $\generalsubseq_1$ is adjacent to, or contains, the first element $t_1$ of $I$, and the final element $\generalsubseq_k$ is adjacent to, or contains, the last element $t_n$ of $I$. A bookmark for $\generalsubseq_1$ or $\generalsubseq_k$ would be adjacent to $t_1$ or $t_n$, while a substring would contain $t_1$ or $t_n$. We say that $\generalsubseq^*_k$ \textit{spans} the tokens of $I$.
 
 \subsection{Matching a Production}
 \label{sec:matching-a-prod}
-
 We construct the predicate to answer the matching question for a production $\text{matches}_{(\scr{P})}$ recursively, by defining the ``matches'' function over multiple separate domains:
 
 \begin{equation}
@@ -160,26 +244,25 @@ A production $p \in \scr{P}$ \textit{matches} an input string $I$ when any of it
   \label{eq:matches-case}
   \begin{array}{rl}
     \text{matches}_{(\scr{C}_p)} &: \scr{C}_p \times \{I\} \rightarrow \binaryspace. \\
-    \text{matches}_{(\scr{C}_p)}(c_p, I) &= \{ \exists \overbar{I}^*_m \pipe \text{matches}_{(e_j)}(e_j, \overbar{I}_j) \forall j \in [m] \Leftrightarrow \true \}.
+    \text{matches}_{(\scr{C}_p)}(c_p, I) &= \{ \exists \generalsubseq^*_m \pipe \text{matches}_{(e_j)}(e_j, \generalsubseq_j) \forall j \in [m] \Leftrightarrow \true \}.
   \end{array}
 \end{equation}
-A case $c_p \in \scr{C}_p$ \textit{matches} an input string $I$ when there exists an adjacency mapping $\overbar{I}^*_m$ of length $m = \abs{c_p}$ which maps each case element $e_j$ to a subsequence $\overbar{I}_j$ such that every case element matches its assigned subsequence from the adjacency mapping as defined in \expliciteqnref{eq:matches-element}.
+A case $c_p \in \scr{C}_p$ \textit{matches} an input string $I$ when there exists an adjacency mapping $\generalsubseq^*_m$ of length $m = \abs{c_p}$ which maps each case element $e_j$ to a subsequence $\generalsubseq_j$ such that every case element matches its assigned subsequence from the adjacency mapping as defined in \expliciteqnref{eq:matches-element}.
 
 \begin{equation}
   \label{eq:matches-element}
   \begin{array}{rl}
-    [m] \times \{\overbar{I}\} \rightarrow \binaryspace &: \text{matches}_{(e_j)}. \\
+    [m] \times \subseqset \rightarrow \binaryspace &: \text{matches}_{(e_j)}. \\
     \begin{alignedcases}{lcrcl}
-      e_j = t \in \Sigma &\Rightarrow& \overbar{I} = \overbar{I}_{l_1,l_2}, l_1 = l_2, I_{l_1} = t &\Leftrightarrow& \true, \\
-      e_j = p' \in \scr{P} &\Rightarrow& \text{matches}_{(\scr{P})}(SP, p', \overbar{I}) &\Leftrightarrow& \true.
-    \end{alignedcases} &= \text{matches}_{(e_j)}(j, \overbar{I}).
+      e_j = t \in \Sigma &\Rightarrow& \generalsubseq = \generalsubseq_{\canonicalleftend,l_2}, \canonicalleftend = l_2, I_{\canonicalleftend} = t &\Leftrightarrow& \true, \\
+      e_j = p' \in \scr{P} &\Rightarrow& \text{matches}_{(\scr{P})}(SP, p', \generalsubseq) &\Leftrightarrow& \true.
+    \end{alignedcases} &= \text{matches}_{(e_j)}(j, \generalsubseq).
   \end{array}
 \end{equation}
-A case element $e_j$ matches an input subsequence $\overbar{I}$ when $e_j$ is a token $t \in \Sigma$, in which case $\overbar{I}$ is a length-1 substring of $I$ containing the single token $t$, or when $e_j$ is a production $p'$, in which case the subsequence $\overbar{I}$ must match the production $p'$ as defined in \expliciteqnref{eq:matches-prod}.
+A case element $e_j$ matches an input subsequence $\generalsubseq$ when $e_j$ is a token $t \in \Sigma$, in which case $\generalsubseq$ is a length-1 substring of $I$ containing the single token $t$, or when $e_j$ is a production $p'$, in which case the subsequence $\generalsubseq$ must match the production $p'$ as defined in \expliciteqnref{eq:matches-prod}.
 
-\subsubsection{Grammar Specialization}
+\subsection{Grammar Specialization}
 \label{sec:grammar-specialization}
-
 \begin{equation}
   \label{eq:p-top}
   p^* \in \scr{P}.
@@ -192,35 +275,62 @@ As described in \explicitsecref{sec:matching-a-prod}, an S.P. grammar $SP$ alone
 \end{equation}
 The tuple $SP^*$ formed from the selection of $p^*$ is referred to as a \textit{specialized grammar}. For this reason, we may also refer to a grammar $SP$ (without having chosen any $p^*$ yet) as an \textit{unspecialized grammar}.
 
-\subsection{Implicit Adjacency}
-At this stage, we note two important points:
+\subsection{Summary of Adjacency}
+\label{sec:summary-of-adjacency}
+At this stage, we note a few important points:
 \begin{enumerate}
-  \item A production $p$ may match a finite or countably infinite number of subsequences $\overbar{I}$ of $I$, not just one. So, if we say $p$ matches $\overbar{I}$ for some case $c_p$, it may still match other substrings $\overbar{I}'$, either for the same case $c_p$, or other cases $c'_p \in \scr{C}_p$.
-  \item We have not yet described a method to \textbf{actually construct an adjacency mapping $\overbar{I}^*$ for a given specialized grammar and input}. That is out of scope for this paper.
+  \item An adjacency mapping $\generalsubseq^*_k$ essentially represents a parse tree \textbf{TODO: HOW??? CROSS-SERIAL DEPS???}
+  \item A production $p$ may match a finite or countably infinite number of subsequences $\generalsubseq$ of $I$, not just one. So, if we say $p$ matches $\generalsubseq$ for some case $c_p$, it may still match other subsequences $\generalsubseq'$, either for the same case $c_p$, or other cases $c'_p \in \scr{C}_p$.
+  \item We have not yet described a method to \textbf{actually construct an adjacency mapping $\generalsubseq^*$ for a given specialized grammar and input}. That is out of scope for this paper.
 \end{enumerate}
+
+\section{Proof of Turing-Equivalence}
+\label{sec:proof-of-turing-equivalence}
+
 
 \section{Chomsky Equivalence}
 \label{sec:chomsky-equivalence}
 We have described an S.P. grammar $SP = (\Sigma, \scr{P})$ \explicitsecref{sec:grammar-grammar}, and we have \textit{specialized} the grammar into $SP^* = (\Sigma, \scr{P}, p^*)$ by selecting a production $p \in \scr{P}$ \explicitsecref{sec:grammar-specialization}. We have described the conditions under which $p^*$ is said to successfully match an input string $I$ consisting of tokens from $\Sigma$ \explicitsecref{sec:matching-a-prod}.
 
-We attempt to directly reduce the canonical specification of a formal grammar (often attributed to Noam Chomsky) into specialized or executable form $SP^*$ \todocite{chomsky grammars}. We provide a graph formulation $G$ from the set of productions $P$ and define parsing in terms of this graph representation \explicitsecref{sec:graph-formulation}.
+We attempt to directly reduce the canonical specification of a formal grammar (often attributed to Noam Chomsky) into specialized or executable form $SP^*$ \todocite{chomsky grammars}.
 
-The alphabet $\Sigma$ used in both S.P. and the Chomsky formulation is exactly the same:
+\subsection{Chomsky Construct}
+\label{sec:chomsky-construct}
+The definition of a ``formal grammar'' we copy from Noam Chomsky as follows \todocite{chomsky!!!}:
+
+\subsubsection{Formal Grammar Definition}
+\label{sec:formal-grammar-definition}
+\begin{align}
+  \label{eq:chomsky-production}
+  \Sigma &\text{: terminal symbols.} \\
+  N &\text{: nonterminal symbols.} \\
+  S &\text{: start symbol.} \in N \\
+  P &\text{: productions.} \\
+  P &= \{\p{\Sigma\, \cup \, N}^* N \p{\Sigma\, \cup \, N}^* \rightarrow \p{\Sigma\, \cup \, N}^* \}. \\
+  G &= (N, \Sigma, P, S).
+\end{align}
+
+\subsubsection{Parsing a Formal Grammar}
+\label{sec:parsing-a-formal-grammar}
+asdf
+
+\subsection{Equivalence Proof}
+\label{sec:equivalence-proof}
+We will perform a Cook-Levin-style reduction from a Chomsky grammar $G = (N, \Sigma, P, S)$ \explicitsecref{sec:chomsky-construct} into a specialized S.P grammar $SP^* = (\Sigma, \scr{P}, p^*)$ \explicitsecref{sec:grammar-specialization} \todocite{cook-levin!}.
+
+\subsubsection{Construction of $\Sigma_{SP^*}$}
+\label{sec:construction-of-sigma}
 \begin{equation}\label{eq:alphabet}
-  \Sigma = \Sigma
+  \Sigma_{SP^*} = \Sigma_G.
 \end{equation}
+The alphabet $\Sigma$ is exactly the same in both S.P. and the Chomsky formulation.
 
-\subsection{Graph Formulation}
-\label{sec:graph-formulation}
-
-We will take a moment to conceptualize the act of parsing the input $I$ from the grammar $(\Sigma, P, p)$ in terms of a graph $G_{P,I}$, abbreviated as simply $G$. This graph is defined as follows:
-\begin{itemize}
-  \item $V(G) = I$, where $V(G)$ is the vertices of $G$, which correspond to the consecutive tokens of $I$. This implies that the vertices $V(G)$ are fully ordered, and can be mapped to the integers $i \in [1,n]$, where $n = \abs{I}$.
-  \item The edges $E(G)$ correspond to \textit{adjacent states} from the set of productions $P$. Adjacency is defined as in \explicitsecref{sec:adjacent-subsequences}. \textbf{Due to the definition of adjacency, $E(G)$ may be either finite or countably infinite.}
-  \item \textbf{A \textit{successful parse} over the graph $G$ is a hamiltonian path $H_G$ over the vertices $V(G)$, in the ordering prescribed by $I$.}
-\end{itemize}
-
-\textbf{TODO: describe how the path starts and ends!!!}
+\subsubsection{Construction of $\scr{P}$}
+\label{sec:construction-of-p}
+\begin{equation}
+  \label{eq:productions-reduction}
+  asdf
+\end{equation}
 
 \section{Relevant Prior Art / Notes}
 \subsection{Overview}
