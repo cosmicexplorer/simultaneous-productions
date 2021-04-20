@@ -6,7 +6,7 @@
 \date{2021-04-18}
 \author{Danny McClanahan}
 
-\newcommand{\todocite}[1]{\textbf{<!cite: #1>}}
+\newcommand{\todocite}[1]{\footnote{cite: #1}}
 
 \begin{document}
 \maketitle
@@ -14,15 +14,15 @@
 \section{Motivation for a New Grammar Specification}
 \label{sec:motivation}
 
-\noindent This paper is the first of several on a parsing method we will refer to as ``Simultaneous Productions'' (or ``S.P.'' for short). This name was chosen to emphasize two goals of this method:
+This paper is the first of several on a parsing method we will refer to as ``Simultaneous Productions'' (or ``S.P.'' for short). This name was chosen to emphasize two goals of this method:
 \begin{enumerate}
-  \item An S.P. \textit{grammar} is composed of a set of \textit{productions}, very similar to most existing concepts of formal grammars \todocite{chomsky formal grammars}. However, unlike many common parsing algorithms, an S.P. grammar can represent a recursively enumerable language \todocite{what is RecEnum?}.
+  \item An S.P. \textit{grammar} is composed of a set of \textit{productions}, very similar to most existing concepts of formal grammars \todocite{chomsky formal grammars}. However, unlike many common parsing algorithms \todocite{common parsing algorithms -- frequency and power? maybe cite history of parsing page?}, an S.P. grammar can represent a recursively enumerable language \todocite{what is RecEnum?}.
   \item When parsing a string, these productions can be independently evaluated over separate parts of the input string, and adjacent successful matches can then be merged to form a successful parse. Unlike many common parsing algorithms, this feature avoids any intrinsic serial dependencies that require parsing the beginning of the string first, hence allowing for \textit{parallelism} during the parsing process.
 \end{enumerate}
 
 \subsection{Goals of This Paper}
 \label{sec:goals}
-\noindent We have noted that the above two features are not shared by many commonly-used parsing algorithms \todocite{the history of parsing webpage}. In this paper, we will describe the S.P. \textit{grammar-grammar}, i.e. the specification which defines any S.P. grammar. We hope to show that:
+We have noted that the above two features are not shared by many commonly-used parsing algorithms \todocite{the history of parsing webpage}. In this paper, we will describe the S.P. \textit{grammar-grammar}, i.e. the specification which defines any S.P. grammar. We hope to show that:
 \begin{itemize}
   \item The S.P. grammar-grammar is equivalent to Chomsky's canonical specification of a formal language \todocite{chomsky formal grammars again}.
   \item An S.P. grammar can \textit{easily and naturally represent} many of the common use cases for parsers. This is a subjective measure of the ease to develop an appropriate grammar for the \textit{grammar-writer}, and can likely be improved upon. The \textit{grammar-writer} is perceived to a be human being attempting to create a grammar to parse some ``real-world'' input.
@@ -31,7 +31,7 @@
 
 \subsection{Followup Work}
 \label{sec:followup-work}
-\noindent Further paper(s) will describe an efficient parsing algorithm to evaluate an S.P. grammar over a specific input string. The intention of this separation is to allow the S.P. grammar-grammar to be reviewed and criticized separately from the evaluation method. This is done because the author believes that the S.P. grammar-grammar has merit in itself, as a ``lingua franca'' for \textit{executable formal grammars}, that is, grammars which can be efficiently parsed by computer.
+Further paper(s) will describe an efficient parsing algorithm to evaluate an S.P. grammar over a specific input string. The intention of this separation is to allow the S.P. grammar-grammar to be reviewed and criticized separately from the evaluation method. This is done because the author believes that the S.P. grammar-grammar has merit in itself, as a ``lingua franca'' for \textit{executable formal grammars}, that is, grammars which can be efficiently parsed by computer.
 
 \subsection{Notation}
 \label{sec:notation}
@@ -50,19 +50,19 @@ We first define the \textit{S.P. grammar-grammar}, as a kind of meta-grammar whi
 
 \begin{equation}
   \label{eq:sp}
-  SP = (\Sigma, \scr{P})
+  SP = (\Sigma, \scr{P}).
 \end{equation}
 An \textit{S.P. grammar} $SP$ is a 2-tuple with an arbitrary finite set $\Sigma$ and a finite set of productions $\scr{P}$ defined in \expliciteqnref{eq:p}. We refer to $\Sigma$ as the \textit{alphabet}.
 
 \begin{equation}
   \label{eq:p}
-  p = \scr{C}_p \forall p \in \scr{P}
+  p = \scr{C}_p \forall p \in \scr{P}.
 \end{equation}
-Each \textit{production} $p$ is a finite set of cases $\scr{C}_p$.
+Each \textit{production} $p$ is a finite set of cases $\scr{C}_p$, defined in \expliciteqnref{eq:cp}.
 
 \begin{equation}
   \label{eq:cp}
-  c_p = \{e_j\}_{j=1}^m \forall c_p \in \scr{C}_p
+  c_p = \{e_j\}_{j=1}^m \forall c_p \in \scr{C}_p.
 \end{equation}
 Each \textit{case} $c_p$ is a finite sequence of case elements $\{e_j\}_{j=1}^m$, where $m$ is the number of elements in the sequence $c_p$, with $e_j$ defined in \expliciteqnref{eq:ej}.
 
@@ -71,7 +71,7 @@ Each \textit{case} $c_p$ is a finite sequence of case elements $\{e_j\}_{j=1}^m$
   e_j = \begin{alignedcases}{c}
     t \in \Sigma, \\
     p \in \scr{P}.
-  \end{alignedcases} \forall j \in [m]
+  \end{alignedcases} \forall j \in [m].
 \end{equation}
 Each \textit{case element} $e_j$ is either a \textit{terminal} $t \in \Sigma$ or \textit{nonterminal} $p \in \scr{P}$.
 
@@ -79,44 +79,52 @@ Each \textit{case element} $e_j$ is either a \textit{terminal} $t \in \Sigma$ or
 \label{sec:parsing}
 The act of \textit{parsing} given a grammar $SP$ requires introducing a few more concepts. The definition of parsing is completely separated from the definition of a grammar \explicitsecref{sec:definition}.
 
+In short, each production $p \in \scr{P}$ can be \textit{matched} against some input string $I$ when \textbf{any} case $c_p \in \scr{C}_p$ matches $I$. $c_p$ matches $I$ iff \textbf{all} terminals and nonterminals are matched against consecutive non-overlapping subsequences of the input string $I$.
+
 \subsection{Input Specification}
 \label{sec:input-specification}
 
 \begin{equation}
   \label{eq:input-string-tokens}
-  I = \{t_i\}_{i=1}^n \pipe t_i \in \Sigma \forall i \in [n]
+  I = \{t_i\}_{i=1}^n \pipe t_i \in \Sigma \forall i \in [n].
 \end{equation}
 An \textit{input string} $I$ is a finite sequence of \textit{tokens} $\{t_i\}_{i=1}^n$ from the alphabet $\Sigma$, where $\abs{I} = n$ is the number of elements in the sequence $I$.
+
+\subsection{Partitioning the Input}
+\label{sec:partitioning-the-input}
+We want to
+
+In order to model a partitioning of
 
 \subsubsection{Substrings, Bookmarks, and Subsequences}
 \label{sec:subsequences}
 
 \begin{align}
   \label{eq:subsequences}
-  \overbar{I}_{l_1,l_2} &= \{t_i\}_{i=l_1}^{l_2} &&= \text{substring}(I, l_1, l_2) &&&\pipe &&&l_1 \le l_2 \le n \in \N \\
-  \widehat{I}_{l^+} &= \{\} &&= \text{bookmark}(I, l^+) &&&\pipe &&&l^+ \in [n + 1] \\
-  \{\overbar{I}\} &= \{\overbar{I}_{l_1,l_2}\} \disjcup \{\widehat{I}_{l^+}\} &&= \text{subsequences}(I)
+  \overbar{I}_{l_1,l_2} &= \{t_i\}_{i=l_1}^{l_2} &&= \text{substring}(I, l_1, l_2) &&&\pipe &&&l_1 \le l_2 \le n \in \N. \\
+  \widehat{I}_{l^+} &= \{\} &&= \text{bookmark}(I, l^+) &&&\pipe &&&l^+ \in [n + 1]. \\
+  \{\overbar{I}\} &= \{\overbar{I}_{l_1,l_2}\} \disjcup \{\widehat{I}_{l^+}\} &&= \text{subsequences}(I).
 \end{align}
-The \textit{substring} $\overbar{I}_{l_1,l_2}$ is the subsequence of $I$ from indices $l_1$ to $l_2$, inclusive. The \textit{bookmark} $\widehat{I}_{l^+}$ is an empty sequence (technically an empty subsequence of $I$) which is inserted \textit{before} the index $l^+$. In the case that $l^+ = n + 1$, the bookmark $\widehat{I}_{l^+}$ is considered to be at the \textit{end} of the input string $I$.
+The \textit{substring} $\overbar{I}_{l_1,l_2}$ is the subsequence of $I$ from indices $l_1$ to $l_2$, inclusive. The \textit{bookmark} $\widehat{I}_{l^+}$ is an empty sequence (technically an empty subsequence of $I$) which is inserted \textbf{before} the index $l^+$. In the case that $l^+ = n + 1$, the bookmark $\widehat{I}_{l^+}$ is considered to be at the \textbf{end} of the input string $I$.
 
 We use the notation $\{\overbar{I}\}$ to denote the disjoint union of these two types of \textit{subsequences} of $I$.
 
-\subsubsection{Adjacency}
-\label{sec:adjacency}
+\subsubsection{Adjacent Subsequences}
+\label{sec:adjacent-subsequences}
 
 \begin{equation}
-  \label{eq:adjacent-substrings}
+  \label{eq:adjacent-subsequences}
   \begin{array}{rl}
-    \text{adjacent} &= \{\overbar{I}\} \times \{\overbar{I}\} \rightarrow \binaryspace \\
-    \text{adjacent}(\overbar{I}, \overbar{I}') &= \begin{alignedcases}{lcrcr}
+    \{\overbar{I}\} \times \{\overbar{I}\} \rightarrow \binaryspace &= \text{adjacent}. \\
+    \begin{alignedcases}{lcrcr}
       \overbar{I} = \widehat{I}_{l^+}, \overbar{I}' = \widehat{I}_{{l^+}'} &\Rightarrow& l^+ = {l^+}' &\Leftrightarrow& \true, \\
       \overbar{I} = \widehat{I}_{l^+}, \overbar{I}' = \overbar{I}_{l_1',l_2'} &\Rightarrow& l^+ = l_1' &\Leftrightarrow& \true, \\
       \overbar{I} = \overbar{I}_{l_1,l_2}, \overbar{I}' = \widehat{I}_{{l^+}'} &\Rightarrow& l_2 = {l^+}' + 1 &\Leftrightarrow& \true, \\
       \overbar{I} = \overbar{I}_{l_1,l_2}, \overbar{I}' = \overbar{I}_{l_1',l_2'} &\Rightarrow& l_1' = l_2 + 1 &\Leftrightarrow& \true.
-    \end{alignedcases}
+    \end{alignedcases} &= \text{adjacent}(\overbar{I}, \overbar{I}').
   \end{array}
 \end{equation}
-Two subsequences $\overbar{I}$ and $\overbar{I}'$ of $I$ are defined to be \textit{adjacent} when $\text{adjacent}(\overbar{I}, \overbar{I'}) = \true$. As shown in \expliciteqnref{eq:adjacent-substrings}, a bookmark is adjacent to another bookmark when they occupy the same position within $I$. A bookmark is adjacent to a substring when it is immediately before or immediately after the substring. Two substrings are adjacent when the end of one substring is immediately before the beginning of the other.
+Two subsequences $\overbar{I}$ and $\overbar{I}'$ of $I$ are defined to be \textit{adjacent} when $\text{adjacent}(\overbar{I}, \overbar{I'}) = \true$. As shown in \expliciteqnref{eq:adjacent-subsequences}, a bookmark is adjacent to another bookmark when they occupy the same position within $I$. A bookmark is adjacent to a substring when it is immediately before or immediately after the substring. Two substrings are adjacent when the end of one substring is immediately before the beginning of the other.
 
 \begin{equation}
   \label{eq:adjacency-mapping}
@@ -132,12 +140,12 @@ Two subsequences $\overbar{I}$ and $\overbar{I}'$ of $I$ are defined to be \text
     \end{alignedcases}
   \end{alignedcases}
 \end{equation}
-The \textit{adjacency mapping} $\overbar{I}^*$ is a \textit{contiguous} or consecutively adjacent sequence of length $k$ of subsequences $\{\overbar{I}_q\}_{q=1}^k$ of the input string $I$, in which the first element $\overbar{I}_1$ is adjacent to, or contains, the first element $t_1$ of $I$, and the final element $\overbar{I}_k$ is adjacent to, or contains, the last element $t_n$ of $I$. A bookmark for $\overbar{I}_1$ or $\overbar{I}_k$ would be adjacent to $t_1$ or $t_n$, while a substring would contain $t_1$ or $t_n$. We say that $\overbar{I}^*$ \textit{spans} the tokens of $I$.
+The \textit{adjacency mapping} $\overbar{I}^*$ is a \textit{contiguous} or consecutively adjacent sequence of length $k$ of subsequences $\{\overbar{I}_q\}_{q=1}^k$ of the input string $I$, in which the first element $\overbar{I}_1$ is adjacent to, or contains, the first element $t_1$ of $I$, and the final element $\overbar{I}_k$ is adjacent to, or contains, the last element $t_n$ of $I$. A bookmark for $\overbar{I}_1$ or $\overbar{I}_k$ would be adjacent to $t_1$ or $t_n$, while a substring would contain $t_1$ or $t_n$. We say that $\overbar{I}^*_k$ \textit{spans} the tokens of $I$.
 
-\subsection{Parsing a Production}
-\label{sec:parsing-a-prod}
+\subsection{Matching a Production}
+\label{sec:matching-a-prod}
 
-In short, each production $p \in P$ can be \textit{matched} against some input string $I$ iff \textbf{any} case $c_p \in \scr{C}_p$ matches $I$. $c_p$ matches $I$ iff \textbf{all} terminals and nonterminals are \textit{matched} against the input $I$.
+We construct the predicate to answer the matching question for a production $\text{matches}_{(\scr{P})}$ recursively, by defining the ``matches'' function over multiple separate domains:
 
 \begin{equation}
   \label{eq:matches-prod}
@@ -152,7 +160,7 @@ A production $p \in \scr{P}$ \textit{matches} an input string $I$ when any of it
   \label{eq:matches-case}
   \begin{array}{rl}
     \text{matches}_{(\scr{C}_p)} &= \scr{C}_p \times \{I\} \rightarrow \binaryspace \\
-    \text{matches}_{(\scr{C}_p)}(c_p, I) &= \{ \exists \overbar{I}^*_m \pipe \text{matches}_{(c_p)}(e_j, \overbar{I}_j) \forall j \in [m] \Leftrightarrow \true \}
+    \text{matches}_{(\scr{C}_p)}(c_p, I) &= \{ \exists \overbar{I}^*_m \pipe \text{matches}_{(e_j)}(e_j, \overbar{I}_j) \forall j \in [m] \Leftrightarrow \true \}
   \end{array}
 \end{equation}
 A case $c_p \in \scr{C}_p$ \textit{matches} an input string $I$ when there exists an adjacency mapping $\overbar{I}^*_m$ of length $m = \abs{c_p}$ which maps each case element $e_j$ to a subsequence $\overbar{I}_j$ such that every case element matches its assigned subsequence from the adjacency mapping as defined in \expliciteqnref{eq:matches-element}.
@@ -160,8 +168,8 @@ A case $c_p \in \scr{C}_p$ \textit{matches} an input string $I$ when there exist
 \begin{equation}
   \label{eq:matches-element}
   \begin{array}{rl}
-    \text{matches}_{(c_p)} &= [m] \times \{\overbar{I}\} \rightarrow \binaryspace \\
-    \text{matches}_{(c_p)}(j, \overbar{I}) &= \begin{alignedcases}{lcrcl}
+    \text{matches}_{(e_j)} &= [m] \times \{\overbar{I}\} \rightarrow \binaryspace \\
+    \text{matches}_{(e_j)}(j, \overbar{I}) &= \begin{alignedcases}{lcrcl}
       e_j = t \in \Sigma &\Rightarrow& \overbar{I} = \overbar{I}_{l_1,l_2}, l_1 = l_2, I_{l_1} = t &\Leftrightarrow& \true, \\
       e_j = p' \in \scr{P} &\Rightarrow& \text{matches}_{(\scr{P})}(SP, p', \overbar{I}) &\Leftrightarrow& \true.
     \end{alignedcases}
@@ -176,7 +184,7 @@ A case element $e_j$ matches an input subsequence $\overbar{I}$ when $e_j$ is a 
   \label{eq:p-top}
   p^* \in \scr{P}
 \end{equation}
-As described in \explicitsecref{sec:parsing-a-prod}, an S.P. grammar $SP$ alone is not sufficient information to unambiguously parse a string -- a single production must also be specified. Therefore to get an \textit{executable grammar}, we select a single ``top'' production $p^* \in \scr{P}$, corresponding to the \textit{start symbol} found in Chomsky grammars \explicitsecref{sec:chomsky-equivalence}.
+As described in \explicitsecref{sec:matching-a-prod}, an S.P. grammar $SP$ alone is not sufficient information to unambiguously parse a string -- a single production must also be specified. Therefore to get an \textit{executable grammar}, we select a single ``top'' production $p^* \in \scr{P}$, corresponding to the \textit{start symbol} found in Chomsky grammars \explicitsecref{sec:chomsky-equivalence}.
 
 \begin{equation}
   \label{eq:specialized}
@@ -187,15 +195,15 @@ The tuple $SP^*$ formed from the selection of $p^*$ is referred to as a \textit{
 \subsection{Implicit Adjacency}
 At this stage, we note two important points:
 \begin{enumerate}
-  \item A production $p$ may match a finite or countably infinite number of subsequences $\overbar{I}$ of $I$, not just one. So, if we say $p$ \textit{matches} $\overbar{I}$ for some case $c_p$, it may still match other substrings $\overbar{I}'$, either for the same case $c_p$, or other cases $c'_p \in \scr{C}_p$.
-  \item We have not yet described a method to \textbf{actually construct an adjacency mapping $\overbar{I}^*$ for a given grammar and input}. That is out of scope for this paper.
+  \item A production $p$ may match a finite or countably infinite number of subsequences $\overbar{I}$ of $I$, not just one. So, if we say $p$ matches $\overbar{I}$ for some case $c_p$, it may still match other substrings $\overbar{I}'$, either for the same case $c_p$, or other cases $c'_p \in \scr{C}_p$.
+  \item We have not yet described a method to \textbf{actually construct an adjacency mapping $\overbar{I}^*$ for a given specialized grammar and input}. That is out of scope for this paper.
 \end{enumerate}
 
 \section{Chomsky Equivalence}
 \label{sec:chomsky-equivalence}
-We have described an S.P. grammar $SP = (\Sigma, \scr{P})$ \explicitsecref{sec:grammar-grammar}, and we have \textit{specialized} the grammar into $SP^* = (\Sigma, \scr{P}, p^*)$ by selecting a production $p \in \scr{P}$ \explicitsecref{sec:grammar-specialization}. We have described the conditions under which $p^*$ is said to successfully \textit{match} an input string $I$ consisting of tokens from $\Sigma$ \explicitsecref{sec:parsing-a-prod}. We have provided a graph formulation $G$ from the set of productions $P$ and defined parsing in terms of this graph representation \explicitsecref{sec:graph-formulation}.
+We have described an S.P. grammar $SP = (\Sigma, \scr{P})$ \explicitsecref{sec:grammar-grammar}, and we have \textit{specialized} the grammar into $SP^* = (\Sigma, \scr{P}, p^*)$ by selecting a production $p \in \scr{P}$ \explicitsecref{sec:grammar-specialization}. We have described the conditions under which $p^*$ is said to successfully match an input string $I$ consisting of tokens from $\Sigma$ \explicitsecref{sec:matching-a-prod}.
 
-We first attempt to directly reduce the canonical specification of a formal grammar (often attributed to Noam Chomsky) into specialized or executable form $SP^*$ \todocite{chomsky grammars}.
+We attempt to directly reduce the canonical specification of a formal grammar (often attributed to Noam Chomsky) into specialized or executable form $SP^*$ \todocite{chomsky grammars}. We provide a graph formulation $G$ from the set of productions $P$ and define parsing in terms of this graph representation \explicitsecref{sec:graph-formulation}.
 
 The alphabet $\Sigma$ used in both S.P. and the Chomsky formulation is exactly the same:
 \begin{equation}\label{eq:alphabet}
@@ -208,7 +216,7 @@ The alphabet $\Sigma$ used in both S.P. and the Chomsky formulation is exactly t
 We will take a moment to conceptualize the act of parsing the input $I$ from the grammar $(\Sigma, P, p)$ in terms of a graph $G_{P,I}$, abbreviated as simply $G$. This graph is defined as follows:
 \begin{itemize}
   \item $V(G) = I$, where $V(G)$ is the vertices of $G$, which correspond to the consecutive tokens of $I$. This implies that the vertices $V(G)$ are fully ordered, and can be mapped to the integers $i \in [1,n]$, where $n = \abs{I}$.
-  \item The edges $E(G)$ correspond to \textit{adjacent states} from the set of productions $P$. Adjacency is defined as in \explicitsecref{sec:adjacency}. \textbf{Due to the definition of adjacency, $E(G)$ may be either finite or countably infinite.}
+  \item The edges $E(G)$ correspond to \textit{adjacent states} from the set of productions $P$. Adjacency is defined as in \explicitsecref{sec:adjacent-subsequences}. \textbf{Due to the definition of adjacency, $E(G)$ may be either finite or countably infinite.}
   \item \textbf{A \textit{successful parse} over the graph $G$ is a hamiltonian path $H_G$ over the vertices $V(G)$, in the ordering prescribed by $I$.}
 \end{itemize}
 
