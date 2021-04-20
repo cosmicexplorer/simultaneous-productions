@@ -51,26 +51,32 @@
 This paper is the first of several on a parsing method we will refer to as ``Simultaneous Productions'' (or ``S.P.'' for short). This name was chosen to emphasize two goals of this method:
 \begin{enumerate}
   \item An S.P. \textit{grammar} is composed of a set of \textit{productions}, very similar to most existing concepts of formal grammars \todocite{chomsky formal grammars}. However, unlike many common parsing algorithms \todocite{common parsing algorithms -- frequency and power? maybe cite history of parsing page?}, an S.P. grammar can represent a recursively enumerable language \todocite{what is RecEnum?}.
-  \item When parsing a string, these productions can be independently evaluated over separate parts of the input string, and adjacent successful matches can then be merged to form a successful parse. Unlike many common parsing algorithms, this feature avoids any intrinsic serial dependencies that require parsing the beginning of the string first, hence allowing for \textit{parallelism} during the parsing process.
+  \item When parsing a string, these productions can be independently evaluated over separate parts of the input string, and adjacent successful matches can then be merged to form a successful parse. Unlike many common parsing algorithms \todocite{might need to expand on this more? need to think about what ``common'' means}, this feature avoids any intrinsic serial dependencies that require parsing the beginning of the string first, hence allowing for \textit{parallelism} during the parsing process.
 \end{enumerate}
 
-\subsection{Goals of This Paper}
+\subsection{Goals}
 \label{sec:goals}
 We have noted that the above two features are not shared by many commonly-used parsing algorithms \todocite{the history of parsing webpage}. In this paper, we will describe the S.P. \textit{grammar-grammar}, i.e. the specification which defines any S.P. grammar. We hope to show that:
-\begin{itemize}
-  \item The S.P. grammar-grammar is equivalent to Chomsky's canonical specification of a formal language \todocite{chomsky formal grammars again}.
-  \item An S.P. grammar can \textit{easily and naturally represent} many of the common use cases for parsers. This is a subjective measure of the ease to develop an appropriate grammar for the \textit{grammar-writer}, and can likely be improved upon. The \textit{grammar-writer} is perceived to a be human being attempting to create a grammar to parse some ``real-world'' input.
-  \item Furthermore, representing a grammar with S.P. \textbf{does not introduce any additional complexity} for the grammar-writer over other common grammar specifications, such as those used for regular expressions (DFAs) \todocite{what are DFAs/regex}, regex with backrefs (recursively enumerable) \todocite{backrefs are RecEnum}, as well as EBNF syntax commonly used for CFGs \todocite{use of EBNF for CFGs}.
-\end{itemize}
+\begin{enumerate}
+  \item The S.P. grammar-grammar should be proven equivalent to Chomsky's canonical specification of an formal language \todocite{chomsky formal grammars again, maybe just turing machine?}.
+  \item The S.P. grammar input format should be able to represent all rungs of the Chomsky hierarchy distinctly to the \textit{grammar-writer}, who may then pick and choose the kind of complexity they want instead of getting surprised. For example: \begin{itemize}
+      \item regular expressions (DFAs) \todocite{what are DFAs/regex}, \\
+      \item EBNF syntax commonly used for CFGs \todocite{use of EBNF for CFGs}, \\
+      \item regex with backrefs (recursively enumerable?) \todocite{backrefs are RecEnum?}.
+    \end{itemize}
+  \item Furthermore, representing a grammar with S.P. \textbf{should follow strongly a ``pay for what you use'' policy}, i.e. having more complex features should not create needless complexity for users who only use the simpler features. \textbf{This requires creating a hierarchical-ish concept of feature complexity.}
+\end{enumerate}
 
-\subsection{Followup Work}
-\label{sec:followup-work}
-Further paper(s) will describe an efficient parsing algorithm to evaluate an S.P. grammar over a specific input string. The intention of this separation is to allow the S.P. grammar-grammar to be reviewed and criticized separately from the evaluation method. This is done because the author believes that the S.P. grammar-grammar has merit in itself, as a ``lingua franca'' for \textit{executable formal grammars}, that is, grammars which can be efficiently parsed by computer.
+\subsection{No Parsing Allowed}
+\label{sec:no-parsing-allowed}
+\textbf{We will not rely on the details of any specific parsing algorithm.} Indeed, we will avoid introducing any iterative algorithms at all in this paper. Further paper(s) will describe an efficient parsing algorithm to evaluate an S.P. grammar over a specific input string.
+
+The intention of this separation is to allow the S.P. grammar-grammar to be reviewed and criticized separately from the evaluation method. This is done because the author believes that the S.P. grammar-grammar has merit in itself, as a ``lingua franca'' for \textit{executable formal grammars}, that is, grammars which can be efficiently parsed by computer.
 
 \subsection{Notation}
 \label{sec:notation}
 \begin{itemize}
-  \item Named concepts in this paper will be represented in \textit{italics} when first defined.
+  \item Named concepts in the rest of this paper will be represented in \textit{italics} when first defined.
   \item Capital letters generally refer to sets, while lowercase letters generally refer to elements of some set. This may not be true in all cases.
   \item As an abbreviation, $[n] = [1, n] \forall n \in \N$, and $\pipe$ should be translated as ``for some''.
 \end{itemize}
@@ -108,11 +114,30 @@ Each \textit{case} $c_p$ is a finite sequence of case elements $\{e_j\}_{j=1}^m$
 \end{equation}
 Each \textit{case element} $e_j$ is either a \textit{terminal} $t \in \Sigma$ or \textit{nonterminal} $p \in \scr{P}$.
 
-\section{Parsing}
-\label{sec:parsing}
-The act of \textit{parsing} given a grammar $SP$ requires introducing a few more concepts. The definition of parsing is completely separated from the definition of a grammar \explicitsecref{sec:definition}.
+\section{PoP: Proof of Parsing}
+\label{sec:proof-of-parsing}
+We describe a tree-like data structure ``proof of parsing'' (PoP) which retains sufficient information to validate that a string belongs to a (strictly!) recursively enumerable language, as well as the validation function ``validate'' applied to the data structure.
 
-In short, each production $p \in \scr{P}$ can be \textit{matched} against some input string $I$ when \textbf{any} case $c_p \in \scr{C}_p$ matches $I$. $c_p$ matches $I$ iff \textbf{all} terminals and nonterminals are matched against consecutive non-overlapping subsequences of the input string $I$.
+\subsection{Background: Composable Grammars}
+\label{sec:background-composable-grammars}
+The S.P. model was partially created to make grammar definitions significantly more composable by \textbf{separating the entry point for parsing/string matching from the rest of the grammar's definition}. The hope is that this can allow for global agreement upon a safe reliable subset of ``primitive'' parsers (e.g. integer and float parsers) across codebases, while end users are still able to add custom logic on top seamlessly. This too can probably be improved.
+
+% $p$ \textit{matches} an input string $I$
+% Each production $p \in \scr{P}$ can be \textit{matched} against some input string $I$ when \textbf{any} case $c_p \in \scr{C}_p$ matches $I$. $c_p$ matches $I$ iff \textbf{all} terminals and nonterminals are matched against consecutive non-overlapping subsequences of the input string $I$.
+
+\subsection{Grammar Specialization}
+\label{sec:grammar-specialization}
+\begin{equation}
+  \label{eq:p-top}
+  p^* \in \scr{P}.
+\end{equation}
+As mentioned in \explicitsecref{sec:proof-of-parsing}, an S.P. grammar $SP$ alone is not sufficient information to unambiguously parse a string -- a specific production must also be provided (we have defined it to be this way). Therefore to get an \textit{executable grammar}, we select a single ``top'' production $p^* \in \scr{P}$, corresponding to the \textit{start symbol} found in Chomsky grammars \explicitsecref{sec:chomsky-equivalence}.
+
+\begin{equation}
+  \label{eq:specialized}
+  SP^* = (\Sigma, \scr{P}, p^*).
+\end{equation}
+The tuple $SP^*$ formed from the selection of $p^*$ is referred to as a \textit{specialized grammar}. For this reason, we may also refer to a grammar $SP$ (without having chosen any $p^*$ yet) as an \textit{unspecialized grammar}.
 
 \subsection{Input Specification}
 \label{sec:input-specification}
@@ -122,23 +147,23 @@ In short, each production $p \in \scr{P}$ can be \textit{matched} against some i
 \end{equation}
 An \textit{input string} $I$ is a finite sequence of \textit{tokens} $\{t_i\}_{i=1}^n$ from the alphabet $\Sigma$, where $\abs{I} = n$ is the number of elements in the sequence $I$.
 
-\subsection{Partitioning the Input}
-\label{sec:partitioning-the-input}
-We would like to be able to reason independently about how different subsequences $\generalsubseq$ of the input $I$ may match a certain production $p \in \scr{P}$. We eventually make use of this reasoning in \explicitsecref{sec:matching-a-prod}, where we describe how to check whether an arbitrary production $p$ matches an arbitrary $\generalsubseq$. In later work we hope to show that this enables highly scalable performance gains through caching and parallelism techniques.
+% \subsection{Partitioning the Input}
+% \label{sec:partitioning-the-input}
+% We would like to be able to reason independently about how different subsequences $\generalsubseq$ of the input $I$ may match a certain production $p \in \scr{P}$. We eventually make use of this reasoning in \explicitsecref{sec:matching-a-string}, where we describe how to check whether an arbitrary production $p$ matches an arbitrary $\generalsubseq$. In later work we hope to show that this enables highly scalable performance gains through caching and parallelism techniques.
 
-\subsubsection{Substrings, Bookmarks, and Subsequences}
-\label{sec:subsequences}
-We define two methods to represent a \textit{subsequence} $\generalsubseq$ of the input string $I$: \textit{substrings} $\canonicalsubstring$ and \textit{bookmarks} $\canonicalbookmark$.
+% \subsubsection{Substrings, Bookmarks, and Subsequences}
+% \label{sec:subsequences}
+% We define two methods to represent a \textit{subsequence} $\generalsubseq$ of the input string $I$: \textit{substrings} $\canonicalsubstring$ and \textit{bookmarks} $\canonicalbookmark$.
 
-\begin{align}
-  \label{eq:subsequences}
-  \generalsubseq_{\canonicalleftend,l_2} &= \{t_i\}_{i=\canonicalleftend}^{l_2} &&= \text{substring}(I, \canonicalleftend, l_2) &&&\pipe &&&\canonicalleftend \le l_2 \le n \in \N. \\
-  \canonicalbookmark &= \{\} &&= \text{bookmark}(I, \canonicalbookmarkindex) &&&\pipe &&&\canonicalbookmarkindex \in [n + 1]. \\
-  \subseqset &= \{\generalsubseq_{\canonicalleftend,l_2}\} \disjcup \{\canonicalbookmark\} &&= \text{subsequences}(I).
-\end{align}
-The \textit{substring} $\generalsubseq_{\canonicalleftend,l_2}$ is the subsequence of $I$ from indices $\canonicalleftend$ to $l_2$, inclusive. The \textit{bookmark} $\canonicalbookmark$ is an empty sequence (technically an empty subsequence of $I$) which is inserted \textbf{before} the index $\canonicalbookmarkindex$. In the case that $\canonicalbookmarkindex = n + 1$, the bookmark $\canonicalbookmark$ is considered to be at the \textbf{end} of the input string $I$.
+% \begin{align}
+%   \label{eq:subsequences}
+%   \generalsubseq_{\canonicalleftend,l_2} &= \{t_i\}_{i=\canonicalleftend}^{l_2} &&= \text{substring}(I, \canonicalleftend, l_2) &&&\pipe &&&\canonicalleftend \le l_2 \le n \in \N. \\
+%   \canonicalbookmark &= \{\} &&= \text{bookmark}(I, \canonicalbookmarkindex) &&&\pipe &&&\canonicalbookmarkindex \in [n + 1]. \\
+%   \subseqset &= \{\generalsubseq_{\canonicalleftend,l_2}\} \disjcup \{\canonicalbookmark\} &&= \text{subsequences}(I).
+% \end{align}
+% The \textit{substring} $\generalsubseq_{\canonicalleftend,l_2}$ is the subsequence of $I$ from indices $\canonicalleftend$ to $l_2$, inclusive. The \textit{bookmark} $\canonicalbookmark$ is an empty sequence (technically an empty subsequence of $I$) which is inserted \textbf{before} the index $\canonicalbookmarkindex$. In the case that $\canonicalbookmarkindex = n + 1$, the bookmark $\canonicalbookmark$ is considered to be at the \textbf{end} of the input string $I$.
 
-We use the notation $\subseqset$ to denote the disjoint union of these two types of \textit{subsequences} of $I$. Bookmarks are essentially only needed to represent productions which match the empty string (which are perfectly legal): see the matching process in \explicitsecref{sec:matching-a-prod}.
+% We use the notation $\subseqset$ to denote the disjoint union of these two types of \textit{subsequences} of $I$. Bookmarks are essentially only needed to represent productions which match the empty string (which are perfectly legal): see the matching process in \explicitsecref{sec:matching-a-string}.
 
 % \subsubsection{Sorting Subsequences}
 % \label{sec:sorting-subsequences}
@@ -227,10 +252,17 @@ We use the notation $\subseqset$ to denote the disjoint union of these two types
 % \end{align}
 % An \textit{adjacency mapping} $\generalsubseq^*_k$ is a \textit{contiguous} or \textit{consecutively adjacent} sequence of length $k$ of subsequences $\{\generalsubseq_q\}_{q=1}^k$ of the input string $I$, in which the first element $\generalsubseq_1$ is adjacent to, or contains, the first element $t_1$ of $I$, and the final element $\generalsubseq_k$ is adjacent to, or contains, the last element $t_n$ of $I$. A bookmark for $\generalsubseq_1$ or $\generalsubseq_k$ would be adjacent to $t_1$ or $t_n$, while a substring would contain $t_1$ or $t_n$. We say that $\generalsubseq^*_k$ \textit{spans} the tokens of $I$.
 
-\subsection{Matching a Production}
-\label{sec:matching-a-prod}
-We construct the predicate to answer the matching question for a production $\text{matches}_{(\scr{P})}$ recursively, by defining the ``matches'' function over multiple separate domains:
+\subsection{Matching a String}
+\label{sec:matching-a-string}
+We represent the conditions necessary to match a production $p \in \scr{P}$ recursively, by defining the ``matches'' function over multiple separate domains:
+\begin{enumerate}
+  \item $\text{matches}_{(\scr{P})}$: the top-level function that matches against a single production $p$.
+  \item $\text{matches}_{(\scr{C}_p)}$: matches against a single case $c_p$ from a production $p$.
+  \item $\text{matches}_{(e_j)}$: matches against a single case element $e_j$ from the case $c_p$.
+\end{enumerate}
 
+\subsubsection{Matching a Production $p \in \scr{P}$}
+\label{sec:matching-a-production-p}
 \begin{equation}
   \label{eq:matches-prod}
   \begin{array}{rl}
@@ -240,6 +272,8 @@ We construct the predicate to answer the matching question for a production $\te
 \end{equation}
 A production $p \in \scr{P}$ \textit{matches} an input string $I$ when any of its cases $c_p \in \scr{C}_p$ match $I$ as defined in \expliciteqnref{eq:matches-case}.
 
+\subsubsection{Matching a Case $c_p \in \scr{C}_p$}
+\label{sec:matching-a-case-cp-in-scrcp}
 \begin{equation}
   \label{eq:matches-case}
   \begin{array}{rl}
@@ -249,6 +283,10 @@ A production $p \in \scr{P}$ \textit{matches} an input string $I$ when any of it
 \end{equation}
 A case $c_p \in \scr{C}_p$ \textit{matches} an input string $I$ when there exists an adjacency mapping $\generalsubseq^*_m$ of length $m = \abs{c_p}$ which maps each case element $e_j$ to a subsequence $\generalsubseq_j$ such that every case element matches its assigned subsequence from the adjacency mapping as defined in \expliciteqnref{eq:matches-element}.
 
+\textbf{TODO: >= context-sensitive can be modelled as coroutines, compared to the immediate function call of DFA/CFGs?}
+
+\subsubsection{Matching a Case Element $e_j \in c_p$}
+\label{sec:matching-a-case-element-ej-in-cp}
 \begin{equation}
   \label{eq:matches-element}
   \begin{array}{rl}
@@ -260,20 +298,6 @@ A case $c_p \in \scr{C}_p$ \textit{matches} an input string $I$ when there exist
   \end{array}
 \end{equation}
 A case element $e_j$ matches an input subsequence $\generalsubseq$ when $e_j$ is a token $t \in \Sigma$, in which case $\generalsubseq$ is a length-1 substring of $I$ containing the single token $t$, or when $e_j$ is a production $p'$, in which case the subsequence $\generalsubseq$ must match the production $p'$ as defined in \expliciteqnref{eq:matches-prod}.
-
-\subsection{Grammar Specialization}
-\label{sec:grammar-specialization}
-\begin{equation}
-  \label{eq:p-top}
-  p^* \in \scr{P}.
-\end{equation}
-As described in \explicitsecref{sec:matching-a-prod}, an S.P. grammar $SP$ alone is not sufficient information to unambiguously parse a string -- a single production must also be specified. Therefore to get an \textit{executable grammar}, we select a single ``top'' production $p^* \in \scr{P}$, corresponding to the \textit{start symbol} found in Chomsky grammars \explicitsecref{sec:chomsky-equivalence}.
-
-\begin{equation}
-  \label{eq:specialized}
-  SP^* = (\Sigma, \scr{P}, p^*).
-\end{equation}
-The tuple $SP^*$ formed from the selection of $p^*$ is referred to as a \textit{specialized grammar}. For this reason, we may also refer to a grammar $SP$ (without having chosen any $p^*$ yet) as an \textit{unspecialized grammar}.
 
 \subsection{Summary of Adjacency}
 \label{sec:summary-of-adjacency}
@@ -290,7 +314,7 @@ At this stage, we note a few important points:
 
 \section{Chomsky Equivalence}
 \label{sec:chomsky-equivalence}
-We have described an S.P. grammar $SP = (\Sigma, \scr{P})$ \explicitsecref{sec:grammar-grammar}, and we have \textit{specialized} the grammar into $SP^* = (\Sigma, \scr{P}, p^*)$ by selecting a production $p \in \scr{P}$ \explicitsecref{sec:grammar-specialization}. We have described the conditions under which $p^*$ is said to successfully match an input string $I$ consisting of tokens from $\Sigma$ \explicitsecref{sec:matching-a-prod}.
+We have described an S.P. grammar $SP = (\Sigma, \scr{P})$ \explicitsecref{sec:grammar-grammar}, and we have \textit{specialized} the grammar into $SP^* = (\Sigma, \scr{P}, p^*)$ by selecting a production $p \in \scr{P}$ \explicitsecref{sec:grammar-specialization}. We have described the conditions under which $p^*$ is said to successfully match an input string $I$ consisting of tokens from $\Sigma$ \explicitsecref{sec:matching-a-string}.
 
 We attempt to directly reduce the canonical specification of a formal grammar (often attributed to Noam Chomsky) into specialized or executable form $SP^*$ \todocite{chomsky grammars}.
 
@@ -311,7 +335,7 @@ The definition of a ``formal grammar'' we copy from Noam Chomsky as follows \tod
 \end{align}
 
 \subsubsection{Parsing a Formal Grammar}
-\label{sec:parsing-a-formal-grammar}
+\label{sec:proof-of-parsing-a-formal-grammar}
 asdf
 
 \subsection{Equivalence Proof}
