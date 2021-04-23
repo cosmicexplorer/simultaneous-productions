@@ -2359,23 +2359,14 @@ pub mod reconstruction {
         })?;
 
       let (prologue, epilogue) = match parents {
-        None => {
-          if stack_diff.is_empty() {
-            Err(ReconstructionError(format!(
-              /* FIXME: why not? because it signals parse failure? */ "cannot have an empty stack diff for pair: {:?}/{:?}",
-              left, right
-            )))
-          } else {
-            Ok((
-              InProgressReconstruction::with_elements(vec![ReconstructionElement::CompletedSub(
-                CompleteSubReconstruction::State(*left),
-              )]),
-              InProgressReconstruction::with_elements(vec![ReconstructionElement::CompletedSub(
-                CompleteSubReconstruction::State(*right),
-              )]),
-            ))
-          }
-        },
+        None => Ok((
+          InProgressReconstruction::with_elements(vec![ReconstructionElement::CompletedSub(
+            CompleteSubReconstruction::State(*left),
+          )]),
+          InProgressReconstruction::with_elements(vec![ReconstructionElement::CompletedSub(
+            CompleteSubReconstruction::State(*right),
+          )]),
+        )),
         Some(ParentInfo {
           left_parent,
           right_parent,
