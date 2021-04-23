@@ -73,12 +73,18 @@ We have noted that the above two features are not shared by many commonly-used p
 
 The intention of this separation is to allow the S.P. grammar-grammar to be reviewed and criticized separately from the evaluation method. This is done because the author believes that the S.P. grammar-grammar has merit in itself, as a ``lingua franca'' for \textit{executable formal grammars}, that is, grammars which can be efficiently parsed by computer.
 
+\subsection{Background: Composable Grammars}
+\label{sec:background-composable-grammars}
+The S.P. model was partially created to make grammar definitions significantly more composable by \textbf{separating the entry point for parsing/string matching from the rest of the grammar's definition}. The hope is that this can allow for \textbf{global agreement upon a safe reliable subset of ``primitive'' parsers (e.g. integer and float parsers) across codebases}, while end users are still able to add custom logic on top seamlessly.
+
+Similarly, we describe our goal to separate the output of a parse from the algorithm that produces it in \explicitsecref{sec:no-parsing-allowed}. We hope that \textbf{standardizing parser output} into the fully general \footnote{is this true?} PoP format as well as \textbf{sharing high-quality grammars in a modular way} can reduce what we see as a frustrating amount of mental overhead and duplicated work for everyone who wants to write any sort of compiler or interpreter. We believe this situation can be improved.
+
 \subsection{Notation}
 \label{sec:notation}
 \begin{itemize}
   \item Named concepts in the rest of this paper will be represented in \textit{italics} when first defined.
   \item Capital letters generally refer to sets, while lowercase letters generally refer to elements of some set. This may not be true in all cases.
-  \item As an abbreviation, $[n] = [1, n] \forall n \in \N$, and $\pipe$ should be translated as ``for some''.
+  \item As an abbreviation, $[n] = [1, n] \forall n \in \N$, and $\pipe$ should be translated as ``for some'' or ``for which''.
 \end{itemize}
 
 \section{Definition}
@@ -118,10 +124,6 @@ Each \textit{case element} $e_j$ is either a \textit{terminal} $t \in \Sigma$ or
 \label{sec:proof-of-parsing}
 We describe a tree-like data structure ``proof of parsing'' (PoP) which retains sufficient information to validate that a string belongs to a (strictly!) recursively enumerable language, as well as the validation function ``validate'' applied to the data structure.
 
-\subsection{Background: Composable Grammars}
-\label{sec:background-composable-grammars}
-The S.P. model was partially created to make grammar definitions significantly more composable by \textbf{separating the entry point for parsing/string matching from the rest of the grammar's definition}. The hope is that this can allow for global agreement upon a safe reliable subset of ``primitive'' parsers (e.g. integer and float parsers) across codebases, while end users are still able to add custom logic on top seamlessly. This too can probably be improved.
-
 % $p$ \textit{matches} an input string $I$
 % Each production $p \in \scr{P}$ can be \textit{matched} against some input string $I$ when \textbf{any} case $c_p \in \scr{C}_p$ matches $I$. $c_p$ matches $I$ iff \textbf{all} terminals and nonterminals are matched against consecutive non-overlapping subsequences of the input string $I$.
 
@@ -131,7 +133,7 @@ The S.P. model was partially created to make grammar definitions significantly m
   \label{eq:p-top}
   p^* \in \scr{P}.
 \end{equation}
-As mentioned in \explicitsecref{sec:proof-of-parsing}, an S.P. grammar $SP$ alone is not sufficient information to unambiguously parse a string -- a specific production must also be provided (we have defined it to be this way). Therefore to get an \textit{executable grammar}, we select a single ``top'' production $p^* \in \scr{P}$, corresponding to the \textit{start symbol} found in Chomsky grammars \explicitsecref{sec:chomsky-equivalence}.
+An S.P. grammar $SP$ alone is not sufficient information to unambiguously parse a string -- a specific production must also be provided (we have defined it to be this way). Therefore to get an \textit{executable grammar}, we select a single ``top'' production $p^* \in \scr{P}$. This is vaguely reminiscent of the \textit{start symbol} found in Chomsky grammars \explicitsecref{sec:chomsky-equivalence}.
 
 \begin{equation}
   \label{eq:specialized}
@@ -266,11 +268,11 @@ We represent the conditions necessary to match a production $p \in \scr{P}$ recu
 \begin{equation}
   \label{eq:matches-prod}
   \begin{array}{rl}
-    \text{matches}_{(\scr{P})} &: \{SP\} \times \scr{P} \times \{I\} \rightarrow \binaryspace. \\
-    \text{matches}_{(\scr{P})}(SP, p, I) &= \{ \exists p \in \scr{P}, c_p \in \scr{C}_p \pipe \text{matches}_{(\scr{C}_p)}(c_p, I) \Leftrightarrow \true \}.
+    \text{matches}_{(\scr{P})} &: \scr{P} \times \{I\} \rightarrow \binaryspace. \\
+    \text{matches}_{(\scr{P})}(p, I) &= \{ \exists c_p \in \scr{C}_p \pipe \text{matches}_{(\scr{C}_p)}(c_p, I) \Leftrightarrow \true \}.
   \end{array}
 \end{equation}
-A production $p \in \scr{P}$ \textit{matches} an input string $I$ when any of its cases $c_p \in \scr{C}_p$ match $I$ as defined in \expliciteqnref{eq:matches-case}.
+A production $p \in \scr{P}$ \textit{matches} an input string $I$ when \textbf{any} of its cases $c_p \in \scr{C}_p$ match $I$ via $\text{matches}_{(\scr{C}_p)}$ as defined in \expliciteqnref{eq:matches-case}.
 
 \subsubsection{Matching a Case $c_p \in \scr{C}_p$}
 \label{sec:matching-a-case-cp-in-scrcp}
@@ -278,10 +280,11 @@ A production $p \in \scr{P}$ \textit{matches} an input string $I$ when any of it
   \label{eq:matches-case}
   \begin{array}{rl}
     \text{matches}_{(\scr{C}_p)} &: \scr{C}_p \times \{I\} \rightarrow \binaryspace. \\
-    \text{matches}_{(\scr{C}_p)}(c_p, I) &= \{ \exists \generalsubseq^*_m \pipe \text{matches}_{(e_j)}(e_j, \generalsubseq_j) \forall j \in [m] \Leftrightarrow \true \}.
+    \text{matches}_{(\scr{C}_p)}(c_p, I) &= \{ \text{\textbf{TODO: ???}} \}.
+    % \text{matches}_{(\scr{C}_p)}(c_p, I) &= \{ \exists \generalsubseq^*_m \pipe \text{matches}_{(e_j)}(e_j, \generalsubseq_j) \forall j \in [m] \Leftrightarrow \true \}.
   \end{array}
 \end{equation}
-A case $c_p \in \scr{C}_p$ \textit{matches} an input string $I$ when there exists an adjacency mapping $\generalsubseq^*_m$ of length $m = \abs{c_p}$ which maps each case element $e_j$ to a subsequence $\generalsubseq_j$ such that every case element matches its assigned subsequence from the adjacency mapping as defined in \expliciteqnref{eq:matches-element}.
+% A case $c_p \in \scr{C}_p$ \textit{matches} an input string $I$ when there exists an adjacency mapping $\generalsubseq^*_m$ of length $m = \abs{c_p}$ which maps each case element $e_j$ to a subsequence $\generalsubseq_j$ such that every case element matches its assigned subsequence from the adjacency mapping as defined in \expliciteqnref{eq:matches-element}.
 
 \textbf{TODO: >= context-sensitive can be modelled as coroutines, compared to the immediate function call of DFA/CFGs?}
 
@@ -303,9 +306,9 @@ A case element $e_j$ matches an input subsequence $\generalsubseq$ when $e_j$ is
 \label{sec:summary-of-adjacency}
 At this stage, we note a few important points:
 \begin{enumerate}
-  \item An adjacency mapping $\generalsubseq^*_k$ essentially represents a parse tree \textbf{TODO: HOW??? CROSS-SERIAL DEPS???}
+  % \item An adjacency mapping $\generalsubseq^*_k$ essentially represents a parse tree \textbf{TODO: HOW??? CROSS-SERIAL DEPS???}
   \item A production $p$ may match a finite or countably infinite number of subsequences $\generalsubseq$ of $I$, not just one. So, if we say $p$ matches $\generalsubseq$ for some case $c_p$, it may still match other subsequences $\generalsubseq'$, either for the same case $c_p$, or other cases $c'_p \in \scr{C}_p$.
-  \item We have not yet described a method to \textbf{actually construct an adjacency mapping $\generalsubseq^*$ for a given specialized grammar and input}. That is out of scope for this paper.
+  % \item We have not yet described a method to \textbf{actually construct an adjacency mapping $\generalsubseq^*$ for a given specialized grammar and input}. That is out of scope for this paper.
 \end{enumerate}
 
 \section{Proof of Turing-Equivalence}

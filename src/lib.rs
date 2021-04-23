@@ -1,6 +1,6 @@
 /*
     Description: Implement the Simultaneous Productions general parsing method.
-    Copyright (C) 2019  Danny McClanahan (https://twitter.com/hipsterelectron)
+    Copyright (C) 2019, 2021  Danny McClanahan (https://twitter.com/hipsterelectron)
 
     This program is free software: you can redistribute it and/or modify
     it under the terms of the GNU General Public License as published by
@@ -1233,6 +1233,7 @@ pub mod grammar_indexing {
       }
     }
 
+    // TODO: document this great method!!!
     fn iterate_and_maybe_complete(
       &self,
       indexed_intervals: &IndexMap<ProdRef, StartEndEpsilonIntervals>,
@@ -1424,6 +1425,7 @@ pub mod grammar_indexing {
       )
     }
 
+    // TODO: document this great method!!!
     pub fn produce_terminals_interval_graph(grammar: &TokenGrammar<Tok>) -> EpsilonIntervalGraph {
       /* We would like to just accept a LoweredProductions here, but we call this
        * method directly in testing, and without the whole grammar object
@@ -1674,7 +1676,6 @@ pub mod parsing {
   #[derive(Debug, Clone, PartialEq, Eq)]
   pub struct ParseableGrammar {
     pub input_as_states: Vec<PossibleStates>,
-    /* TODO: ignore cycles for now! */
     pub pairwise_state_transition_table: IndexMap<StatePair, Vec<StackDiffSegment>>,
     pub anon_step_mapping: IndexMap<AnonSym, UnflattenedProdCaseRef>,
   }
@@ -2136,6 +2137,8 @@ pub mod reconstruction {
   #[derive(Debug, Clone, PartialEq, Eq, Hash, TypeName)]
   pub struct ReconstructionError(String);
 
+  ///
+  /// TODO: why is this the appropriate representation for an intermediate reconstruction?
   #[derive(Debug, Clone, PartialEq, Eq, Hash, TypeName)]
   pub struct IntermediateReconstruction {
     pub prod_case: ProdCaseRef,
