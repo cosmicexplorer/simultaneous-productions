@@ -1641,6 +1641,11 @@ pub mod parsing {
             .get_spanning_subtree(right_parent)
             .unwrap()
             .flatten_to_states(&parse);
+          dbg!(&left_states);
+          dbg!(&left_range);
+          dbg!(&right_states);
+          dbg!(&right_range);
+          dbg!(&self.input_span);
           /* If the left range *ends* with the same state the right range *starts*
            * with, then we can merge the left and right paths to get a new
            * valid path through the state space. */
@@ -2356,16 +2361,20 @@ pub mod reconstruction {
       let (prologue, epilogue) = match parents {
         None => {
           if stack_diff.is_empty() {
-            panic!("parse: {:?}", parse);
+            Err(ReconstructionError(format!(
+              /* FIXME: why not? because it signals parse failure? */ "cannot have an empty stack diff for pair: {:?}/{:?}",
+              left, right
+            )))
+          } else {
+            Ok((
+              InProgressReconstruction::with_elements(vec![ReconstructionElement::CompletedSub(
+                CompleteSubReconstruction::State(*left),
+              )]),
+              InProgressReconstruction::with_elements(vec![ReconstructionElement::CompletedSub(
+                CompleteSubReconstruction::State(*right),
+              )]),
+            ))
           }
-          Ok((
-            InProgressReconstruction::with_elements(vec![ReconstructionElement::CompletedSub(
-              CompleteSubReconstruction::State(*left),
-            )]),
-            InProgressReconstruction::with_elements(vec![ReconstructionElement::CompletedSub(
-              CompleteSubReconstruction::State(*right),
-            )]),
-          ))
         },
         Some(ParentInfo {
           left_parent,
@@ -4251,6 +4260,33 @@ mod tests {
     let completely_reconstructed = CompletedWholeReconstruction::new(reconstructed).unwrap();
     assert_eq!(
       completely_reconstructed,
+      // CompletedWholeReconstruction([
+      //   State(Start),
+      //   Completed(CompletedCaseReconstruction {
+      //     prod_case: ProdCaseRef {
+      //       prod: ProdRef(0),
+      //       case: CaseRef(0)
+      //     },
+      //     args: [
+      //       State(Within(TokenPosition {
+      //         prod: ProdRef(0),
+      //         case: CaseRef(0),
+      //         case_el: CaseElRef(0)
+      //       })),
+      //       State(Within(TokenPosition {
+      //         prod: ProdRef(0),
+      //         case: CaseRef(0),
+      //         case_el: CaseElRef(1)
+      //       })),
+      //       State(Within(TokenPosition {
+      //         prod: ProdRef(0),
+      //         case: CaseRef(0),
+      //         case_el: CaseElRef(1)
+      //       }))
+      //     ]
+      //   }),
+      //   State(End)
+      // ]),
       CompletedWholeReconstruction(vec![
         CompleteSubReconstruction::State(LoweredState::Start),
         CompleteSubReconstruction::Completed(CompletedCaseReconstruction {
