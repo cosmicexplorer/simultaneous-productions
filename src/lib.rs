@@ -1641,12 +1641,17 @@ pub mod parsing {
             .get_spanning_subtree(right_parent)
             .unwrap()
             .flatten_to_states(&parse);
-          assert_eq!(left_range.right_index.0 + 1, right_range.left_index.0);
+          /* If the left range *ends* with the same state the right range *starts*
+           * with, then we can merge the left and right paths to get a new
+           * valid path through the state space. */
+          assert_eq!(left_range.right_index.0, right_range.left_index.0);
+          assert_eq!(left_states.last(), right_states.first());
+          let linked_states: Vec<LoweredState> = left_states
+            .into_iter()
+            .chain(right_states[1..].into_iter().cloned())
+            .collect();
           CompletelyFlattenedSubtree {
-            states: left_states
-              .into_iter()
-              .chain(right_states.into_iter())
-              .collect(),
+            states: linked_states,
             input_range: InputRange::new(left_range.left_index, right_range.right_index),
           }
         },
@@ -3727,7 +3732,7 @@ mod tests {
   }
 
   #[test]
-  fn initial_parse_state() {
+  fn dynamic_parse_state() {
     let prods = non_cyclic_productions();
 
     let token_grammar = TokenGrammar::new(&prods).unwrap();
@@ -4139,8 +4144,10 @@ mod tests {
     assert_eq!(spanning_subtree_table, all_spans.clone());
 
     let orig_num_subtrees = parse.spanning_subtree_table.len();
-    assert_eq!(parse.advance(), Ok(ParseResult::Incomplete),);
+    assert_eq!(parse.advance(), Ok(ParseResult::Incomplete));
     assert_eq!(parse.spanning_subtree_table.len(), orig_num_subtrees + 2);
+    assert_eq!(parse.advance(), Ok(ParseResult::Incomplete));
+    assert_eq!(parse.spanning_subtree_table.len(), orig_num_subtrees + 4);
 
     let expected_first_new_subtree = SpanningSubtree {
       input_span: FlattenedSpanInfo {
@@ -4152,10 +4159,10 @@ mod tests {
         stack_diff: StackDiffSegment(vec![]),
       },
       parents: Some(ParentInfo {
-        left_parent: SpanningSubtreeRef(0),
+        left_parent: SpanningSubtreeRef(7),
         right_parent: SpanningSubtreeRef(5),
       }),
-      id: SpanningSubtreeRef(7),
+      id: SpanningSubtreeRef(9),
     };
 
     let expected_subtree = SpanningSubtree {
@@ -4172,23 +4179,23 @@ mod tests {
         ]),
       },
       parents: Some(ParentInfo {
-        left_parent: SpanningSubtreeRef(0),
+        left_parent: SpanningSubtreeRef(7),
         right_parent: SpanningSubtreeRef(6),
       }),
-      id: SpanningSubtreeRef(8),
+      id: SpanningSubtreeRef(10),
     };
     assert_eq!(parse.spanning_subtree_table.last(), Some(&expected_subtree));
     assert_eq!(
-      parse.get_spanning_subtree(SpanningSubtreeRef(8)),
+      parse.get_spanning_subtree(SpanningSubtreeRef(10)),
       Some(&expected_subtree)
     );
 
     assert_eq!(
       parse.advance(),
-      Ok(ParseResult::Complete(SpanningSubtreeRef(7)))
+      Ok(ParseResult::Complete(SpanningSubtreeRef(9)))
     );
     assert_eq!(
-      parse.get_spanning_subtree(SpanningSubtreeRef(7)),
+      parse.get_spanning_subtree(SpanningSubtreeRef(9)),
       Some(&expected_first_new_subtree),
     );
     assert_eq!(
@@ -4216,9 +4223,9 @@ mod tests {
     while !hit_end {
       match parse.advance() {
         Ok(ParseResult::Incomplete) => (),
-        /* NB: `expected_subtree` at SpanningSubtreeRef(8) has a non-empty stack diff, so it
+        /* NB: `expected_subtree` at SpanningSubtreeRef(10) has a non-empty stack diff, so it
          * shouldn't be counted as a complete parse! We verify that here. */
-        Ok(ParseResult::Complete(SpanningSubtreeRef(i))) => assert!(i != 8),
+        Ok(ParseResult::Complete(SpanningSubtreeRef(i))) => assert!(i != 10),
         Err(_) => {
           hit_end = true;
           break;
