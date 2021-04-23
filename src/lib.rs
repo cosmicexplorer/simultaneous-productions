@@ -3040,8 +3040,8 @@ mod tests {
     let second_a = TokenPosition::new(1, 0, 0);
     let second_b = TokenPosition::new(1, 0, 1);
     let third_a = TokenPosition::new(1, 1, 1);
-    let a_prod = StackSym(ProdRef(0));
-    let b_prod = StackSym(ProdRef(1));
+    let a_prod = ProdRef(0);
+    let b_prod = ProdRef(1);
     assert_eq!(
       preprocessed_grammar.token_states_mapping.clone(),
       vec![
@@ -3063,16 +3063,16 @@ mod tests {
           state_pair: StatePair {
             left: LoweredState::Start,
             right: LoweredState::Within(TokenPosition {
-              prod: ProdRef(0),
+              prod: a_prod,
               case: CaseRef(0),
               case_el: CaseElRef(0),
             }),
           },
           interval: ContiguousNonterminalInterval(vec![
-            EpsilonGraphVertex::Start(ProdRef(0)),
+            EpsilonGraphVertex::Start(a_prod),
             EpsilonGraphVertex::Anon(AnonStep::Positive(AnonSym(0))),
             EpsilonGraphVertex::State(TokenPosition {
-              prod: ProdRef(0),
+              prod: a_prod,
               case: CaseRef(0),
               case_el: CaseElRef(0),
             }),
@@ -3082,16 +3082,16 @@ mod tests {
           state_pair: StatePair {
             left: LoweredState::Start,
             right: LoweredState::Within(TokenPosition {
-              prod: ProdRef(1),
+              prod: b_prod,
               case: CaseRef(0),
               case_el: CaseElRef(0),
             }),
           },
           interval: ContiguousNonterminalInterval(vec![
-            EpsilonGraphVertex::Start(ProdRef(1)),
+            EpsilonGraphVertex::Start(b_prod),
             EpsilonGraphVertex::Anon(AnonStep::Positive(AnonSym(1))),
             EpsilonGraphVertex::State(TokenPosition {
-              prod: ProdRef(1),
+              prod: b_prod,
               case: CaseRef(0),
               case_el: CaseElRef(0),
             }),
@@ -3100,24 +3100,24 @@ mod tests {
         CompletedStatePairWithVertices {
           state_pair: StatePair {
             left: LoweredState::Within(TokenPosition {
-              prod: ProdRef(0),
+              prod: a_prod,
               case: CaseRef(0),
               case_el: CaseElRef(0),
             }),
             right: LoweredState::Within(TokenPosition {
-              prod: ProdRef(0),
+              prod: a_prod,
               case: CaseRef(0),
               case_el: CaseElRef(1),
             }),
           },
           interval: ContiguousNonterminalInterval(vec![
             EpsilonGraphVertex::State(TokenPosition {
-              prod: ProdRef(0),
+              prod: a_prod,
               case: CaseRef(0),
               case_el: CaseElRef(0),
             }),
             EpsilonGraphVertex::State(TokenPosition {
-              prod: ProdRef(0),
+              prod: a_prod,
               case: CaseRef(0),
               case_el: CaseElRef(1),
             }),
@@ -3126,24 +3126,24 @@ mod tests {
         CompletedStatePairWithVertices {
           state_pair: StatePair {
             left: LoweredState::Within(TokenPosition {
-              prod: ProdRef(1),
+              prod: b_prod,
               case: CaseRef(0),
               case_el: CaseElRef(0),
             }),
             right: LoweredState::Within(TokenPosition {
-              prod: ProdRef(1),
+              prod: b_prod,
               case: CaseRef(0),
               case_el: CaseElRef(1),
             }),
           },
           interval: ContiguousNonterminalInterval(vec![
             EpsilonGraphVertex::State(TokenPosition {
-              prod: ProdRef(1),
+              prod: b_prod,
               case: CaseRef(0),
               case_el: CaseElRef(0),
             }),
             EpsilonGraphVertex::State(TokenPosition {
-              prod: ProdRef(1),
+              prod: b_prod,
               case: CaseRef(0),
               case_el: CaseElRef(1),
             }),
@@ -3152,7 +3152,7 @@ mod tests {
         CompletedStatePairWithVertices {
           state_pair: StatePair {
             left: LoweredState::Within(TokenPosition {
-              prod: ProdRef(1),
+              prod: b_prod,
               case: CaseRef(1),
               case_el: CaseElRef(1),
             }),
@@ -3160,18 +3160,18 @@ mod tests {
           },
           interval: ContiguousNonterminalInterval(vec![
             EpsilonGraphVertex::State(TokenPosition {
-              prod: ProdRef(1),
+              prod: b_prod,
               case: CaseRef(1),
               case_el: CaseElRef(1),
             }),
             EpsilonGraphVertex::Anon(AnonStep::Negative(AnonSym(3))),
-            EpsilonGraphVertex::End(ProdRef(1)),
+            EpsilonGraphVertex::End(b_prod),
           ]),
         },
         CompletedStatePairWithVertices {
           state_pair: StatePair {
             left: LoweredState::Within(TokenPosition {
-              prod: ProdRef(0),
+              prod: a_prod,
               case: CaseRef(0),
               case_el: CaseElRef(1),
             }),
@@ -3179,31 +3179,31 @@ mod tests {
           },
           interval: ContiguousNonterminalInterval(vec![
             EpsilonGraphVertex::State(TokenPosition {
-              prod: ProdRef(0),
+              prod: a_prod,
               case: CaseRef(0),
               case_el: CaseElRef(1),
             }),
             EpsilonGraphVertex::Anon(AnonStep::Negative(AnonSym(0))),
-            EpsilonGraphVertex::End(ProdRef(0)),
+            EpsilonGraphVertex::End(a_prod),
           ]),
         },
         CompletedStatePairWithVertices {
           state_pair: StatePair {
             left: LoweredState::Start,
             right: LoweredState::Within(TokenPosition {
-              prod: ProdRef(0),
+              prod: a_prod,
               case: CaseRef(0),
               case_el: CaseElRef(0),
             }),
           },
           interval: ContiguousNonterminalInterval(vec![
-            EpsilonGraphVertex::Start(ProdRef(1)),
+            EpsilonGraphVertex::Start(b_prod),
             EpsilonGraphVertex::Anon(AnonStep::Positive(AnonSym(3))),
             EpsilonGraphVertex::Anon(AnonStep::Positive(AnonSym(4))),
-            EpsilonGraphVertex::Start(ProdRef(0)),
+            EpsilonGraphVertex::Start(a_prod),
             EpsilonGraphVertex::Anon(AnonStep::Positive(AnonSym(0))),
             EpsilonGraphVertex::State(TokenPosition {
-              prod: ProdRef(0),
+              prod: a_prod,
               case: CaseRef(0),
               case_el: CaseElRef(0),
             }),
@@ -3212,27 +3212,27 @@ mod tests {
         CompletedStatePairWithVertices {
           state_pair: StatePair {
             left: LoweredState::Within(TokenPosition {
-              prod: ProdRef(0),
+              prod: a_prod,
               case: CaseRef(0),
               case_el: CaseElRef(1),
             }),
             right: LoweredState::Within(TokenPosition {
-              prod: ProdRef(1),
+              prod: b_prod,
               case: CaseRef(1),
               case_el: CaseElRef(1),
             }),
           },
           interval: ContiguousNonterminalInterval(vec![
             EpsilonGraphVertex::State(TokenPosition {
-              prod: ProdRef(0),
+              prod: a_prod,
               case: CaseRef(0),
               case_el: CaseElRef(1),
             }),
             EpsilonGraphVertex::Anon(AnonStep::Negative(AnonSym(0))),
-            EpsilonGraphVertex::End(ProdRef(0)),
+            EpsilonGraphVertex::End(a_prod),
             EpsilonGraphVertex::Anon(AnonStep::Negative(AnonSym(4))),
             EpsilonGraphVertex::State(TokenPosition {
-              prod: ProdRef(1),
+              prod: b_prod,
               case: CaseRef(1),
               case_el: CaseElRef(1),
             }),
@@ -3241,27 +3241,27 @@ mod tests {
         CompletedStatePairWithVertices {
           state_pair: StatePair {
             left: LoweredState::Within(TokenPosition {
-              prod: ProdRef(1),
+              prod: b_prod,
               case: CaseRef(0),
               case_el: CaseElRef(1),
             }),
             right: LoweredState::Within(TokenPosition {
-              prod: ProdRef(0),
+              prod: a_prod,
               case: CaseRef(0),
               case_el: CaseElRef(0),
             }),
           },
           interval: ContiguousNonterminalInterval(vec![
             EpsilonGraphVertex::State(TokenPosition {
-              prod: ProdRef(1),
+              prod: b_prod,
               case: CaseRef(0),
               case_el: CaseElRef(1),
             }),
             EpsilonGraphVertex::Anon(AnonStep::Positive(AnonSym(2))),
-            EpsilonGraphVertex::Start(ProdRef(0)),
+            EpsilonGraphVertex::Start(a_prod),
             EpsilonGraphVertex::Anon(AnonStep::Positive(AnonSym(0))),
             EpsilonGraphVertex::State(TokenPosition {
-              prod: ProdRef(0),
+              prod: a_prod,
               case: CaseRef(0),
               case_el: CaseElRef(0),
             }),
@@ -3270,7 +3270,7 @@ mod tests {
         CompletedStatePairWithVertices {
           state_pair: StatePair {
             left: LoweredState::Within(TokenPosition {
-              prod: ProdRef(0),
+              prod: a_prod,
               case: CaseRef(0),
               case_el: CaseElRef(1),
             }),
@@ -3278,15 +3278,15 @@ mod tests {
           },
           interval: ContiguousNonterminalInterval(vec![
             EpsilonGraphVertex::State(TokenPosition {
-              prod: ProdRef(0),
+              prod: a_prod,
               case: CaseRef(0),
               case_el: CaseElRef(1),
             }),
             EpsilonGraphVertex::Anon(AnonStep::Negative(AnonSym(0))),
-            EpsilonGraphVertex::End(ProdRef(0)),
+            EpsilonGraphVertex::End(a_prod),
             EpsilonGraphVertex::Anon(AnonStep::Negative(AnonSym(2))),
             EpsilonGraphVertex::Anon(AnonStep::Negative(AnonSym(1))),
-            EpsilonGraphVertex::End(ProdRef(1)),
+            EpsilonGraphVertex::End(b_prod),
           ]),
         },
       ],
@@ -3294,14 +3294,14 @@ mod tests {
         (
           AnonSym(0),
           UnflattenedProdCaseRef::Case(ProdCaseRef {
-            prod: ProdRef(0),
+            prod: a_prod,
             case: CaseRef(0),
           }),
         ),
         (
           AnonSym(1),
           UnflattenedProdCaseRef::Case(ProdCaseRef {
-            prod: ProdRef(1),
+            prod: b_prod,
             case: CaseRef(0),
           }),
         ),
@@ -3309,13 +3309,13 @@ mod tests {
         (
           AnonSym(3),
           UnflattenedProdCaseRef::Case(ProdCaseRef {
-            prod: ProdRef(1),
+            prod: b_prod,
             case: CaseRef(1),
           }),
         ),
         (AnonSym(4), UnflattenedProdCaseRef::PassThrough),
       ]
-      .into_iter()
+      .iter()
       .cloned()
       .collect::<IndexMap<_, _>>(),
     };
@@ -3344,6 +3344,10 @@ mod tests {
     let third_c = TokenPosition::new(0, 2, 1);
     let fourth_c = TokenPosition::new(1, 2, 2);
 
+    let a_prod = ProdRef(0);
+    let b_prod = ProdRef(1);
+    let _c_prod = ProdRef(2); /* unused */
+
     assert_eq!(
       preprocessed_grammar.token_states_mapping.clone(),
       vec![
@@ -3361,23 +3365,97 @@ mod tests {
         .cyclic_subgraph
         .vertex_mapping
         .clone(),
-      // [
-      //   (LoweredState::Start, TrieNodeRef(6)),
-      //   (first_a, TrieNodeRef(12)),
-      //   (first_b, TrieNodeRef(14)),
-      //   (second_a, TrieNodeRef(4)),
-      //   (second_b, TrieNodeRef(13)),
-      //   (third_c, TrieNodeRef(15)),
-      //   (first_c, TrieNodeRef(16)),
-      //   (second_c, TrieNodeRef(10)),
-      //   (LoweredState::End, TrieNodeRef(8)),
-      //   (third_b, TrieNodeRef(19)),
-      //   (fourth_c, TrieNodeRef(20)),
-      // ]
-      // .into_iter()
-      // .map(|(s, t)| (s.clone(), t.clone()))
-      // .collect::<IndexMap<_, _>>()
-      IndexMap::new()
+      [
+        /* 0 */
+        (EpsilonGraphVertex::Start(b_prod), TrieNodeRef(0)),
+        /* 1 */
+        (
+          EpsilonGraphVertex::Anon(AnonStep::Positive(AnonSym(7))),
+          TrieNodeRef(1)
+        ),
+        /* 2 */
+        (
+          EpsilonGraphVertex::Anon(AnonStep::Positive(AnonSym(8))),
+          TrieNodeRef(2)
+        ),
+        /* 3 */
+        (EpsilonGraphVertex::End(b_prod), TrieNodeRef(3)),
+        /* 4 */
+        (
+          EpsilonGraphVertex::Anon(AnonStep::Negative(AnonSym(8))),
+          TrieNodeRef(4)
+        ),
+        /* 5 */
+        (
+          EpsilonGraphVertex::Anon(AnonStep::Negative(AnonSym(7))),
+          TrieNodeRef(5)
+        ),
+        /* 6 */
+        (
+          EpsilonGraphVertex::State(TokenPosition {
+            prod: a_prod,
+            case: CaseRef(1),
+            case_el: CaseElRef(0)
+          }),
+          TrieNodeRef(6)
+        ),
+        /* 7 */
+        (
+          EpsilonGraphVertex::Anon(AnonStep::Positive(AnonSym(2))),
+          TrieNodeRef(7)
+        ),
+        /* 8 */
+        (EpsilonGraphVertex::Start(a_prod), TrieNodeRef(8)),
+        /* 9 */
+        (
+          EpsilonGraphVertex::Anon(AnonStep::Positive(AnonSym(1))),
+          TrieNodeRef(9)
+        ),
+        /* 10 */
+        (
+          EpsilonGraphVertex::State(TokenPosition {
+            prod: a_prod,
+            case: CaseRef(1),
+            case_el: CaseElRef(2)
+          }),
+          TrieNodeRef(10)
+        ),
+        /* 11 */
+        (
+          EpsilonGraphVertex::Anon(AnonStep::Negative(AnonSym(1))),
+          TrieNodeRef(11)
+        ),
+        /* 12 */
+        (EpsilonGraphVertex::End(a_prod), TrieNodeRef(12)),
+        /* 13 */
+        (
+          EpsilonGraphVertex::Anon(AnonStep::Negative(AnonSym(2))),
+          TrieNodeRef(13)
+        ),
+        /* 14 */
+        (
+          EpsilonGraphVertex::Anon(AnonStep::Negative(AnonSym(4))),
+          TrieNodeRef(14)
+        ),
+        /* 15 */
+        (
+          EpsilonGraphVertex::Anon(AnonStep::Negative(AnonSym(3))),
+          TrieNodeRef(15)
+        ),
+        /* 16 */
+        (
+          EpsilonGraphVertex::Anon(AnonStep::Negative(AnonSym(6))),
+          TrieNodeRef(16)
+        ),
+        /* 17 */
+        (
+          EpsilonGraphVertex::Anon(AnonStep::Negative(AnonSym(5))),
+          TrieNodeRef(17)
+        )
+      ]
+      .iter()
+      .cloned()
+      .collect::<IndexMap<_, _>>()
     );
 
     assert_eq!(
@@ -3389,401 +3467,239 @@ mod tests {
         /* 0 */
         StackTrieNode {
           stack_diff: StackDiffSegment(vec![NamedOrAnonStep::Named(StackStep::Positive(
-            StackSym(ProdRef(1))
+            StackSym(b_prod)
           ))]),
-          next_nodes: vec![
-            StackTrieNextEntry::Incomplete(TrieNodeRef(1)),
-            StackTrieNextEntry::Incomplete(TrieNodeRef(17)),
-            StackTrieNextEntry::Incomplete(TrieNodeRef(18))
-          ]
-          .into_iter()
-          .collect::<IndexSet<_>>(),
-          prev_nodes: vec![
-            StackTrieNextEntry::Incomplete(TrieNodeRef(1)),
-            StackTrieNextEntry::Completed(LoweredState::Start),
-            StackTrieNextEntry::Incomplete(TrieNodeRef(22))
-          ]
-          .into_iter()
-          .collect::<IndexSet<_>>()
+          next_nodes: [StackTrieNextEntry::Incomplete(TrieNodeRef(1))]
+            .iter()
+            .cloned()
+            .collect::<IndexSet<_>>(),
+          prev_nodes: [StackTrieNextEntry::Incomplete(TrieNodeRef(2))]
+            .iter()
+            .cloned()
+            .collect::<IndexSet<_>>()
         },
         /* 1 */
         StackTrieNode {
-          stack_diff: StackDiffSegment(vec![NamedOrAnonStep::Anon(AnonStep::Positive(AnonSym(3)))]),
-          next_nodes: vec![StackTrieNextEntry::Incomplete(TrieNodeRef(0))]
-            .into_iter()
+          stack_diff: StackDiffSegment(vec![NamedOrAnonStep::Anon(AnonStep::Positive(AnonSym(7)))]),
+          next_nodes: [StackTrieNextEntry::Incomplete(TrieNodeRef(2))]
+            .iter()
+            .cloned()
             .collect::<IndexSet<_>>(),
-          prev_nodes: vec![StackTrieNextEntry::Incomplete(TrieNodeRef(0))]
-            .into_iter()
+          prev_nodes: [StackTrieNextEntry::Incomplete(TrieNodeRef(0))]
+            .iter()
+            .cloned()
             .collect::<IndexSet<_>>()
         },
         /* 2 */
         StackTrieNode {
-          stack_diff: StackDiffSegment(vec![NamedOrAnonStep::Named(StackStep::Negative(
-            StackSym(ProdRef(1))
-          ))]),
-          next_nodes: vec![
-            StackTrieNextEntry::Incomplete(TrieNodeRef(3)),
-            StackTrieNextEntry::Incomplete(TrieNodeRef(7)),
-            StackTrieNextEntry::Completed(LoweredState::End)
-          ]
-          .into_iter()
-          .collect::<IndexSet<_>>(),
-          prev_nodes: vec![
-            StackTrieNextEntry::Incomplete(TrieNodeRef(3)),
-            StackTrieNextEntry::Incomplete(TrieNodeRef(9)),
-            StackTrieNextEntry::Incomplete(TrieNodeRef(20))
-          ]
-          .into_iter()
-          .collect::<IndexSet<_>>()
+          stack_diff: StackDiffSegment(vec![NamedOrAnonStep::Anon(AnonStep::Positive(AnonSym(8)))]),
+          next_nodes: [StackTrieNextEntry::Incomplete(TrieNodeRef(0))]
+            .iter()
+            .cloned()
+            .collect::<IndexSet<_>>(),
+          prev_nodes: [StackTrieNextEntry::Incomplete(TrieNodeRef(1))]
+            .iter()
+            .cloned()
+            .collect::<IndexSet<_>>()
         },
         /* 3 */
         StackTrieNode {
-          stack_diff: StackDiffSegment(vec![NamedOrAnonStep::Anon(AnonStep::Negative(AnonSym(3)))]),
-          next_nodes: vec![StackTrieNextEntry::Incomplete(TrieNodeRef(2))]
-            .into_iter()
-            .collect::<IndexSet<_>>(),
-          prev_nodes: vec![StackTrieNextEntry::Incomplete(TrieNodeRef(2))]
-            .into_iter()
-            .collect::<IndexSet<_>>()
+          stack_diff: StackDiffSegment(vec![NamedOrAnonStep::Named(StackStep::Negative(
+            StackSym(b_prod)
+          ))]),
+          next_nodes: [
+            StackTrieNextEntry::Incomplete(TrieNodeRef(4)),
+            StackTrieNextEntry::Incomplete(TrieNodeRef(14))
+          ]
+          .iter()
+          .cloned()
+          .collect::<IndexSet<_>>(),
+          prev_nodes: [
+            StackTrieNextEntry::Incomplete(TrieNodeRef(5)),
+            StackTrieNextEntry::Incomplete(TrieNodeRef(17))
+          ]
+          .iter()
+          .cloned()
+          .collect::<IndexSet<_>>()
         },
         /* 4 */
         StackTrieNode {
-          stack_diff: StackDiffSegment(vec![]),
-          next_nodes: vec![
-            StackTrieNextEntry::Incomplete(TrieNodeRef(5)),
-            StackTrieNextEntry::Completed(LoweredState::Within(TokenPosition {
-              prod: ProdRef(0),
-              case: CaseRef(1),
-              case_el: CaseElRef(0)
-            }))
-          ]
-          .into_iter()
-          .collect::<IndexSet<_>>(),
-          prev_nodes: vec![
-            StackTrieNextEntry::Incomplete(TrieNodeRef(6)),
-            StackTrieNextEntry::Completed(LoweredState::Within(TokenPosition {
-              prod: ProdRef(0),
-              case: CaseRef(1),
-              case_el: CaseElRef(0)
-            }))
-          ]
-          .into_iter()
-          .collect::<IndexSet<_>>()
+          stack_diff: StackDiffSegment(vec![NamedOrAnonStep::Anon(AnonStep::Negative(AnonSym(8)))]),
+          next_nodes: [StackTrieNextEntry::Incomplete(TrieNodeRef(5))]
+            .iter()
+            .cloned()
+            .collect::<IndexSet<_>>(),
+          prev_nodes: [StackTrieNextEntry::Incomplete(TrieNodeRef(3))]
+            .iter()
+            .cloned()
+            .collect::<IndexSet<_>>()
         },
         /* 5 */
         StackTrieNode {
-          stack_diff: StackDiffSegment(vec![NamedOrAnonStep::Anon(AnonStep::Positive(AnonSym(0)))]),
-          next_nodes: vec![StackTrieNextEntry::Incomplete(TrieNodeRef(6))]
-            .into_iter()
+          stack_diff: StackDiffSegment(vec![NamedOrAnonStep::Anon(AnonStep::Negative(AnonSym(7)))]),
+          next_nodes: [StackTrieNextEntry::Incomplete(TrieNodeRef(3))]
+            .iter()
+            .cloned()
             .collect::<IndexSet<_>>(),
-          prev_nodes: vec![StackTrieNextEntry::Incomplete(TrieNodeRef(4))]
-            .into_iter()
+          prev_nodes: [StackTrieNextEntry::Incomplete(TrieNodeRef(4))]
+            .iter()
+            .cloned()
             .collect::<IndexSet<_>>()
         },
         /* 6 */
         StackTrieNode {
-          stack_diff: StackDiffSegment(vec![NamedOrAnonStep::Named(StackStep::Positive(
-            StackSym(ProdRef(0))
-          ))]),
-          next_nodes: vec![
-            StackTrieNextEntry::Incomplete(TrieNodeRef(4)),
-            StackTrieNextEntry::Incomplete(TrieNodeRef(12)),
-            StackTrieNextEntry::Incomplete(TrieNodeRef(13))
-          ]
-          .into_iter()
-          .collect::<IndexSet<_>>(),
-          prev_nodes: vec![
-            StackTrieNextEntry::Incomplete(TrieNodeRef(5)),
-            StackTrieNextEntry::Completed(LoweredState::Start),
-            StackTrieNextEntry::Incomplete(TrieNodeRef(17)),
-            StackTrieNextEntry::Incomplete(TrieNodeRef(18))
-          ]
-          .into_iter()
-          .collect::<IndexSet<_>>()
+          stack_diff: StackDiffSegment(vec![]),
+          next_nodes: [StackTrieNextEntry::Incomplete(TrieNodeRef(7))]
+            .iter()
+            .cloned()
+            .collect::<IndexSet<_>>(),
+          prev_nodes: [StackTrieNextEntry::Incomplete(TrieNodeRef(9))]
+            .iter()
+            .cloned()
+            .collect::<IndexSet<_>>()
         },
         /* 7 */
         StackTrieNode {
-          stack_diff: StackDiffSegment(vec![NamedOrAnonStep::Anon(AnonStep::Negative(AnonSym(1)))]),
-          next_nodes: vec![StackTrieNextEntry::Incomplete(TrieNodeRef(8))]
-            .into_iter()
+          stack_diff: StackDiffSegment(vec![NamedOrAnonStep::Anon(AnonStep::Positive(AnonSym(2)))]),
+          next_nodes: [StackTrieNextEntry::Incomplete(TrieNodeRef(8))]
+            .iter()
+            .cloned()
             .collect::<IndexSet<_>>(),
-          prev_nodes: vec![StackTrieNextEntry::Incomplete(TrieNodeRef(2))]
-            .into_iter()
+          prev_nodes: [StackTrieNextEntry::Incomplete(TrieNodeRef(6))]
+            .iter()
+            .cloned()
             .collect::<IndexSet<_>>()
         },
         /* 8 */
         StackTrieNode {
-          stack_diff: StackDiffSegment(vec![NamedOrAnonStep::Named(StackStep::Negative(
-            StackSym(ProdRef(0))
+          stack_diff: StackDiffSegment(vec![NamedOrAnonStep::Named(StackStep::Positive(
+            StackSym(a_prod)
           ))]),
-          next_nodes: vec![
-            StackTrieNextEntry::Incomplete(TrieNodeRef(9)),
-            StackTrieNextEntry::Incomplete(TrieNodeRef(11)),
-            StackTrieNextEntry::Completed(LoweredState::End),
-            StackTrieNextEntry::Incomplete(TrieNodeRef(21))
-          ]
-          .into_iter()
-          .collect::<IndexSet<_>>(),
-          prev_nodes: vec![
-            StackTrieNextEntry::Incomplete(TrieNodeRef(7)),
-            StackTrieNextEntry::Incomplete(TrieNodeRef(10)),
-            StackTrieNextEntry::Incomplete(TrieNodeRef(16))
-          ]
-          .into_iter()
-          .collect::<IndexSet<_>>()
+          next_nodes: [StackTrieNextEntry::Incomplete(TrieNodeRef(9))]
+            .iter()
+            .cloned()
+            .collect::<IndexSet<_>>(),
+          prev_nodes: [StackTrieNextEntry::Incomplete(TrieNodeRef(7))]
+            .iter()
+            .cloned()
+            .collect::<IndexSet<_>>()
         },
         /* 9 */
         StackTrieNode {
-          stack_diff: StackDiffSegment(vec![NamedOrAnonStep::Anon(AnonStep::Negative(AnonSym(2)))]),
-          next_nodes: vec![StackTrieNextEntry::Incomplete(TrieNodeRef(2))]
-            .into_iter()
+          stack_diff: StackDiffSegment(vec![NamedOrAnonStep::Anon(AnonStep::Positive(AnonSym(1)))]),
+          next_nodes: [StackTrieNextEntry::Incomplete(TrieNodeRef(6))]
+            .iter()
+            .cloned()
             .collect::<IndexSet<_>>(),
-          prev_nodes: vec![StackTrieNextEntry::Incomplete(TrieNodeRef(8))]
-            .into_iter()
+          prev_nodes: [StackTrieNextEntry::Incomplete(TrieNodeRef(8))]
+            .iter()
+            .cloned()
             .collect::<IndexSet<_>>()
         },
         /* 10 */
         StackTrieNode {
           stack_diff: StackDiffSegment(vec![]),
-          next_nodes: vec![
-            StackTrieNextEntry::Incomplete(TrieNodeRef(8)),
-            StackTrieNextEntry::Completed(LoweredState::Within(TokenPosition {
-              prod: ProdRef(0),
-              case: CaseRef(1),
-              case_el: CaseElRef(2)
-            }))
-          ]
-          .into_iter()
-          .collect::<IndexSet<_>>(),
-          prev_nodes: vec![
-            StackTrieNextEntry::Incomplete(TrieNodeRef(11)),
-            StackTrieNextEntry::Completed(LoweredState::Within(TokenPosition {
-              prod: ProdRef(0),
-              case: CaseRef(1),
-              case_el: CaseElRef(2)
-            }))
-          ]
-          .into_iter()
-          .collect::<IndexSet<_>>()
+          next_nodes: [StackTrieNextEntry::Incomplete(TrieNodeRef(11))]
+            .iter()
+            .cloned()
+            .collect::<IndexSet<_>>(),
+          prev_nodes: [StackTrieNextEntry::Incomplete(TrieNodeRef(13))]
+            .iter()
+            .cloned()
+            .collect::<IndexSet<_>>()
         },
         /* 11 */
         StackTrieNode {
-          stack_diff: StackDiffSegment(vec![NamedOrAnonStep::Anon(AnonStep::Negative(AnonSym(0)))]),
-          next_nodes: vec![StackTrieNextEntry::Incomplete(TrieNodeRef(10))]
-            .into_iter()
+          stack_diff: StackDiffSegment(vec![NamedOrAnonStep::Anon(AnonStep::Negative(AnonSym(1)))]),
+          next_nodes: [StackTrieNextEntry::Incomplete(TrieNodeRef(12))]
+            .iter()
+            .cloned()
             .collect::<IndexSet<_>>(),
-          prev_nodes: vec![StackTrieNextEntry::Incomplete(TrieNodeRef(8))]
-            .into_iter()
+          prev_nodes: [StackTrieNextEntry::Incomplete(TrieNodeRef(10))]
+            .iter()
+            .cloned()
             .collect::<IndexSet<_>>()
         },
         /* 12 */
         StackTrieNode {
-          stack_diff: StackDiffSegment(vec![]),
-          next_nodes: vec![
-            StackTrieNextEntry::Completed(LoweredState::Within(TokenPosition {
-              prod: ProdRef(0),
-              case: CaseRef(0),
-              case_el: CaseElRef(0)
-            })),
-            StackTrieNextEntry::Incomplete(TrieNodeRef(14))
+          stack_diff: StackDiffSegment(vec![NamedOrAnonStep::Named(StackStep::Negative(
+            StackSym(a_prod)
+          ))]),
+          next_nodes: [
+            StackTrieNextEntry::Incomplete(TrieNodeRef(13)),
+            StackTrieNextEntry::Incomplete(TrieNodeRef(16))
           ]
-          .into_iter()
+          .iter()
+          .cloned()
           .collect::<IndexSet<_>>(),
-          prev_nodes: vec![
-            StackTrieNextEntry::Incomplete(TrieNodeRef(6)),
-            StackTrieNextEntry::Completed(LoweredState::Within(TokenPosition {
-              prod: ProdRef(0),
-              case: CaseRef(0),
-              case_el: CaseElRef(0)
-            }))
+          prev_nodes: [
+            StackTrieNextEntry::Incomplete(TrieNodeRef(11)),
+            StackTrieNextEntry::Incomplete(TrieNodeRef(15))
           ]
-          .into_iter()
+          .iter()
+          .cloned()
           .collect::<IndexSet<_>>()
         },
         /* 13 */
         StackTrieNode {
-          stack_diff: StackDiffSegment(vec![]),
-          next_nodes: vec![
-            StackTrieNextEntry::Completed(LoweredState::Within(TokenPosition {
-              prod: ProdRef(0),
-              case: CaseRef(2),
-              case_el: CaseElRef(0)
-            })),
-            StackTrieNextEntry::Incomplete(TrieNodeRef(15))
-          ]
-          .into_iter()
-          .collect::<IndexSet<_>>(),
-          prev_nodes: vec![
-            StackTrieNextEntry::Incomplete(TrieNodeRef(6)),
-            StackTrieNextEntry::Completed(LoweredState::Within(TokenPosition {
-              prod: ProdRef(0),
-              case: CaseRef(2),
-              case_el: CaseElRef(0)
-            }))
-          ]
-          .into_iter()
-          .collect::<IndexSet<_>>()
+          stack_diff: StackDiffSegment(vec![NamedOrAnonStep::Anon(AnonStep::Negative(AnonSym(2)))]),
+          next_nodes: [StackTrieNextEntry::Incomplete(TrieNodeRef(10))]
+            .iter()
+            .cloned()
+            .collect::<IndexSet<_>>(),
+          prev_nodes: [StackTrieNextEntry::Incomplete(TrieNodeRef(12))]
+            .iter()
+            .cloned()
+            .collect::<IndexSet<_>>()
         },
         /* 14 */
         StackTrieNode {
-          stack_diff: StackDiffSegment(vec![]),
-          next_nodes: vec![
-            StackTrieNextEntry::Completed(LoweredState::Within(TokenPosition {
-              prod: ProdRef(0),
-              case: CaseRef(0),
-              case_el: CaseElRef(1)
-            })),
-            StackTrieNextEntry::Incomplete(TrieNodeRef(16))
-          ]
-          .into_iter()
-          .collect::<IndexSet<_>>(),
-          prev_nodes: vec![
-            StackTrieNextEntry::Incomplete(TrieNodeRef(12)),
-            StackTrieNextEntry::Completed(LoweredState::Within(TokenPosition {
-              prod: ProdRef(0),
-              case: CaseRef(0),
-              case_el: CaseElRef(1)
-            }))
-          ]
-          .into_iter()
-          .collect::<IndexSet<_>>()
+          stack_diff: StackDiffSegment(vec![NamedOrAnonStep::Anon(AnonStep::Negative(AnonSym(4)))]),
+          next_nodes: [StackTrieNextEntry::Incomplete(TrieNodeRef(15))]
+            .iter()
+            .cloned()
+            .collect::<IndexSet<_>>(),
+          prev_nodes: [StackTrieNextEntry::Incomplete(TrieNodeRef(3))]
+            .iter()
+            .cloned()
+            .collect::<IndexSet<_>>()
         },
         /* 15 */
         StackTrieNode {
-          stack_diff: StackDiffSegment(vec![]),
-          next_nodes: vec![
-            StackTrieNextEntry::Completed(LoweredState::Within(TokenPosition {
-              prod: ProdRef(0),
-              case: CaseRef(2),
-              case_el: CaseElRef(1)
-            })),
-            StackTrieNextEntry::Incomplete(TrieNodeRef(22))
-          ]
-          .into_iter()
-          .collect::<IndexSet<_>>(),
-          prev_nodes: vec![
-            StackTrieNextEntry::Incomplete(TrieNodeRef(13)),
-            StackTrieNextEntry::Completed(LoweredState::Within(TokenPosition {
-              prod: ProdRef(0),
-              case: CaseRef(2),
-              case_el: CaseElRef(1)
-            }))
-          ]
-          .into_iter()
-          .collect::<IndexSet<_>>()
+          stack_diff: StackDiffSegment(vec![NamedOrAnonStep::Anon(AnonStep::Negative(AnonSym(3)))]),
+          next_nodes: [StackTrieNextEntry::Incomplete(TrieNodeRef(12))]
+            .iter()
+            .cloned()
+            .collect::<IndexSet<_>>(),
+          prev_nodes: [StackTrieNextEntry::Incomplete(TrieNodeRef(14))]
+            .iter()
+            .cloned()
+            .collect::<IndexSet<_>>()
         },
         /* 16 */
         StackTrieNode {
-          stack_diff: StackDiffSegment(vec![]),
-          next_nodes: vec![
-            StackTrieNextEntry::Completed(LoweredState::Within(TokenPosition {
-              prod: ProdRef(0),
-              case: CaseRef(0),
-              case_el: CaseElRef(2)
-            })),
-            StackTrieNextEntry::Incomplete(TrieNodeRef(8))
-          ]
-          .into_iter()
-          .collect::<IndexSet<_>>(),
-          prev_nodes: vec![
-            StackTrieNextEntry::Incomplete(TrieNodeRef(14)),
-            StackTrieNextEntry::Completed(LoweredState::Within(TokenPosition {
-              prod: ProdRef(0),
-              case: CaseRef(0),
-              case_el: CaseElRef(2)
-            }))
-          ]
-          .into_iter()
-          .collect::<IndexSet<_>>()
+          stack_diff: StackDiffSegment(vec![NamedOrAnonStep::Anon(AnonStep::Negative(AnonSym(6)))]),
+          next_nodes: [StackTrieNextEntry::Incomplete(TrieNodeRef(17))]
+            .iter()
+            .cloned()
+            .collect::<IndexSet<_>>(),
+          prev_nodes: [StackTrieNextEntry::Incomplete(TrieNodeRef(12))]
+            .iter()
+            .cloned()
+            .collect::<IndexSet<_>>()
         },
         /* 17 */
         StackTrieNode {
-          stack_diff: StackDiffSegment(vec![NamedOrAnonStep::Anon(AnonStep::Positive(AnonSym(2)))]),
-          next_nodes: vec![StackTrieNextEntry::Incomplete(TrieNodeRef(6))]
-            .into_iter()
+          stack_diff: StackDiffSegment(vec![NamedOrAnonStep::Anon(AnonStep::Negative(AnonSym(5)))]),
+          next_nodes: [StackTrieNextEntry::Incomplete(TrieNodeRef(3))]
+            .iter()
+            .cloned()
             .collect::<IndexSet<_>>(),
-          prev_nodes: vec![StackTrieNextEntry::Incomplete(TrieNodeRef(0))]
-            .into_iter()
+          prev_nodes: [StackTrieNextEntry::Incomplete(TrieNodeRef(16))]
+            .iter()
+            .cloned()
             .collect::<IndexSet<_>>()
-        },
-        /* 18 */
-        StackTrieNode {
-          stack_diff: StackDiffSegment(vec![NamedOrAnonStep::Anon(AnonStep::Positive(AnonSym(4)))]),
-          next_nodes: vec![StackTrieNextEntry::Incomplete(TrieNodeRef(6))]
-            .into_iter()
-            .collect::<IndexSet<_>>(),
-          prev_nodes: vec![StackTrieNextEntry::Incomplete(TrieNodeRef(0))]
-            .into_iter()
-            .collect::<IndexSet<_>>()
-        },
-        /* 19 */
-        StackTrieNode {
-          stack_diff: StackDiffSegment(vec![]),
-          next_nodes: vec![
-            StackTrieNextEntry::Incomplete(TrieNodeRef(20)),
-            StackTrieNextEntry::Completed(LoweredState::Within(TokenPosition {
-              prod: ProdRef(1),
-              case: CaseRef(2),
-              case_el: CaseElRef(1)
-            }))
-          ]
-          .into_iter()
-          .collect::<IndexSet<_>>(),
-          prev_nodes: vec![
-            StackTrieNextEntry::Completed(LoweredState::Within(TokenPosition {
-              prod: ProdRef(1),
-              case: CaseRef(2),
-              case_el: CaseElRef(1)
-            })),
-            StackTrieNextEntry::Incomplete(TrieNodeRef(21))
-          ]
-          .into_iter()
-          .collect::<IndexSet<_>>()
-        },
-        /* 20 */
-        StackTrieNode {
-          stack_diff: StackDiffSegment(vec![]),
-          next_nodes: vec![
-            StackTrieNextEntry::Completed(LoweredState::Within(TokenPosition {
-              prod: ProdRef(1),
-              case: CaseRef(2),
-              case_el: CaseElRef(2)
-            })),
-            StackTrieNextEntry::Incomplete(TrieNodeRef(2))
-          ]
-          .into_iter()
-          .collect::<IndexSet<_>>(),
-          prev_nodes: vec![
-            StackTrieNextEntry::Incomplete(TrieNodeRef(19)),
-            StackTrieNextEntry::Completed(LoweredState::Within(TokenPosition {
-              prod: ProdRef(1),
-              case: CaseRef(2),
-              case_el: CaseElRef(2)
-            }))
-          ]
-          .into_iter()
-          .collect::<IndexSet<_>>()
-        },
-        /* 21 */
-        StackTrieNode {
-          stack_diff: StackDiffSegment(vec![NamedOrAnonStep::Anon(AnonStep::Negative(AnonSym(4)))]),
-          next_nodes: vec![StackTrieNextEntry::Incomplete(TrieNodeRef(19))]
-            .into_iter()
-            .collect::<IndexSet<_>>(),
-          prev_nodes: vec![StackTrieNextEntry::Incomplete(TrieNodeRef(8))]
-            .into_iter()
-            .collect::<IndexSet<_>>()
-        },
-        /* 22 */
-        StackTrieNode {
-          stack_diff: StackDiffSegment(vec![NamedOrAnonStep::Anon(AnonStep::Positive(AnonSym(1)))]),
-          next_nodes: vec![StackTrieNextEntry::Incomplete(TrieNodeRef(0))]
-            .into_iter()
-            .collect::<IndexSet<_>>(),
-          prev_nodes: vec![StackTrieNextEntry::Incomplete(TrieNodeRef(15))]
-            .into_iter()
-            .collect::<IndexSet<_>>()
-        },
+        }
       ]
     );
   }
