@@ -65,7 +65,7 @@ mod parsing;
 mod reconstruction;
 
 mod types {
-  pub use indexmap::{vec::Vec, Global};
+  pub use indexmap::alloc_inner::{Global, Vec};
   use twox_hash::XxHash64;
 
   use core::hash::BuildHasherDefault;
