@@ -153,10 +153,7 @@ pub mod grammar_specification {
   /// A conjunction of productions.
   pub trait SimultaneousProductions: Iterator {
     type P: Production;
-    type Item: Into<(
-      <<<Self as SimultaneousProductions>::P as Production>::C as Case>::PR,
-      Self::P,
-    )>;
+    type Item: Into<(<<Self::P as Production>::C as Case>::PR, Self::P)>;
   }
 }
 
