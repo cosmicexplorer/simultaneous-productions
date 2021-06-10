@@ -632,69 +632,53 @@ pub mod lowering_to_indices {
     ) -> Result<Self, GrammarConstructionError> {
       // Mapping from strings -> indices (TODO: from a type-indexed map, where each
       // production returns the type!).
-      let prod_ref_mapping: HashMap<ProductionReference, usize> = prods
-        .0
-        .iter()
-        .map(|(prod_ref, _)| prod_ref)
-        .cloned()
-        .enumerate()
-        .map(|(ind, p)| (p, ind))
-        .collect();
+      let mut prod_ref_mapping: HashMap<ProductionReference, usize> = HashMap::new();
+      for (index, (prod_ref, _)) in prods.0.iter().enumerate() {
+        prod_ref_mapping.insert(prod_ref.clone(), index);
+      }
       // Collect all the tokens (splitting up literals) as we traverse the
       // productions. So literal strings are "flattened" into their individual
       // tokens.
       let mut all_tokens: IndexSet<Tok> = IndexSet::new();
       // Pretty straightforwardly map the productions into the new space.
-      prods
-        .0
-        .iter()
-        .map(|(_, prod)| {
-          prod
-            .0
-            .iter()
-            .map(|case| {
-              case
-                .0
-                .iter()
-                .map(|el| match el {
-                  CaseElement::Lit(literal) => Ok(
-                    literal
-                      .0
-                      .iter()
-                      .cloned()
-                      .map(|cur_tok| {
-                        let (tok_ind, _) = all_tokens.insert_full(cur_tok);
-                        CaseEl::Tok(TokRef(tok_ind))
-                      })
-                      .collect::<Vec<_>>(),
-                  ),
-                  CaseElement::Prod(prod_ref) => prod_ref_mapping
-                    .get(prod_ref)
-                    .map(|i| Ok(vec![CaseEl::Prod(ProdRef(*i))]))
-                    .unwrap_or_else(|| {
-                      Err(GrammarConstructionError(format!(
-                        "prod ref {:?} not found!",
-                        prod_ref
-                      )))
-                    }),
-                })
-                .collect::<Result<Vec<Vec<CaseEl>>, _>>()
-                .map(|unflattened_case_els| {
-                  let case_els = unflattened_case_els
-                    .into_iter()
-                    .flat_map(|els| els.into_iter())
-                    .collect::<Vec<CaseEl>>();
-                  CaseImpl(case_els)
-                })
-            })
-            .collect::<Result<Vec<CaseImpl>, _>>()
-            .map(|cases| ProductionImpl(cases))
-        })
-        .collect::<Result<Vec<ProductionImpl>, _>>()
-        .map(|new_prods| TokenGrammar {
-          graph: LoweredProductions(new_prods),
-          alphabet: all_tokens.iter().cloned().collect(),
-        })
+      let mut ret_prods: Vec<ProductionImpl> = Vec::new();
+      for (_, prod) in prods.0.iter() {
+        let mut ret_cases: Vec<CaseImpl> = Vec::new();
+        for case in prod.0.iter() {
+          let mut ret_els: Vec<CaseEl> = Vec::new();
+          for el in case.0.iter() {
+            match el {
+              CaseElement::Lit(literal) => {
+                for cur_tok in literal.0.iter().cloned() {
+                  let (tok_ind, _) = all_tokens.insert_full(cur_tok);
+                  let cur_el = CaseEl::Tok(TokRef(tok_ind));
+                  ret_els.push(cur_el);
+                }
+              },
+              CaseElement::Prod(prod_ref) => match prod_ref_mapping.get(prod_ref) {
+                Some(i) => {
+                  let cur_el = CaseEl::Prod(ProdRef(*i));
+                  ret_els.push(cur_el);
+                },
+                None => {
+                  return Err(GrammarConstructionError(format!(
+                    "prod ref {:?} not found!",
+                    prod_ref
+                  )));
+                },
+              },
+            }
+          }
+          let cur_case = CaseImpl(ret_els);
+          ret_cases.push(cur_case);
+        }
+        let cur_prod = ProductionImpl(ret_cases);
+        ret_prods.push(cur_prod);
+      }
+      Ok(TokenGrammar {
+        graph: LoweredProductions(ret_prods),
+        alphabet: all_tokens.iter().cloned().collect(),
+      })
     }
 
     pub fn new(prods: &SimultaneousProductions<Tok>) -> Result<Self, GrammarConstructionError> {
@@ -4256,33 +4240,6 @@ mod tests {
     let completely_reconstructed = CompletedWholeReconstruction::new(reconstructed).unwrap();
     assert_eq!(
       completely_reconstructed,
-      // CompletedWholeReconstruction([
-      //   State(Start),
-      //   Completed(CompletedCaseReconstruction {
-      //     prod_case: ProdCaseRef {
-      //       prod: ProdRef(0),
-      //       case: CaseRef(0)
-      //     },
-      //     args: [
-      //       State(Within(TokenPosition {
-      //         prod: ProdRef(0),
-      //         case: CaseRef(0),
-      //         case_el: CaseElRef(0)
-      //       })),
-      //       State(Within(TokenPosition {
-      //         prod: ProdRef(0),
-      //         case: CaseRef(0),
-      //         case_el: CaseElRef(1)
-      //       })),
-      //       State(Within(TokenPosition {
-      //         prod: ProdRef(0),
-      //         case: CaseRef(0),
-      //         case_el: CaseElRef(1)
-      //       }))
-      //     ]
-      //   }),
-      //   State(End)
-      // ]),
       CompletedWholeReconstruction(vec![
         CompleteSubReconstruction::State(LoweredState::Start),
         CompleteSubReconstruction::Completed(CompletedCaseReconstruction {
