@@ -627,15 +627,15 @@ pub mod lowering_to_indices {
   pub struct GrammarConstructionError(pub String);
 
   impl<Tok: Token> TokenGrammar<Tok> {
-    fn walk_productions_and_split_literal_strings(
-      prods: &SimultaneousProductions<Tok>,
-    ) -> Result<Self, GrammarConstructionError> {
+    fn walk_productions_and_split_literal_strings(prods: &SimultaneousProductions<Tok>) -> Self {
       // Mapping from strings -> indices (TODO: from a type-indexed map, where each
       // production returns the type!).
-      let mut prod_ref_mapping: HashMap<ProductionReference, usize> = HashMap::new();
-      for (index, (prod_ref, _)) in prods.0.iter().enumerate() {
-        prod_ref_mapping.insert(prod_ref.clone(), index);
-      }
+      let prod_ref_mapping: HashMap<ProductionReference, usize> = prods
+        .0
+        .iter()
+        .enumerate()
+        .map(|(index, (prod_ref, _))| (prod_ref.clone(), index))
+        .collect();
       // Collect all the tokens (splitting up literals) as we traverse the
       // productions. So literal strings are "flattened" into their individual
       // tokens.
@@ -649,23 +649,16 @@ pub mod lowering_to_indices {
           for el in case.0.iter() {
             match el {
               CaseElement::Lit(literal) => {
-                for cur_tok in literal.0.iter().cloned() {
-                  let (tok_ind, _) = all_tokens.insert_full(cur_tok);
-                  let cur_el = CaseEl::Tok(TokRef(tok_ind));
-                  ret_els.push(cur_el);
-                }
+                ret_els.extend(literal.0.iter().map(|cur_tok| {
+                  let (tok_ind, _) = all_tokens.insert_full(cur_tok.clone());
+                  CaseEl::Tok(TokRef(tok_ind))
+                }));
               },
-              CaseElement::Prod(prod_ref) => match prod_ref_mapping.get(prod_ref) {
-                Some(i) => {
-                  let cur_el = CaseEl::Prod(ProdRef(*i));
-                  ret_els.push(cur_el);
-                },
-                None => {
-                  return Err(GrammarConstructionError(format!(
-                    "prod ref {:?} not found!",
-                    prod_ref
-                  )));
-                },
+              CaseElement::Prod(prod_ref) => {
+                let matching_production_index = prod_ref_mapping
+                  .get(prod_ref)
+                  .expect("we assume all prod refs exist at this point");
+                ret_els.push(CaseEl::Prod(ProdRef(*matching_production_index)));
               },
             }
           }
@@ -675,13 +668,13 @@ pub mod lowering_to_indices {
         let cur_prod = ProductionImpl(ret_cases);
         ret_prods.push(cur_prod);
       }
-      Ok(TokenGrammar {
+      TokenGrammar {
         graph: LoweredProductions(ret_prods),
         alphabet: all_tokens.iter().cloned().collect(),
-      })
+      }
     }
 
-    pub fn new(prods: &SimultaneousProductions<Tok>) -> Result<Self, GrammarConstructionError> {
+    pub fn new(prods: &SimultaneousProductions<Tok>) -> Self {
       Self::walk_productions_and_split_literal_strings(prods)
     }
 
@@ -2586,43 +2579,37 @@ mod tests {
       .collect(),
     );
     let grammar = TokenGrammar::new(&prods);
-    assert_eq!(
-      grammar.clone(),
-      Ok(TokenGrammar {
-        alphabet: vec!['c', 'a', 'b'],
-        graph: LoweredProductions(vec![ProductionImpl(vec![CaseImpl(vec![
-          CaseEl::Tok(TokRef(0)),
-          CaseEl::Tok(TokRef(1)),
-          CaseEl::Tok(TokRef(2)),
-        ])])]),
-      })
-    );
+    assert_eq!(grammar, TokenGrammar {
+      alphabet: vec!['c', 'a', 'b'],
+      graph: LoweredProductions(vec![ProductionImpl(vec![CaseImpl(vec![
+        CaseEl::Tok(TokRef(0)),
+        CaseEl::Tok(TokRef(1)),
+        CaseEl::Tok(TokRef(2)),
+      ])])]),
+    });
   }
 
   #[test]
   fn token_grammar_construction() {
     let prods = non_cyclic_productions();
     let grammar = TokenGrammar::new(&prods);
-    assert_eq!(
-      grammar.clone(),
-      Ok(TokenGrammar {
-        alphabet: vec!['a', 'b'],
-        graph: LoweredProductions(vec![
-          ProductionImpl(vec![CaseImpl(vec![
+    assert_eq!(grammar, TokenGrammar {
+      alphabet: vec!['a', 'b'],
+      graph: LoweredProductions(vec![
+        ProductionImpl(vec![CaseImpl(vec![
+          CaseEl::Tok(TokRef(0)),
+          CaseEl::Tok(TokRef(1)),
+        ])]),
+        ProductionImpl(vec![
+          CaseImpl(vec![
             CaseEl::Tok(TokRef(0)),
             CaseEl::Tok(TokRef(1)),
-          ])]),
-          ProductionImpl(vec![
-            CaseImpl(vec![
-              CaseEl::Tok(TokRef(0)),
-              CaseEl::Tok(TokRef(1)),
-              CaseEl::Prod(ProdRef(0)),
-            ]),
-            CaseImpl(vec![CaseEl::Prod(ProdRef(0)), CaseEl::Tok(TokRef(0))]),
+            CaseEl::Prod(ProdRef(0)),
           ]),
+          CaseImpl(vec![CaseEl::Prod(ProdRef(0)), CaseEl::Tok(TokRef(0))]),
         ]),
-      })
-    );
+      ]),
+    });
   }
 
   #[test]
@@ -2630,7 +2617,7 @@ mod tests {
     let prods = non_cyclic_productions();
     let grammar = TokenGrammar::new(&prods);
     assert_eq!(
-      grammar.unwrap().index_token_states(),
+      grammar.index_token_states(),
       [
         ('a', vec![
           TokenPosition::new(0, 0, 0),
@@ -2651,7 +2638,7 @@ mod tests {
   #[test]
   fn terminals_interval_graph() {
     let noncyclic_prods = non_cyclic_productions();
-    let noncyclic_grammar = TokenGrammar::new(&noncyclic_prods).unwrap();
+    let noncyclic_grammar = TokenGrammar::new(&noncyclic_prods);
     let noncyclic_interval_graph =
       PreprocessedGrammar::produce_terminals_interval_graph(&noncyclic_grammar);
 
@@ -2885,7 +2872,7 @@ mod tests {
     /* TODO: test `.find_start_end_indices()` and `.connect_all_vertices()` here
      * too! */
     let prods = basic_productions();
-    let grammar = TokenGrammar::new(&prods).unwrap();
+    let grammar = TokenGrammar::new(&prods);
     let interval_graph = PreprocessedGrammar::produce_terminals_interval_graph(&grammar);
     assert_eq!(interval_graph.clone(), EpsilonIntervalGraph {
       all_intervals: vec![
@@ -3027,7 +3014,7 @@ mod tests {
   #[test]
   fn noncyclic_transition_graph() {
     let prods = non_cyclic_productions();
-    let grammar = TokenGrammar::new(&prods).unwrap();
+    let grammar = TokenGrammar::new(&prods);
     let preprocessed_grammar = PreprocessedGrammar::new(&grammar);
     let first_a = TokenPosition::new(0, 0, 0);
     let first_b = TokenPosition::new(0, 0, 1);
@@ -3323,7 +3310,7 @@ mod tests {
   #[test]
   fn cyclic_transition_graph() {
     let prods = basic_productions();
-    let grammar = TokenGrammar::new(&prods).unwrap();
+    let grammar = TokenGrammar::new(&prods);
     let preprocessed_grammar = PreprocessedGrammar::new(&grammar);
 
     let first_a = TokenPosition::new(0, 0, 0);
@@ -3712,19 +3699,24 @@ mod tests {
       .cloned()
       .collect(),
     );
-    assert_eq!(
-      TokenGrammar::new(&prods),
-      Err(GrammarConstructionError(format!(
-        "prod ref ProductionReference(\"c\") not found!"
-      )))
+    let _grammar = TokenGrammar::new(&prods);
+    assert!(
+      false,
+      "ensure production references all exist as a prerequisite on the type level!"
     );
+    // assert_eq!(
+    //   TokenGrammar::new(&prods),
+    //   Err(GrammarConstructionError(format!(
+    //     "prod ref ProductionReference(\"c\") not found!"
+    //   )))
+    // );
   }
 
   #[test]
   fn dynamic_parse_state() {
     let prods = non_cyclic_productions();
 
-    let token_grammar = TokenGrammar::new(&prods).unwrap();
+    let token_grammar = TokenGrammar::new(&prods);
     let preprocessed_grammar = PreprocessedGrammar::new(&token_grammar);
     let string_input = "ab";
     let input = Input(string_input.chars().collect());
@@ -4227,7 +4219,7 @@ mod tests {
   #[test]
   fn reconstructs_from_parse() {
     let prods = non_cyclic_productions();
-    let token_grammar = TokenGrammar::new(&prods).unwrap();
+    let token_grammar = TokenGrammar::new(&prods);
     let preprocessed_grammar = PreprocessedGrammar::new(&token_grammar);
     let string_input = "ab";
     let input = Input(string_input.chars().collect());
@@ -4374,7 +4366,7 @@ mod tests {
         }))
       }])
     ]);
-    let token_grammar = TokenGrammar::new(&example.underlying).unwrap();
+    let token_grammar = TokenGrammar::new(&example.underlying);
     let preprocessed_grammar = PreprocessedGrammar::new(&token_grammar);
     /* FIXME: THE ERROR OUTPUT FOR THIS IS INCREDIBLE -- PLEASE TEST IT!!!!
 
