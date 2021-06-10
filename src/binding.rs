@@ -418,3 +418,131 @@ macro_rules! vec_box_rc {
 /* ]) */
 /* }; */
 /* } */
+
+#[cfg(test)]
+mod tests {
+  use super::*;
+  use crate::{lowering_to_indices::mapping_to_tokens::*, parsing::*};
+
+  #[test]
+  fn extract_typed_production() {
+    /* FIXME: turn this into a really neat macro!!! */
+    let example = TypedSimultaneousProductions::new(vec_box_rc![
+      TypedProduction::new::<u64>(vec![TypedCase {
+        /* FIXME: this breaks when we try to use a 1-length string!!! */
+        case: Case(vec![CaseElement::Lit(Literal::from("2"))]),
+        acceptor: Rc::new(Box::new({
+          struct GeneratedStruct;
+          impl PointerBoxingAcceptor for GeneratedStruct {
+            fn identity_salt(&self) -> &str { "salt1!" }
+
+            fn type_params(&self) -> TypedProductionParamsDescription {
+              TypedProductionParamsDescription::new::<u64>(vec![])
+            }
+
+            fn accept_erased(
+              &self,
+              _args: Vec<Box<dyn std::any::Any>>,
+            ) -> Result<Box<dyn std::any::Any>, AcceptanceError> {
+              /* FIXME: how do i get access to the states we've traversed at all? Do I
+               * care? */
+              Ok(Box::new({
+                let res: u64 = { 2 as u64 };
+                res
+              }))
+            }
+          }
+          GeneratedStruct
+        }))
+      }]),
+      TypedProduction::new::<usize>(vec![TypedCase {
+        /* FIXME: this breaks when we try to use a 1-length string!!! */
+        case: Case(vec![
+          CaseElement::Prod(TypeNameWrapper::for_type::<u64>().as_production_reference()),
+          CaseElement::Lit(Literal::from("+")),
+          CaseElement::Prod(TypeNameWrapper::for_type::<u64>().as_production_reference()),
+        ]),
+        acceptor: Rc::new(Box::new({
+          struct GeneratedStruct;
+          impl PointerBoxingAcceptor for GeneratedStruct {
+            fn identity_salt(&self) -> &str { "salt2!" }
+
+            fn type_params(&self) -> TypedProductionParamsDescription {
+              TypedProductionParamsDescription::new::<usize>(vec![
+                TypedParam::new::<u64>(ParamName::new("x")),
+                TypedParam::new::<u64>(ParamName::new("y")),
+              ])
+            }
+
+            fn accept_erased(
+              &self,
+              args: Vec<Box<dyn std::any::Any>>,
+            ) -> Result<Box<dyn std::any::Any>, AcceptanceError> {
+              let mut args: VecDeque<_> = args.into_iter().collect();
+              assert_eq!(args.len(), 2);
+              let x: u64 = *args.pop_front().unwrap().downcast::<u64>().unwrap();
+              let y: u64 = *args.pop_back().unwrap().downcast::<u64>().unwrap();
+              Ok(Box::new({
+                use std::convert::TryInto;
+                let res: usize = { (x + y).try_into().unwrap() };
+                res
+              }))
+            }
+          }
+          GeneratedStruct
+        }))
+      }])
+    ]);
+
+    let token_grammar = TokenGrammar::new(&example.underlying);
+    let preprocessed_grammar = PreprocessedGrammar::new(&token_grammar);
+    /* FIXME: THE ERROR OUTPUT FOR THIS IS INCREDIBLE -- PLEASE TEST IT!!!!
+
+        let string_input = "2+1";
+
+    `cargo test` then produces:
+
+        thread 'tests::extract_typed_production' panicked at 'no tokens found for token '1' in input Input(['2', '+', '1'])', src/libcore/option.rs:1166:5
+
+     */
+    let string_input = "2+2";
+    let input = Input(string_input.chars().collect());
+    let parseable_grammar = ParseableGrammar::new::<char>(preprocessed_grammar, &input);
+    let mut parse = Parse::initialize_with_trees_for_adjacent_pairs(&parseable_grammar);
+    let parsed_string = parse.get_next_parse();
+    let reconstructed_parse = InProgressReconstruction::new(parsed_string, &parse);
+    let completely_reconstructed_parse = CompletedWholeReconstruction::new(reconstructed_parse);
+    assert_eq!(
+      example
+        .reconstruct::<usize>(&completely_reconstructed_parse)
+        .unwrap(),
+      4 as usize
+    );
+
+    /* assert_eq!( */
+    /* { */
+    /* trace_macros!(true); */
+    /* let res = productions![ */
+    /* u32 => [ */
+    /* case ( */
+    /* _x: Vec<char> => CaseElement::Lit(Literal::from("1")) */
+    /* ) => { */
+    /* 1 */
+    /* } */
+    /* ], */
+    /* Vec<i64> => [ */
+    /* case ( */
+    /* _x: Vec<char> => CaseElement::Lit(Literal::from("a")), */
+    /* y: u32 => CaseElement::Prod(ProductionReference::<u32>::new()), */
+    /* _z: Vec<char> => CaseElement::Lit(Literal::from("a")) */
+    /* ) => { */
+    /* asdf(); */
+    /* } */
+    /* ] */
+    /* ]; */
+    /* trace_macros!(false); */
+    /* }, */
+    /* example */
+    /* ); */
+  }
+}

@@ -588,3 +588,513 @@ impl Parse {
     }
   }
 }
+
+#[cfg(test)]
+mod tests {
+  use super::*;
+  use crate::{lowering_to_indices::mapping_to_tokens::*, tests::non_cyclic_productions};
+
+  #[test]
+  fn dynamic_parse_state() {
+    let prods = non_cyclic_productions();
+
+    let token_grammar = TokenGrammar::new(&prods);
+    let preprocessed_grammar = PreprocessedGrammar::new(&token_grammar);
+    let string_input = "ab";
+    let input = Input(string_input.chars().collect());
+    let parseable_grammar = ParseableGrammar::new::<char>(preprocessed_grammar, &input);
+
+    assert_eq!(parseable_grammar.input_as_states.clone(), vec![
+      PossibleStates(vec![LoweredState::Start]),
+      PossibleStates(vec![
+        LoweredState::Within(TokenPosition::new(0, 0, 0)),
+        LoweredState::Within(TokenPosition::new(1, 0, 0)),
+        LoweredState::Within(TokenPosition::new(1, 1, 1)),
+      ]),
+      PossibleStates(vec![
+        LoweredState::Within(TokenPosition::new(0, 0, 1)),
+        LoweredState::Within(TokenPosition::new(1, 0, 1)),
+      ]),
+      PossibleStates(vec![LoweredState::End]),
+    ]);
+
+    assert_eq!(
+      parseable_grammar.pairwise_state_transition_table.clone(),
+      vec![
+        (
+          StatePair {
+            left: LoweredState::Start,
+            right: LoweredState::Within(TokenPosition {
+              prod: ProdRef(0),
+              case: CaseRef(0),
+              case_el: CaseElRef(0)
+            }),
+          },
+          vec![
+            StackDiffSegment(vec![
+              NamedOrAnonStep::Named(StackStep::Positive(StackSym(ProdRef(0)))),
+              NamedOrAnonStep::Anon(AnonStep::Positive(AnonSym(0))),
+            ]),
+            StackDiffSegment(vec![
+              NamedOrAnonStep::Named(StackStep::Positive(StackSym(ProdRef(1)))),
+              NamedOrAnonStep::Anon(AnonStep::Positive(AnonSym(3))),
+              NamedOrAnonStep::Anon(AnonStep::Positive(AnonSym(4))),
+              NamedOrAnonStep::Named(StackStep::Positive(StackSym(ProdRef(0)))),
+              NamedOrAnonStep::Anon(AnonStep::Positive(AnonSym(0))),
+            ]),
+          ]
+        ),
+        (
+          StatePair {
+            left: LoweredState::Start,
+            right: LoweredState::Within(TokenPosition {
+              prod: ProdRef(1),
+              case: CaseRef(0),
+              case_el: CaseElRef(0)
+            }),
+          },
+          vec![StackDiffSegment(vec![
+            NamedOrAnonStep::Named(StackStep::Positive(StackSym(ProdRef(1)))),
+            NamedOrAnonStep::Anon(AnonStep::Positive(AnonSym(1))),
+          ])],
+        ),
+        (
+          StatePair {
+            left: LoweredState::Within(TokenPosition {
+              prod: ProdRef(0),
+              case: CaseRef(0),
+              case_el: CaseElRef(0)
+            }),
+            right: LoweredState::Within(TokenPosition {
+              prod: ProdRef(0),
+              case: CaseRef(0),
+              case_el: CaseElRef(1)
+            }),
+          },
+          vec![StackDiffSegment(vec![]),]
+        ),
+        (
+          StatePair {
+            left: LoweredState::Within(TokenPosition {
+              prod: ProdRef(1),
+              case: CaseRef(0),
+              case_el: CaseElRef(0)
+            }),
+            right: LoweredState::Within(TokenPosition {
+              prod: ProdRef(1),
+              case: CaseRef(0),
+              case_el: CaseElRef(1)
+            }),
+          },
+          vec![StackDiffSegment(vec![]),]
+        ),
+        (
+          StatePair {
+            left: LoweredState::Within(TokenPosition {
+              prod: ProdRef(1),
+              case: CaseRef(1),
+              case_el: CaseElRef(1)
+            }),
+            right: LoweredState::End,
+          },
+          vec![StackDiffSegment(vec![
+            NamedOrAnonStep::Anon(AnonStep::Negative(AnonSym(3))),
+            NamedOrAnonStep::Named(StackStep::Negative(StackSym(ProdRef(1)))),
+          ])],
+        ),
+        (
+          StatePair {
+            left: LoweredState::Within(TokenPosition {
+              prod: ProdRef(0),
+              case: CaseRef(0),
+              case_el: CaseElRef(1)
+            }),
+            right: LoweredState::End,
+          },
+          vec![
+            StackDiffSegment(vec![
+              NamedOrAnonStep::Anon(AnonStep::Negative(AnonSym(0))),
+              NamedOrAnonStep::Named(StackStep::Negative(StackSym(ProdRef(0)))),
+            ]),
+            StackDiffSegment(vec![
+              NamedOrAnonStep::Anon(AnonStep::Negative(AnonSym(0))),
+              NamedOrAnonStep::Named(StackStep::Negative(StackSym(ProdRef(0)))),
+              NamedOrAnonStep::Anon(AnonStep::Negative(AnonSym(2))),
+              NamedOrAnonStep::Anon(AnonStep::Negative(AnonSym(1))),
+              NamedOrAnonStep::Named(StackStep::Negative(StackSym(ProdRef(1)))),
+            ]),
+          ]
+        ),
+        (
+          StatePair {
+            left: LoweredState::Within(TokenPosition {
+              prod: ProdRef(0),
+              case: CaseRef(0),
+              case_el: CaseElRef(1)
+            }),
+            right: LoweredState::Within(TokenPosition {
+              prod: ProdRef(1),
+              case: CaseRef(1),
+              case_el: CaseElRef(1)
+            }),
+          },
+          vec![StackDiffSegment(vec![
+            NamedOrAnonStep::Anon(AnonStep::Negative(AnonSym(0))),
+            NamedOrAnonStep::Named(StackStep::Negative(StackSym(ProdRef(0)))),
+            NamedOrAnonStep::Anon(AnonStep::Negative(AnonSym(4))),
+          ]),]
+        ),
+        (
+          StatePair {
+            left: LoweredState::Within(TokenPosition {
+              prod: ProdRef(1),
+              case: CaseRef(0),
+              case_el: CaseElRef(1)
+            }),
+            right: LoweredState::Within(TokenPosition {
+              prod: ProdRef(0),
+              case: CaseRef(0),
+              case_el: CaseElRef(0)
+            }),
+          },
+          vec![StackDiffSegment(vec![
+            NamedOrAnonStep::Anon(AnonStep::Positive(AnonSym(2))),
+            NamedOrAnonStep::Named(StackStep::Positive(StackSym(ProdRef(0)))),
+            NamedOrAnonStep::Anon(AnonStep::Positive(AnonSym(0))),
+          ]),]
+        ),
+      ]
+      .into_iter()
+      .collect::<IndexMap<StatePair, Vec<StackDiffSegment>>>()
+    );
+
+    let mut parse = Parse::initialize_with_trees_for_adjacent_pairs(&parseable_grammar);
+    let Parse {
+      spans,
+      grammar: new_parseable_grammar,
+      finishes_at_left,
+      finishes_at_right,
+      spanning_subtree_table,
+    } = parse.clone();
+    assert_eq!(new_parseable_grammar, parseable_grammar);
+
+    assert_eq!(
+      spans
+        .iter()
+        .map(|(x, y)| (x.clone(), y.clone()))
+        .collect::<Vec<_>>(),
+      vec![
+        (
+          SpanningSubtree {
+            input_span: FlattenedSpanInfo {
+              state_pair: StatePair {
+                left: LoweredState::Start,
+                right: LoweredState::Within(TokenPosition {
+                  prod: ProdRef(0),
+                  case: CaseRef(0),
+                  case_el: CaseElRef(0)
+                })
+              },
+              input_range: InputRange {
+                left_index: InputTokenIndex(0),
+                right_index: InputTokenIndex(1)
+              },
+              stack_diff: StackDiffSegment(vec![
+                NamedOrAnonStep::Named(StackStep::Positive(StackSym(ProdRef(0)))),
+                NamedOrAnonStep::Anon(AnonStep::Positive(AnonSym(0))),
+              ]),
+            },
+            parents: None,
+            id: SpanningSubtreeRef(0)
+          },
+          1
+        ),
+        (
+          SpanningSubtree {
+            input_span: FlattenedSpanInfo {
+              state_pair: StatePair {
+                left: LoweredState::Start,
+                right: LoweredState::Within(TokenPosition {
+                  prod: ProdRef(0),
+                  case: CaseRef(0),
+                  case_el: CaseElRef(0)
+                })
+              },
+              input_range: InputRange {
+                left_index: InputTokenIndex(0),
+                right_index: InputTokenIndex(1)
+              },
+              stack_diff: StackDiffSegment(vec![
+                NamedOrAnonStep::Named(StackStep::Positive(StackSym(ProdRef(1)))),
+                NamedOrAnonStep::Anon(AnonStep::Positive(AnonSym(3))),
+                NamedOrAnonStep::Anon(AnonStep::Positive(AnonSym(4))),
+                NamedOrAnonStep::Named(StackStep::Positive(StackSym(ProdRef(0)))),
+                NamedOrAnonStep::Anon(AnonStep::Positive(AnonSym(0))),
+              ])
+            },
+            parents: None,
+            id: SpanningSubtreeRef(1)
+          },
+          1
+        ),
+        (
+          SpanningSubtree {
+            input_span: FlattenedSpanInfo {
+              state_pair: StatePair {
+                left: LoweredState::Start,
+                right: LoweredState::Within(TokenPosition {
+                  prod: ProdRef(1),
+                  case: CaseRef(0),
+                  case_el: CaseElRef(0)
+                })
+              },
+              input_range: InputRange {
+                left_index: InputTokenIndex(0),
+                right_index: InputTokenIndex(1)
+              },
+              stack_diff: StackDiffSegment(vec![
+                NamedOrAnonStep::Named(StackStep::Positive(StackSym(ProdRef(1)))),
+                NamedOrAnonStep::Anon(AnonStep::Positive(AnonSym(1))),
+              ]),
+            },
+            parents: None,
+            id: SpanningSubtreeRef(2)
+          },
+          1
+        ),
+        (
+          SpanningSubtree {
+            input_span: FlattenedSpanInfo {
+              state_pair: StatePair {
+                left: LoweredState::Within(TokenPosition {
+                  prod: ProdRef(0),
+                  case: CaseRef(0),
+                  case_el: CaseElRef(0)
+                }),
+                right: LoweredState::Within(TokenPosition {
+                  prod: ProdRef(0),
+                  case: CaseRef(0),
+                  case_el: CaseElRef(1)
+                })
+              },
+              input_range: InputRange {
+                left_index: InputTokenIndex(1),
+                right_index: InputTokenIndex(2)
+              },
+              stack_diff: StackDiffSegment(vec![])
+            },
+            parents: None,
+            id: SpanningSubtreeRef(3)
+          },
+          1
+        ),
+        (
+          SpanningSubtree {
+            input_span: FlattenedSpanInfo {
+              state_pair: StatePair {
+                left: LoweredState::Within(TokenPosition {
+                  prod: ProdRef(1),
+                  case: CaseRef(0),
+                  case_el: CaseElRef(0)
+                }),
+                right: LoweredState::Within(TokenPosition {
+                  prod: ProdRef(1),
+                  case: CaseRef(0),
+                  case_el: CaseElRef(1)
+                })
+              },
+              input_range: InputRange {
+                left_index: InputTokenIndex(1),
+                right_index: InputTokenIndex(2)
+              },
+              stack_diff: StackDiffSegment(vec![])
+            },
+            parents: None,
+            id: SpanningSubtreeRef(4)
+          },
+          1
+        ),
+        (
+          SpanningSubtree {
+            input_span: FlattenedSpanInfo {
+              state_pair: StatePair {
+                left: LoweredState::Within(TokenPosition {
+                  prod: ProdRef(0),
+                  case: CaseRef(0),
+                  case_el: CaseElRef(1)
+                }),
+                right: LoweredState::End
+              },
+              input_range: InputRange {
+                left_index: InputTokenIndex(2),
+                right_index: InputTokenIndex(3)
+              },
+              stack_diff: StackDiffSegment(vec![
+                NamedOrAnonStep::Anon(AnonStep::Negative(AnonSym(0))),
+                NamedOrAnonStep::Named(StackStep::Negative(StackSym(ProdRef(0)))),
+              ])
+            },
+            parents: None,
+            id: SpanningSubtreeRef(5)
+          },
+          1
+        ),
+        (
+          SpanningSubtree {
+            input_span: FlattenedSpanInfo {
+              state_pair: StatePair {
+                left: LoweredState::Within(TokenPosition {
+                  prod: ProdRef(0),
+                  case: CaseRef(0),
+                  case_el: CaseElRef(1)
+                }),
+                right: LoweredState::End
+              },
+              input_range: InputRange {
+                left_index: InputTokenIndex(2),
+                right_index: InputTokenIndex(3)
+              },
+              stack_diff: StackDiffSegment(vec![
+                NamedOrAnonStep::Anon(AnonStep::Negative(AnonSym(0))),
+                NamedOrAnonStep::Named(StackStep::Negative(StackSym(ProdRef(0)))),
+                NamedOrAnonStep::Anon(AnonStep::Negative(AnonSym(2))),
+                NamedOrAnonStep::Anon(AnonStep::Negative(AnonSym(1))),
+                NamedOrAnonStep::Named(StackStep::Negative(StackSym(ProdRef(1))))
+              ]),
+            },
+            parents: None,
+            id: SpanningSubtreeRef(6)
+          },
+          1
+        )
+      ]
+    );
+    let all_spans: Vec<SpanningSubtree> = spans.into_iter().map(|(x, _)| x.clone()).collect();
+
+    fn get_span(all_spans: &Vec<SpanningSubtree>, index: usize) -> SpanningSubtree {
+      all_spans.get(index).unwrap().clone()
+    }
+
+    fn collect_spans(
+      all_spans: &Vec<SpanningSubtree>,
+      indices: Vec<usize>,
+    ) -> IndexSet<SpanningSubtree> {
+      indices
+        .into_iter()
+        .map(|x| get_span(all_spans, x))
+        .collect()
+    }
+
+    /* NB: These explicit type ascriptions are necessary for some reason... */
+    let expected_at_left: IndexMap<InputTokenIndex, IndexSet<SpanningSubtree>> = vec![
+      (InputTokenIndex(0), collect_spans(&all_spans, vec![0, 1, 2])),
+      (InputTokenIndex(1), collect_spans(&all_spans, vec![3, 4])),
+      (InputTokenIndex(2), collect_spans(&all_spans, vec![5, 6])),
+    ]
+    .into_iter()
+    .collect();
+    assert_eq!(finishes_at_left, expected_at_left);
+
+    let expected_at_right: IndexMap<InputTokenIndex, IndexSet<SpanningSubtree>> = vec![
+      (InputTokenIndex(1), collect_spans(&all_spans, vec![0, 1, 2])),
+      (InputTokenIndex(2), collect_spans(&all_spans, vec![3, 4])),
+      (InputTokenIndex(3), collect_spans(&all_spans, vec![5, 6])),
+    ]
+    .into_iter()
+    .collect();
+    assert_eq!(finishes_at_right, expected_at_right);
+
+    assert_eq!(spanning_subtree_table, all_spans.clone());
+
+    let orig_num_subtrees = parse.spanning_subtree_table.len();
+    assert_eq!(parse.advance(), Ok(ParseResult::Incomplete));
+    assert_eq!(parse.spanning_subtree_table.len(), orig_num_subtrees + 2);
+    assert_eq!(parse.advance(), Ok(ParseResult::Incomplete));
+    assert_eq!(parse.spanning_subtree_table.len(), orig_num_subtrees + 4);
+
+    let expected_first_new_subtree = SpanningSubtree {
+      input_span: FlattenedSpanInfo {
+        state_pair: StatePair {
+          left: LoweredState::Start,
+          right: LoweredState::End,
+        },
+        input_range: InputRange::new(InputTokenIndex(0), InputTokenIndex(3)),
+        stack_diff: StackDiffSegment(vec![]),
+      },
+      parents: Some(ParentInfo {
+        left_parent: SpanningSubtreeRef(7),
+        right_parent: SpanningSubtreeRef(5),
+      }),
+      id: SpanningSubtreeRef(9),
+    };
+
+    let expected_subtree = SpanningSubtree {
+      input_span: FlattenedSpanInfo {
+        state_pair: StatePair {
+          left: LoweredState::Start,
+          right: LoweredState::End,
+        },
+        input_range: InputRange::new(InputTokenIndex(0), InputTokenIndex(3)),
+        stack_diff: StackDiffSegment(vec![
+          NamedOrAnonStep::Anon(AnonStep::Negative(AnonSym(2))),
+          NamedOrAnonStep::Anon(AnonStep::Negative(AnonSym(1))),
+          NamedOrAnonStep::Named(StackStep::Negative(StackSym(ProdRef(1)))),
+        ]),
+      },
+      parents: Some(ParentInfo {
+        left_parent: SpanningSubtreeRef(7),
+        right_parent: SpanningSubtreeRef(6),
+      }),
+      id: SpanningSubtreeRef(10),
+    };
+    assert_eq!(parse.spanning_subtree_table.last(), Some(&expected_subtree));
+    assert_eq!(
+      parse.get_spanning_subtree(SpanningSubtreeRef(10)),
+      Some(&expected_subtree)
+    );
+
+    assert_eq!(
+      parse.advance(),
+      Ok(ParseResult::Complete(SpanningSubtreeRef(9)))
+    );
+    assert_eq!(
+      parse.get_spanning_subtree(SpanningSubtreeRef(9)),
+      Some(&expected_first_new_subtree),
+    );
+    assert_eq!(
+      expected_first_new_subtree.flatten_to_states(&parse),
+      CompletelyFlattenedSubtree {
+        states: vec![
+          LoweredState::Start,
+          LoweredState::Within(TokenPosition {
+            prod: ProdRef(0),
+            case: CaseRef(0),
+            case_el: CaseElRef(0)
+          }),
+          LoweredState::Within(TokenPosition {
+            prod: ProdRef(0),
+            case: CaseRef(0),
+            case_el: CaseElRef(1)
+          }),
+          LoweredState::End,
+        ],
+        input_range: InputRange::new(InputTokenIndex(0), InputTokenIndex(3)),
+      }
+    );
+
+    let mut hit_end: bool = false;
+    while !hit_end {
+      match parse.advance() {
+        Ok(ParseResult::Incomplete) => (),
+        /* NB: `expected_subtree` at SpanningSubtreeRef(10) has a non-empty stack diff, so it
+         * shouldn't be counted as a complete parse! We verify that here. */
+        Ok(ParseResult::Complete(SpanningSubtreeRef(i))) => assert!(i != 10),
+        Err(_) => {
+          hit_end = true;
+          break;
+        },
+      }
+    }
+    assert!(hit_end);
+  }
+}

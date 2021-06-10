@@ -339,3 +339,92 @@ impl CompletedWholeReconstruction {
     CompletedWholeReconstruction(sub_constructions)
   }
 }
+
+#[cfg(test)]
+mod tests {
+  use super::*;
+  use crate::{
+    lowering_to_indices::{graph_coordinates::*, mapping_to_tokens::*},
+    tests::non_cyclic_productions,
+  };
+
+  #[test]
+  fn reconstructs_from_parse() {
+    let prods = non_cyclic_productions();
+    let token_grammar = TokenGrammar::new(&prods);
+    let preprocessed_grammar = PreprocessedGrammar::new(&token_grammar);
+    let string_input = "ab";
+    let input = Input(string_input.chars().collect());
+    let parseable_grammar = ParseableGrammar::new::<char>(preprocessed_grammar.clone(), &input);
+
+    let mut parse = Parse::initialize_with_trees_for_adjacent_pairs(&parseable_grammar);
+
+    let spanning_subtree_ref = parse.get_next_parse();
+    let reconstructed = InProgressReconstruction::new(spanning_subtree_ref, &parse);
+    let completely_reconstructed = CompletedWholeReconstruction::new(reconstructed);
+    assert_eq!(
+      completely_reconstructed,
+      CompletedWholeReconstruction(vec![
+        CompleteSubReconstruction::State(LoweredState::Start),
+        CompleteSubReconstruction::Completed(CompletedCaseReconstruction {
+          prod_case: ProdCaseRef {
+            prod: ProdRef(0),
+            case: CaseRef(0)
+          },
+          args: vec![
+            CompleteSubReconstruction::State(LoweredState::Within(TokenPosition {
+              prod: ProdRef(0),
+              case: CaseRef(0),
+              case_el: CaseElRef(0)
+            })),
+            CompleteSubReconstruction::State(LoweredState::Within(TokenPosition {
+              prod: ProdRef(0),
+              case: CaseRef(0),
+              case_el: CaseElRef(1)
+            })),
+          ]
+        }),
+        CompleteSubReconstruction::State(LoweredState::End),
+      ])
+    );
+
+    /* Try it again, crossing productions this time. */
+    let longer_string_input = "abab";
+    let longer_input = Input(longer_string_input.chars().collect());
+    let longer_parseable_grammar =
+      ParseableGrammar::new::<char>(preprocessed_grammar, &longer_input);
+    let mut longer_parse =
+      Parse::initialize_with_trees_for_adjacent_pairs(&longer_parseable_grammar);
+    let first_parsed_longer_string = longer_parse.get_next_parse();
+    let longer_reconstructed =
+      InProgressReconstruction::new(first_parsed_longer_string, &longer_parse);
+    let longer_completely_reconstructed = CompletedWholeReconstruction::new(longer_reconstructed);
+    assert_eq!(
+      longer_completely_reconstructed,
+      CompletedWholeReconstruction(vec![
+        CompleteSubReconstruction::State(LoweredState::Start),
+        CompleteSubReconstruction::Completed(CompletedCaseReconstruction {
+          prod_case: ProdCaseRef {
+            prod: ProdRef(1),
+            case: CaseRef(0),
+          },
+          args: vec![
+            CompleteSubReconstruction::State(LoweredState::Within(TokenPosition::new(1, 0, 0))),
+            CompleteSubReconstruction::State(LoweredState::Within(TokenPosition::new(1, 0, 1))),
+            CompleteSubReconstruction::Completed(CompletedCaseReconstruction {
+              prod_case: ProdCaseRef {
+                prod: ProdRef(0),
+                case: CaseRef(0),
+              },
+              args: vec![
+                CompleteSubReconstruction::State(LoweredState::Within(TokenPosition::new(0, 0, 0))),
+                CompleteSubReconstruction::State(LoweredState::Within(TokenPosition::new(0, 0, 1))),
+              ],
+            })
+          ],
+        }),
+        CompleteSubReconstruction::State(LoweredState::End),
+      ])
+    );
+  }
+}

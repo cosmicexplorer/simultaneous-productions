@@ -838,3 +838,1083 @@ impl<Tok: Token> PreprocessedGrammar<Tok> {
     }
   }
 }
+
+#[cfg(test)]
+mod tests {
+  use super::*;
+  use crate::tests::{basic_productions, non_cyclic_productions};
+
+  #[test]
+  fn token_grammar_state_indexing() {
+    let prods = non_cyclic_productions();
+    let grammar = TokenGrammar::new(&prods);
+    assert_eq!(
+      grammar.index_token_states(),
+      [
+        ('a', vec![
+          TokenPosition::new(0, 0, 0),
+          TokenPosition::new(1, 0, 0),
+          TokenPosition::new(1, 1, 1),
+        ]),
+        ('b', vec![
+          TokenPosition::new(0, 0, 1),
+          TokenPosition::new(1, 0, 1)
+        ],),
+      ]
+      .iter()
+      .cloned()
+      .collect::<IndexMap<_, _>>(),
+    )
+  }
+
+
+  #[test]
+  fn terminals_interval_graph() {
+    let noncyclic_prods = non_cyclic_productions();
+    let noncyclic_grammar = TokenGrammar::new(&noncyclic_prods);
+    let noncyclic_interval_graph =
+      PreprocessedGrammar::produce_terminals_interval_graph(&noncyclic_grammar);
+
+    let s_0 = TokenPosition::new(0, 0, 0);
+    let s_1 = TokenPosition::new(0, 0, 1);
+    let a_prod = ProdRef(0);
+
+    let s_2 = TokenPosition::new(1, 0, 0);
+    let s_3 = TokenPosition::new(1, 0, 1);
+    let s_4 = TokenPosition::new(1, 1, 1);
+    let b_prod = ProdRef(1);
+
+    let a_start = EpsilonGraphVertex::Start(a_prod);
+    let a_prod_anon_start = EpsilonGraphVertex::Anon(AnonStep::Positive(AnonSym(0)));
+    let a_0_0 = EpsilonGraphVertex::State(s_0);
+    let a_0_1 = EpsilonGraphVertex::State(s_1);
+    let a_prod_anon_end = EpsilonGraphVertex::Anon(AnonStep::Negative(AnonSym(0)));
+    let a_end = EpsilonGraphVertex::End(a_prod);
+
+    let b_start = EpsilonGraphVertex::Start(b_prod);
+    let b_prod_anon_start = EpsilonGraphVertex::Anon(AnonStep::Positive(AnonSym(1)));
+    let b_0_0 = EpsilonGraphVertex::State(s_2);
+    let b_0_1 = EpsilonGraphVertex::State(s_3);
+    let b_0_anon_0_start = EpsilonGraphVertex::Anon(AnonStep::Positive(AnonSym(2)));
+    let b_0_anon_0_end = EpsilonGraphVertex::Anon(AnonStep::Negative(AnonSym(2)));
+    let b_1_anon_0_start = EpsilonGraphVertex::Anon(AnonStep::Positive(AnonSym(3)));
+    let b_1_anon_0_start_2 = EpsilonGraphVertex::Anon(AnonStep::Positive(AnonSym(4)));
+    let b_1_anon_0_end = EpsilonGraphVertex::Anon(AnonStep::Negative(AnonSym(3)));
+    let b_1_anon_0_end_2 = EpsilonGraphVertex::Anon(AnonStep::Negative(AnonSym(4)));
+    let b_1_1 = EpsilonGraphVertex::State(s_4);
+    let b_prod_anon_end = EpsilonGraphVertex::Anon(AnonStep::Negative(AnonSym(1)));
+    let b_end = EpsilonGraphVertex::End(b_prod);
+
+    let a_0 = ContiguousNonterminalInterval(vec![
+      a_start,
+      a_prod_anon_start,
+      a_0_0,
+      a_0_1,
+      a_prod_anon_end,
+      a_end,
+    ]);
+    let b_start_to_a_start_0 = ContiguousNonterminalInterval(vec![
+      b_start,
+      b_prod_anon_start,
+      b_0_0,
+      b_0_1,
+      b_0_anon_0_start,
+      a_start,
+    ]);
+    let a_end_to_b_end_0 =
+      ContiguousNonterminalInterval(vec![a_end, b_0_anon_0_end, b_prod_anon_end, b_end]);
+    let b_start_to_a_start_1 =
+      ContiguousNonterminalInterval(vec![b_start, b_1_anon_0_start, b_1_anon_0_start_2, a_start]);
+    let a_end_to_b_end_1 =
+      ContiguousNonterminalInterval(vec![a_end, b_1_anon_0_end_2, b_1_1, b_1_anon_0_end, b_end]);
+
+    assert_eq!(noncyclic_interval_graph, EpsilonIntervalGraph {
+      all_intervals: vec![
+        a_0.clone(),
+        b_start_to_a_start_0.clone(),
+        a_end_to_b_end_0.clone(),
+        b_start_to_a_start_1.clone(),
+        a_end_to_b_end_1.clone(),
+      ],
+      anon_step_mapping: [
+        (
+          AnonSym(0),
+          UnflattenedProdCaseRef::Case(ProdCaseRef {
+            prod: ProdRef(0),
+            case: CaseRef(0)
+          })
+        ),
+        (
+          AnonSym(1),
+          UnflattenedProdCaseRef::Case(ProdCaseRef {
+            prod: ProdRef(1),
+            case: CaseRef(0)
+          })
+        ),
+        (AnonSym(2), UnflattenedProdCaseRef::PassThrough),
+        (
+          AnonSym(3),
+          UnflattenedProdCaseRef::Case(ProdCaseRef {
+            prod: ProdRef(1),
+            case: CaseRef(1)
+          })
+        ),
+        (AnonSym(4), UnflattenedProdCaseRef::PassThrough),
+      ]
+      .iter()
+      .cloned()
+      .collect(),
+    });
+
+    /* Now check for indices. */
+    let intervals_by_start_and_end = noncyclic_interval_graph.find_start_end_indices();
+    assert_eq!(
+      intervals_by_start_and_end,
+      vec![
+        (a_prod, StartEndEpsilonIntervals {
+          start_epsilons: vec![a_0.clone()],
+          end_epsilons: vec![a_end_to_b_end_0.clone(), a_end_to_b_end_1.clone()],
+        },),
+        (b_prod, StartEndEpsilonIntervals {
+          start_epsilons: vec![b_start_to_a_start_0.clone(), b_start_to_a_start_1.clone()],
+          end_epsilons: vec![],
+        },),
+      ]
+      .iter()
+      .cloned()
+      .collect::<IndexMap<ProdRef, StartEndEpsilonIntervals>>()
+    );
+
+    /* Now check that the transition graph is as we expect. */
+    let CyclicGraphDecomposition {
+      cyclic_subgraph: merged_stack_cycles,
+      pairwise_state_transitions: all_completed_pairs_with_vertices,
+      anon_step_mapping,
+    } = noncyclic_interval_graph.connect_all_vertices();
+    /* There are no stack cycles in the noncyclic graph. */
+    assert_eq!(merged_stack_cycles, EpsilonNodeStateSubgraph {
+      vertex_mapping: IndexMap::new(),
+      trie_node_universe: vec![],
+    });
+    assert_eq!(
+      anon_step_mapping,
+      [
+        (
+          AnonSym(0),
+          UnflattenedProdCaseRef::Case(ProdCaseRef {
+            prod: ProdRef(0),
+            case: CaseRef(0)
+          })
+        ),
+        (
+          AnonSym(1),
+          UnflattenedProdCaseRef::Case(ProdCaseRef {
+            prod: ProdRef(1),
+            case: CaseRef(0)
+          })
+        ),
+        (AnonSym(2), UnflattenedProdCaseRef::PassThrough),
+        (
+          AnonSym(3),
+          UnflattenedProdCaseRef::Case(ProdCaseRef {
+            prod: ProdRef(1),
+            case: CaseRef(1)
+          })
+        ),
+        (AnonSym(4), UnflattenedProdCaseRef::PassThrough),
+      ]
+      .iter()
+      .cloned()
+      .collect::<IndexMap<_, _>>()
+    );
+
+    assert_eq!(all_completed_pairs_with_vertices, vec![
+      /* 1 */
+      CompletedStatePairWithVertices::new(
+        StatePair::new(LoweredState::Start, LoweredState::Within(s_0)),
+        ContiguousNonterminalInterval(vec![a_start, a_prod_anon_start, a_0_0]),
+      ),
+      /* 2 */
+      CompletedStatePairWithVertices::new(
+        StatePair::new(LoweredState::Start, LoweredState::Within(s_2)),
+        ContiguousNonterminalInterval(vec![b_start, b_prod_anon_start, b_0_0]),
+      ),
+      /* 3 */
+      CompletedStatePairWithVertices::new(
+        StatePair::new(LoweredState::Within(s_0), LoweredState::Within(s_1)),
+        ContiguousNonterminalInterval(vec![a_0_0, a_0_1]),
+      ),
+      /* 4 */
+      CompletedStatePairWithVertices::new(
+        StatePair::new(LoweredState::Within(s_2), LoweredState::Within(s_3)),
+        ContiguousNonterminalInterval(vec![b_0_0, b_0_1]),
+      ),
+      /* 5 */
+      CompletedStatePairWithVertices::new(
+        StatePair::new(LoweredState::Within(s_4), LoweredState::End),
+        ContiguousNonterminalInterval(vec![b_1_1, b_1_anon_0_end, b_end]),
+      ),
+      /* 6 */
+      CompletedStatePairWithVertices::new(
+        StatePair::new(LoweredState::Within(s_1), LoweredState::End),
+        ContiguousNonterminalInterval(vec![a_0_1, a_prod_anon_end, a_end]),
+      ),
+      /* 7 */
+      CompletedStatePairWithVertices::new(
+        StatePair::new(LoweredState::Start, LoweredState::Within(s_0)),
+        ContiguousNonterminalInterval(vec![
+          b_start,
+          b_1_anon_0_start,
+          b_1_anon_0_start_2,
+          a_start,
+          a_prod_anon_start,
+          a_0_0
+        ]),
+      ),
+      /* 8 */
+      CompletedStatePairWithVertices::new(
+        StatePair::new(LoweredState::Within(s_1), LoweredState::Within(s_4)),
+        ContiguousNonterminalInterval(vec![a_0_1, a_prod_anon_end, a_end, b_1_anon_0_end_2, b_1_1]),
+      ),
+      /* 9 */
+      CompletedStatePairWithVertices::new(
+        StatePair::new(LoweredState::Within(s_3), LoweredState::Within(s_0)),
+        ContiguousNonterminalInterval(vec![
+          b_0_1,
+          b_0_anon_0_start,
+          a_start,
+          a_prod_anon_start,
+          a_0_0
+        ]),
+      ),
+      /* 10 */
+      CompletedStatePairWithVertices::new(
+        StatePair::new(LoweredState::Within(s_1), LoweredState::End),
+        ContiguousNonterminalInterval(vec![
+          a_0_1,
+          a_prod_anon_end,
+          a_end,
+          b_0_anon_0_end,
+          b_prod_anon_end,
+          b_end
+        ]),
+      ),
+    ]);
+
+    /* Now do the same, but for `basic_productions()`. */
+    /* TODO: test `.find_start_end_indices()` and `.connect_all_vertices()` here
+     * too! */
+    let prods = basic_productions();
+    let grammar = TokenGrammar::new(&prods);
+    let interval_graph = PreprocessedGrammar::produce_terminals_interval_graph(&grammar);
+    assert_eq!(interval_graph.clone(), EpsilonIntervalGraph {
+      all_intervals: vec![
+        ContiguousNonterminalInterval(vec![
+          EpsilonGraphVertex::Start(ProdRef(0)),
+          EpsilonGraphVertex::Anon(AnonStep::Positive(AnonSym(0))),
+          EpsilonGraphVertex::State(TokenPosition::new(0, 0, 0)),
+          EpsilonGraphVertex::State(TokenPosition::new(0, 0, 1)),
+          EpsilonGraphVertex::State(TokenPosition::new(0, 0, 2)),
+          EpsilonGraphVertex::Anon(AnonStep::Negative(AnonSym(0))),
+          EpsilonGraphVertex::End(ProdRef(0)),
+        ]),
+        ContiguousNonterminalInterval(vec![
+          EpsilonGraphVertex::Start(ProdRef(0)),
+          EpsilonGraphVertex::Anon(AnonStep::Positive(AnonSym(1))),
+          EpsilonGraphVertex::State(TokenPosition::new(0, 1, 0)),
+          EpsilonGraphVertex::Anon(AnonStep::Positive(AnonSym(2))),
+          EpsilonGraphVertex::Start(ProdRef(0)),
+        ]),
+        ContiguousNonterminalInterval(vec![
+          EpsilonGraphVertex::End(ProdRef(0)),
+          EpsilonGraphVertex::Anon(AnonStep::Negative(AnonSym(2))),
+          EpsilonGraphVertex::State(TokenPosition::new(0, 1, 2)),
+          EpsilonGraphVertex::Anon(AnonStep::Negative(AnonSym(1))),
+          EpsilonGraphVertex::End(ProdRef(0)),
+        ]),
+        ContiguousNonterminalInterval(vec![
+          EpsilonGraphVertex::Start(ProdRef(0)),
+          EpsilonGraphVertex::Anon(AnonStep::Positive(AnonSym(3))),
+          EpsilonGraphVertex::State(TokenPosition::new(0, 2, 0)),
+          EpsilonGraphVertex::State(TokenPosition::new(0, 2, 1)),
+          EpsilonGraphVertex::Anon(AnonStep::Positive(AnonSym(4))),
+          EpsilonGraphVertex::Start(ProdRef(1)),
+        ]),
+        ContiguousNonterminalInterval(vec![
+          EpsilonGraphVertex::End(ProdRef(1)),
+          EpsilonGraphVertex::Anon(AnonStep::Negative(AnonSym(4))),
+          EpsilonGraphVertex::Anon(AnonStep::Negative(AnonSym(3))),
+          EpsilonGraphVertex::End(ProdRef(0)),
+        ]),
+        ContiguousNonterminalInterval(vec![
+          EpsilonGraphVertex::Start(ProdRef(1)),
+          EpsilonGraphVertex::Anon(AnonStep::Positive(AnonSym(5))),
+          EpsilonGraphVertex::Anon(AnonStep::Positive(AnonSym(6))),
+          EpsilonGraphVertex::Start(ProdRef(0)),
+        ]),
+        ContiguousNonterminalInterval(vec![
+          EpsilonGraphVertex::End(ProdRef(0)),
+          EpsilonGraphVertex::Anon(AnonStep::Negative(AnonSym(6))),
+          EpsilonGraphVertex::Anon(AnonStep::Negative(AnonSym(5))),
+          EpsilonGraphVertex::End(ProdRef(1)),
+        ]),
+        ContiguousNonterminalInterval(vec![
+          EpsilonGraphVertex::Start(ProdRef(1)),
+          EpsilonGraphVertex::Anon(AnonStep::Positive(AnonSym(7))),
+          EpsilonGraphVertex::Anon(AnonStep::Positive(AnonSym(8))),
+          EpsilonGraphVertex::Start(ProdRef(1)),
+        ]),
+        ContiguousNonterminalInterval(vec![
+          EpsilonGraphVertex::End(ProdRef(1)),
+          EpsilonGraphVertex::Anon(AnonStep::Negative(AnonSym(8))),
+          EpsilonGraphVertex::Anon(AnonStep::Negative(AnonSym(7))),
+          EpsilonGraphVertex::End(ProdRef(1)),
+        ]),
+        ContiguousNonterminalInterval(vec![
+          EpsilonGraphVertex::Start(ProdRef(1)),
+          EpsilonGraphVertex::Anon(AnonStep::Positive(AnonSym(9))),
+          EpsilonGraphVertex::Anon(AnonStep::Positive(AnonSym(10))),
+          EpsilonGraphVertex::Start(ProdRef(0)),
+        ]),
+        ContiguousNonterminalInterval(vec![
+          EpsilonGraphVertex::End(ProdRef(0)),
+          EpsilonGraphVertex::Anon(AnonStep::Negative(AnonSym(10))),
+          EpsilonGraphVertex::State(TokenPosition::new(1, 2, 1)),
+          EpsilonGraphVertex::State(TokenPosition::new(1, 2, 2)),
+          EpsilonGraphVertex::Anon(AnonStep::Negative(AnonSym(9))),
+          EpsilonGraphVertex::End(ProdRef(1)),
+        ]),
+      ],
+      anon_step_mapping: [
+        (
+          AnonSym(0),
+          UnflattenedProdCaseRef::Case(ProdCaseRef {
+            prod: ProdRef(0),
+            case: CaseRef(0)
+          })
+        ),
+        (
+          AnonSym(1),
+          UnflattenedProdCaseRef::Case(ProdCaseRef {
+            prod: ProdRef(0),
+            case: CaseRef(1)
+          })
+        ),
+        (AnonSym(2), UnflattenedProdCaseRef::PassThrough),
+        (
+          AnonSym(3),
+          UnflattenedProdCaseRef::Case(ProdCaseRef {
+            prod: ProdRef(0),
+            case: CaseRef(2)
+          })
+        ),
+        (AnonSym(4), UnflattenedProdCaseRef::PassThrough),
+        (
+          AnonSym(5),
+          UnflattenedProdCaseRef::Case(ProdCaseRef {
+            prod: ProdRef(1),
+            case: CaseRef(0)
+          })
+        ),
+        (AnonSym(6), UnflattenedProdCaseRef::PassThrough),
+        (
+          AnonSym(7),
+          UnflattenedProdCaseRef::Case(ProdCaseRef {
+            prod: ProdRef(1),
+            case: CaseRef(1)
+          })
+        ),
+        (AnonSym(8), UnflattenedProdCaseRef::PassThrough),
+        (
+          AnonSym(9),
+          UnflattenedProdCaseRef::Case(ProdCaseRef {
+            prod: ProdRef(1),
+            case: CaseRef(2)
+          })
+        ),
+        (AnonSym(10), UnflattenedProdCaseRef::PassThrough),
+      ]
+      .iter()
+      .cloned()
+      .collect(),
+    });
+  }
+
+  /* TODO: consider creating/using a generic tree diffing algorithm in case
+   * that speeds up debugging (this might conflict with the benefits of using
+   * totally ordered IndexMaps though, namely determinism, as well as knowing
+   * exactly which order your subtrees are created in)! */
+  #[test]
+  fn noncyclic_transition_graph() {
+    let prods = non_cyclic_productions();
+    let grammar = TokenGrammar::new(&prods);
+    let preprocessed_grammar = PreprocessedGrammar::new(&grammar);
+    let first_a = TokenPosition::new(0, 0, 0);
+    let first_b = TokenPosition::new(0, 0, 1);
+    let second_a = TokenPosition::new(1, 0, 0);
+    let second_b = TokenPosition::new(1, 0, 1);
+    let third_a = TokenPosition::new(1, 1, 1);
+    let a_prod = ProdRef(0);
+    let b_prod = ProdRef(1);
+    assert_eq!(
+      preprocessed_grammar.token_states_mapping.clone(),
+      vec![
+        ('a', vec![first_a, second_a, third_a],),
+        ('b', vec![first_b, second_b],),
+      ]
+      .iter()
+      .cloned()
+      .collect::<IndexMap<char, Vec<TokenPosition>>>(),
+    );
+
+    let other_cyclic_graph_decomposition = CyclicGraphDecomposition {
+      cyclic_subgraph: EpsilonNodeStateSubgraph {
+        vertex_mapping: IndexMap::new(),
+        trie_node_universe: vec![],
+      },
+      pairwise_state_transitions: vec![
+        CompletedStatePairWithVertices {
+          state_pair: StatePair {
+            left: LoweredState::Start,
+            right: LoweredState::Within(TokenPosition {
+              prod: a_prod,
+              case: CaseRef(0),
+              case_el: CaseElRef(0),
+            }),
+          },
+          interval: ContiguousNonterminalInterval(vec![
+            EpsilonGraphVertex::Start(a_prod),
+            EpsilonGraphVertex::Anon(AnonStep::Positive(AnonSym(0))),
+            EpsilonGraphVertex::State(TokenPosition {
+              prod: a_prod,
+              case: CaseRef(0),
+              case_el: CaseElRef(0),
+            }),
+          ]),
+        },
+        CompletedStatePairWithVertices {
+          state_pair: StatePair {
+            left: LoweredState::Start,
+            right: LoweredState::Within(TokenPosition {
+              prod: b_prod,
+              case: CaseRef(0),
+              case_el: CaseElRef(0),
+            }),
+          },
+          interval: ContiguousNonterminalInterval(vec![
+            EpsilonGraphVertex::Start(b_prod),
+            EpsilonGraphVertex::Anon(AnonStep::Positive(AnonSym(1))),
+            EpsilonGraphVertex::State(TokenPosition {
+              prod: b_prod,
+              case: CaseRef(0),
+              case_el: CaseElRef(0),
+            }),
+          ]),
+        },
+        CompletedStatePairWithVertices {
+          state_pair: StatePair {
+            left: LoweredState::Within(TokenPosition {
+              prod: a_prod,
+              case: CaseRef(0),
+              case_el: CaseElRef(0),
+            }),
+            right: LoweredState::Within(TokenPosition {
+              prod: a_prod,
+              case: CaseRef(0),
+              case_el: CaseElRef(1),
+            }),
+          },
+          interval: ContiguousNonterminalInterval(vec![
+            EpsilonGraphVertex::State(TokenPosition {
+              prod: a_prod,
+              case: CaseRef(0),
+              case_el: CaseElRef(0),
+            }),
+            EpsilonGraphVertex::State(TokenPosition {
+              prod: a_prod,
+              case: CaseRef(0),
+              case_el: CaseElRef(1),
+            }),
+          ]),
+        },
+        CompletedStatePairWithVertices {
+          state_pair: StatePair {
+            left: LoweredState::Within(TokenPosition {
+              prod: b_prod,
+              case: CaseRef(0),
+              case_el: CaseElRef(0),
+            }),
+            right: LoweredState::Within(TokenPosition {
+              prod: b_prod,
+              case: CaseRef(0),
+              case_el: CaseElRef(1),
+            }),
+          },
+          interval: ContiguousNonterminalInterval(vec![
+            EpsilonGraphVertex::State(TokenPosition {
+              prod: b_prod,
+              case: CaseRef(0),
+              case_el: CaseElRef(0),
+            }),
+            EpsilonGraphVertex::State(TokenPosition {
+              prod: b_prod,
+              case: CaseRef(0),
+              case_el: CaseElRef(1),
+            }),
+          ]),
+        },
+        CompletedStatePairWithVertices {
+          state_pair: StatePair {
+            left: LoweredState::Within(TokenPosition {
+              prod: b_prod,
+              case: CaseRef(1),
+              case_el: CaseElRef(1),
+            }),
+            right: LoweredState::End,
+          },
+          interval: ContiguousNonterminalInterval(vec![
+            EpsilonGraphVertex::State(TokenPosition {
+              prod: b_prod,
+              case: CaseRef(1),
+              case_el: CaseElRef(1),
+            }),
+            EpsilonGraphVertex::Anon(AnonStep::Negative(AnonSym(3))),
+            EpsilonGraphVertex::End(b_prod),
+          ]),
+        },
+        CompletedStatePairWithVertices {
+          state_pair: StatePair {
+            left: LoweredState::Within(TokenPosition {
+              prod: a_prod,
+              case: CaseRef(0),
+              case_el: CaseElRef(1),
+            }),
+            right: LoweredState::End,
+          },
+          interval: ContiguousNonterminalInterval(vec![
+            EpsilonGraphVertex::State(TokenPosition {
+              prod: a_prod,
+              case: CaseRef(0),
+              case_el: CaseElRef(1),
+            }),
+            EpsilonGraphVertex::Anon(AnonStep::Negative(AnonSym(0))),
+            EpsilonGraphVertex::End(a_prod),
+          ]),
+        },
+        CompletedStatePairWithVertices {
+          state_pair: StatePair {
+            left: LoweredState::Start,
+            right: LoweredState::Within(TokenPosition {
+              prod: a_prod,
+              case: CaseRef(0),
+              case_el: CaseElRef(0),
+            }),
+          },
+          interval: ContiguousNonterminalInterval(vec![
+            EpsilonGraphVertex::Start(b_prod),
+            EpsilonGraphVertex::Anon(AnonStep::Positive(AnonSym(3))),
+            EpsilonGraphVertex::Anon(AnonStep::Positive(AnonSym(4))),
+            EpsilonGraphVertex::Start(a_prod),
+            EpsilonGraphVertex::Anon(AnonStep::Positive(AnonSym(0))),
+            EpsilonGraphVertex::State(TokenPosition {
+              prod: a_prod,
+              case: CaseRef(0),
+              case_el: CaseElRef(0),
+            }),
+          ]),
+        },
+        CompletedStatePairWithVertices {
+          state_pair: StatePair {
+            left: LoweredState::Within(TokenPosition {
+              prod: a_prod,
+              case: CaseRef(0),
+              case_el: CaseElRef(1),
+            }),
+            right: LoweredState::Within(TokenPosition {
+              prod: b_prod,
+              case: CaseRef(1),
+              case_el: CaseElRef(1),
+            }),
+          },
+          interval: ContiguousNonterminalInterval(vec![
+            EpsilonGraphVertex::State(TokenPosition {
+              prod: a_prod,
+              case: CaseRef(0),
+              case_el: CaseElRef(1),
+            }),
+            EpsilonGraphVertex::Anon(AnonStep::Negative(AnonSym(0))),
+            EpsilonGraphVertex::End(a_prod),
+            EpsilonGraphVertex::Anon(AnonStep::Negative(AnonSym(4))),
+            EpsilonGraphVertex::State(TokenPosition {
+              prod: b_prod,
+              case: CaseRef(1),
+              case_el: CaseElRef(1),
+            }),
+          ]),
+        },
+        CompletedStatePairWithVertices {
+          state_pair: StatePair {
+            left: LoweredState::Within(TokenPosition {
+              prod: b_prod,
+              case: CaseRef(0),
+              case_el: CaseElRef(1),
+            }),
+            right: LoweredState::Within(TokenPosition {
+              prod: a_prod,
+              case: CaseRef(0),
+              case_el: CaseElRef(0),
+            }),
+          },
+          interval: ContiguousNonterminalInterval(vec![
+            EpsilonGraphVertex::State(TokenPosition {
+              prod: b_prod,
+              case: CaseRef(0),
+              case_el: CaseElRef(1),
+            }),
+            EpsilonGraphVertex::Anon(AnonStep::Positive(AnonSym(2))),
+            EpsilonGraphVertex::Start(a_prod),
+            EpsilonGraphVertex::Anon(AnonStep::Positive(AnonSym(0))),
+            EpsilonGraphVertex::State(TokenPosition {
+              prod: a_prod,
+              case: CaseRef(0),
+              case_el: CaseElRef(0),
+            }),
+          ]),
+        },
+        CompletedStatePairWithVertices {
+          state_pair: StatePair {
+            left: LoweredState::Within(TokenPosition {
+              prod: a_prod,
+              case: CaseRef(0),
+              case_el: CaseElRef(1),
+            }),
+            right: LoweredState::End,
+          },
+          interval: ContiguousNonterminalInterval(vec![
+            EpsilonGraphVertex::State(TokenPosition {
+              prod: a_prod,
+              case: CaseRef(0),
+              case_el: CaseElRef(1),
+            }),
+            EpsilonGraphVertex::Anon(AnonStep::Negative(AnonSym(0))),
+            EpsilonGraphVertex::End(a_prod),
+            EpsilonGraphVertex::Anon(AnonStep::Negative(AnonSym(2))),
+            EpsilonGraphVertex::Anon(AnonStep::Negative(AnonSym(1))),
+            EpsilonGraphVertex::End(b_prod),
+          ]),
+        },
+      ],
+      anon_step_mapping: [
+        (
+          AnonSym(0),
+          UnflattenedProdCaseRef::Case(ProdCaseRef {
+            prod: a_prod,
+            case: CaseRef(0),
+          }),
+        ),
+        (
+          AnonSym(1),
+          UnflattenedProdCaseRef::Case(ProdCaseRef {
+            prod: b_prod,
+            case: CaseRef(0),
+          }),
+        ),
+        (AnonSym(2), UnflattenedProdCaseRef::PassThrough),
+        (
+          AnonSym(3),
+          UnflattenedProdCaseRef::Case(ProdCaseRef {
+            prod: b_prod,
+            case: CaseRef(1),
+          }),
+        ),
+        (AnonSym(4), UnflattenedProdCaseRef::PassThrough),
+      ]
+      .iter()
+      .cloned()
+      .collect::<IndexMap<_, _>>(),
+    };
+
+    assert_eq!(
+      preprocessed_grammar.cyclic_graph_decomposition,
+      other_cyclic_graph_decomposition,
+    );
+  }
+
+  #[test]
+  fn cyclic_transition_graph() {
+    let prods = basic_productions();
+    let grammar = TokenGrammar::new(&prods);
+    let preprocessed_grammar = PreprocessedGrammar::new(&grammar);
+
+    let first_a = TokenPosition::new(0, 0, 0);
+    let second_a = TokenPosition::new(0, 1, 0);
+
+    let first_b = TokenPosition::new(0, 0, 1);
+    let second_b = TokenPosition::new(0, 2, 0);
+    let third_b = TokenPosition::new(1, 2, 1);
+
+    let first_c = TokenPosition::new(0, 0, 2);
+    let second_c = TokenPosition::new(0, 1, 2);
+    let third_c = TokenPosition::new(0, 2, 1);
+    let fourth_c = TokenPosition::new(1, 2, 2);
+
+    let a_prod = ProdRef(0);
+    let b_prod = ProdRef(1);
+    let _c_prod = ProdRef(2); /* unused */
+
+    assert_eq!(
+      preprocessed_grammar.token_states_mapping.clone(),
+      vec![
+        ('a', vec![first_a, second_a]),
+        ('b', vec![first_b, second_b, third_b]),
+        ('c', vec![first_c, second_c, third_c, fourth_c]),
+      ]
+      .into_iter()
+      .collect::<IndexMap<_, _>>()
+    );
+
+    assert_eq!(
+      preprocessed_grammar
+        .cyclic_graph_decomposition
+        .cyclic_subgraph
+        .vertex_mapping
+        .clone(),
+      [
+        /* 0 */
+        (EpsilonGraphVertex::Start(b_prod), TrieNodeRef(0)),
+        /* 1 */
+        (
+          EpsilonGraphVertex::Anon(AnonStep::Positive(AnonSym(7))),
+          TrieNodeRef(1)
+        ),
+        /* 2 */
+        (
+          EpsilonGraphVertex::Anon(AnonStep::Positive(AnonSym(8))),
+          TrieNodeRef(2)
+        ),
+        /* 3 */
+        (EpsilonGraphVertex::End(b_prod), TrieNodeRef(3)),
+        /* 4 */
+        (
+          EpsilonGraphVertex::Anon(AnonStep::Negative(AnonSym(8))),
+          TrieNodeRef(4)
+        ),
+        /* 5 */
+        (
+          EpsilonGraphVertex::Anon(AnonStep::Negative(AnonSym(7))),
+          TrieNodeRef(5)
+        ),
+        /* 6 */
+        (
+          EpsilonGraphVertex::State(TokenPosition {
+            prod: a_prod,
+            case: CaseRef(1),
+            case_el: CaseElRef(0)
+          }),
+          TrieNodeRef(6)
+        ),
+        /* 7 */
+        (
+          EpsilonGraphVertex::Anon(AnonStep::Positive(AnonSym(2))),
+          TrieNodeRef(7)
+        ),
+        /* 8 */
+        (EpsilonGraphVertex::Start(a_prod), TrieNodeRef(8)),
+        /* 9 */
+        (
+          EpsilonGraphVertex::Anon(AnonStep::Positive(AnonSym(1))),
+          TrieNodeRef(9)
+        ),
+        /* 10 */
+        (
+          EpsilonGraphVertex::State(TokenPosition {
+            prod: a_prod,
+            case: CaseRef(1),
+            case_el: CaseElRef(2)
+          }),
+          TrieNodeRef(10)
+        ),
+        /* 11 */
+        (
+          EpsilonGraphVertex::Anon(AnonStep::Negative(AnonSym(1))),
+          TrieNodeRef(11)
+        ),
+        /* 12 */
+        (EpsilonGraphVertex::End(a_prod), TrieNodeRef(12)),
+        /* 13 */
+        (
+          EpsilonGraphVertex::Anon(AnonStep::Negative(AnonSym(2))),
+          TrieNodeRef(13)
+        ),
+        /* 14 */
+        (
+          EpsilonGraphVertex::Anon(AnonStep::Negative(AnonSym(4))),
+          TrieNodeRef(14)
+        ),
+        /* 15 */
+        (
+          EpsilonGraphVertex::Anon(AnonStep::Negative(AnonSym(3))),
+          TrieNodeRef(15)
+        ),
+        /* 16 */
+        (
+          EpsilonGraphVertex::Anon(AnonStep::Negative(AnonSym(6))),
+          TrieNodeRef(16)
+        ),
+        /* 17 */
+        (
+          EpsilonGraphVertex::Anon(AnonStep::Negative(AnonSym(5))),
+          TrieNodeRef(17)
+        )
+      ]
+      .iter()
+      .cloned()
+      .collect::<IndexMap<_, _>>()
+    );
+
+    assert_eq!(
+      preprocessed_grammar
+        .cyclic_graph_decomposition
+        .cyclic_subgraph
+        .trie_node_universe,
+      vec![
+        /* 0 */
+        StackTrieNode {
+          stack_diff: StackDiffSegment(vec![NamedOrAnonStep::Named(StackStep::Positive(
+            StackSym(b_prod)
+          ))]),
+          next_nodes: [StackTrieNextEntry::Incomplete(TrieNodeRef(1))]
+            .iter()
+            .cloned()
+            .collect::<IndexSet<_>>(),
+          prev_nodes: [StackTrieNextEntry::Incomplete(TrieNodeRef(2))]
+            .iter()
+            .cloned()
+            .collect::<IndexSet<_>>()
+        },
+        /* 1 */
+        StackTrieNode {
+          stack_diff: StackDiffSegment(vec![NamedOrAnonStep::Anon(AnonStep::Positive(AnonSym(7)))]),
+          next_nodes: [StackTrieNextEntry::Incomplete(TrieNodeRef(2))]
+            .iter()
+            .cloned()
+            .collect::<IndexSet<_>>(),
+          prev_nodes: [StackTrieNextEntry::Incomplete(TrieNodeRef(0))]
+            .iter()
+            .cloned()
+            .collect::<IndexSet<_>>()
+        },
+        /* 2 */
+        StackTrieNode {
+          stack_diff: StackDiffSegment(vec![NamedOrAnonStep::Anon(AnonStep::Positive(AnonSym(8)))]),
+          next_nodes: [StackTrieNextEntry::Incomplete(TrieNodeRef(0))]
+            .iter()
+            .cloned()
+            .collect::<IndexSet<_>>(),
+          prev_nodes: [StackTrieNextEntry::Incomplete(TrieNodeRef(1))]
+            .iter()
+            .cloned()
+            .collect::<IndexSet<_>>()
+        },
+        /* 3 */
+        StackTrieNode {
+          stack_diff: StackDiffSegment(vec![NamedOrAnonStep::Named(StackStep::Negative(
+            StackSym(b_prod)
+          ))]),
+          next_nodes: [
+            StackTrieNextEntry::Incomplete(TrieNodeRef(4)),
+            StackTrieNextEntry::Incomplete(TrieNodeRef(14))
+          ]
+          .iter()
+          .cloned()
+          .collect::<IndexSet<_>>(),
+          prev_nodes: [
+            StackTrieNextEntry::Incomplete(TrieNodeRef(5)),
+            StackTrieNextEntry::Incomplete(TrieNodeRef(17))
+          ]
+          .iter()
+          .cloned()
+          .collect::<IndexSet<_>>()
+        },
+        /* 4 */
+        StackTrieNode {
+          stack_diff: StackDiffSegment(vec![NamedOrAnonStep::Anon(AnonStep::Negative(AnonSym(8)))]),
+          next_nodes: [StackTrieNextEntry::Incomplete(TrieNodeRef(5))]
+            .iter()
+            .cloned()
+            .collect::<IndexSet<_>>(),
+          prev_nodes: [StackTrieNextEntry::Incomplete(TrieNodeRef(3))]
+            .iter()
+            .cloned()
+            .collect::<IndexSet<_>>()
+        },
+        /* 5 */
+        StackTrieNode {
+          stack_diff: StackDiffSegment(vec![NamedOrAnonStep::Anon(AnonStep::Negative(AnonSym(7)))]),
+          next_nodes: [StackTrieNextEntry::Incomplete(TrieNodeRef(3))]
+            .iter()
+            .cloned()
+            .collect::<IndexSet<_>>(),
+          prev_nodes: [StackTrieNextEntry::Incomplete(TrieNodeRef(4))]
+            .iter()
+            .cloned()
+            .collect::<IndexSet<_>>()
+        },
+        /* 6 */
+        StackTrieNode {
+          stack_diff: StackDiffSegment(vec![]),
+          next_nodes: [StackTrieNextEntry::Incomplete(TrieNodeRef(7))]
+            .iter()
+            .cloned()
+            .collect::<IndexSet<_>>(),
+          prev_nodes: [StackTrieNextEntry::Incomplete(TrieNodeRef(9))]
+            .iter()
+            .cloned()
+            .collect::<IndexSet<_>>()
+        },
+        /* 7 */
+        StackTrieNode {
+          stack_diff: StackDiffSegment(vec![NamedOrAnonStep::Anon(AnonStep::Positive(AnonSym(2)))]),
+          next_nodes: [StackTrieNextEntry::Incomplete(TrieNodeRef(8))]
+            .iter()
+            .cloned()
+            .collect::<IndexSet<_>>(),
+          prev_nodes: [StackTrieNextEntry::Incomplete(TrieNodeRef(6))]
+            .iter()
+            .cloned()
+            .collect::<IndexSet<_>>()
+        },
+        /* 8 */
+        StackTrieNode {
+          stack_diff: StackDiffSegment(vec![NamedOrAnonStep::Named(StackStep::Positive(
+            StackSym(a_prod)
+          ))]),
+          next_nodes: [StackTrieNextEntry::Incomplete(TrieNodeRef(9))]
+            .iter()
+            .cloned()
+            .collect::<IndexSet<_>>(),
+          prev_nodes: [StackTrieNextEntry::Incomplete(TrieNodeRef(7))]
+            .iter()
+            .cloned()
+            .collect::<IndexSet<_>>()
+        },
+        /* 9 */
+        StackTrieNode {
+          stack_diff: StackDiffSegment(vec![NamedOrAnonStep::Anon(AnonStep::Positive(AnonSym(1)))]),
+          next_nodes: [StackTrieNextEntry::Incomplete(TrieNodeRef(6))]
+            .iter()
+            .cloned()
+            .collect::<IndexSet<_>>(),
+          prev_nodes: [StackTrieNextEntry::Incomplete(TrieNodeRef(8))]
+            .iter()
+            .cloned()
+            .collect::<IndexSet<_>>()
+        },
+        /* 10 */
+        StackTrieNode {
+          stack_diff: StackDiffSegment(vec![]),
+          next_nodes: [StackTrieNextEntry::Incomplete(TrieNodeRef(11))]
+            .iter()
+            .cloned()
+            .collect::<IndexSet<_>>(),
+          prev_nodes: [StackTrieNextEntry::Incomplete(TrieNodeRef(13))]
+            .iter()
+            .cloned()
+            .collect::<IndexSet<_>>()
+        },
+        /* 11 */
+        StackTrieNode {
+          stack_diff: StackDiffSegment(vec![NamedOrAnonStep::Anon(AnonStep::Negative(AnonSym(1)))]),
+          next_nodes: [StackTrieNextEntry::Incomplete(TrieNodeRef(12))]
+            .iter()
+            .cloned()
+            .collect::<IndexSet<_>>(),
+          prev_nodes: [StackTrieNextEntry::Incomplete(TrieNodeRef(10))]
+            .iter()
+            .cloned()
+            .collect::<IndexSet<_>>()
+        },
+        /* 12 */
+        StackTrieNode {
+          stack_diff: StackDiffSegment(vec![NamedOrAnonStep::Named(StackStep::Negative(
+            StackSym(a_prod)
+          ))]),
+          next_nodes: [
+            StackTrieNextEntry::Incomplete(TrieNodeRef(13)),
+            StackTrieNextEntry::Incomplete(TrieNodeRef(16))
+          ]
+          .iter()
+          .cloned()
+          .collect::<IndexSet<_>>(),
+          prev_nodes: [
+            StackTrieNextEntry::Incomplete(TrieNodeRef(11)),
+            StackTrieNextEntry::Incomplete(TrieNodeRef(15))
+          ]
+          .iter()
+          .cloned()
+          .collect::<IndexSet<_>>()
+        },
+        /* 13 */
+        StackTrieNode {
+          stack_diff: StackDiffSegment(vec![NamedOrAnonStep::Anon(AnonStep::Negative(AnonSym(2)))]),
+          next_nodes: [StackTrieNextEntry::Incomplete(TrieNodeRef(10))]
+            .iter()
+            .cloned()
+            .collect::<IndexSet<_>>(),
+          prev_nodes: [StackTrieNextEntry::Incomplete(TrieNodeRef(12))]
+            .iter()
+            .cloned()
+            .collect::<IndexSet<_>>()
+        },
+        /* 14 */
+        StackTrieNode {
+          stack_diff: StackDiffSegment(vec![NamedOrAnonStep::Anon(AnonStep::Negative(AnonSym(4)))]),
+          next_nodes: [StackTrieNextEntry::Incomplete(TrieNodeRef(15))]
+            .iter()
+            .cloned()
+            .collect::<IndexSet<_>>(),
+          prev_nodes: [StackTrieNextEntry::Incomplete(TrieNodeRef(3))]
+            .iter()
+            .cloned()
+            .collect::<IndexSet<_>>()
+        },
+        /* 15 */
+        StackTrieNode {
+          stack_diff: StackDiffSegment(vec![NamedOrAnonStep::Anon(AnonStep::Negative(AnonSym(3)))]),
+          next_nodes: [StackTrieNextEntry::Incomplete(TrieNodeRef(12))]
+            .iter()
+            .cloned()
+            .collect::<IndexSet<_>>(),
+          prev_nodes: [StackTrieNextEntry::Incomplete(TrieNodeRef(14))]
+            .iter()
+            .cloned()
+            .collect::<IndexSet<_>>()
+        },
+        /* 16 */
+        StackTrieNode {
+          stack_diff: StackDiffSegment(vec![NamedOrAnonStep::Anon(AnonStep::Negative(AnonSym(6)))]),
+          next_nodes: [StackTrieNextEntry::Incomplete(TrieNodeRef(17))]
+            .iter()
+            .cloned()
+            .collect::<IndexSet<_>>(),
+          prev_nodes: [StackTrieNextEntry::Incomplete(TrieNodeRef(12))]
+            .iter()
+            .cloned()
+            .collect::<IndexSet<_>>()
+        },
+        /* 17 */
+        StackTrieNode {
+          stack_diff: StackDiffSegment(vec![NamedOrAnonStep::Anon(AnonStep::Negative(AnonSym(5)))]),
+          next_nodes: [StackTrieNextEntry::Incomplete(TrieNodeRef(3))]
+            .iter()
+            .cloned()
+            .collect::<IndexSet<_>>(),
+          prev_nodes: [StackTrieNextEntry::Incomplete(TrieNodeRef(16))]
+            .iter()
+            .cloned()
+            .collect::<IndexSet<_>>()
+        }
+      ]
+    );
+  }
+}
