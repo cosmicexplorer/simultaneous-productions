@@ -640,7 +640,7 @@ pub mod grammar_indexing {
               .or_insert(StartEndEpsilonIntervals::new());
             (*intervals_for_this_prod).end_epsilons.push(interval.clone());
           },
-          _ => panic!("the beginning of an interval should always be a start (epsilon) or end (epsilon prime) vertex"),
+          _ => unreachable!("the beginning of an interval should always be a start (epsilon) or end (epsilon prime) vertex"),
         }
       }
       epsilon_subscripts_index
