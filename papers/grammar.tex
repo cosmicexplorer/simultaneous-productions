@@ -3,7 +3,7 @@
 \usepackage{mcclanahan}
 
 \title{Simultaneous Productions: \\ A Fully General Grammar Specification}
-\date{2021-04-18}
+\date{2021-06-10}
 \author{Danny McClanahan}
 
 \newcommand{\todocite}[1]{\footnote{cite: #1}}
@@ -84,7 +84,10 @@ Similarly, we describe our goal to separate the output of a parse from the algor
 \begin{itemize}
   \item Named concepts in the rest of this paper will be represented in \textit{italics} when first defined.
   \item Capital letters generally refer to sets, while lowercase letters generally refer to elements of some set. This may not be true in all cases.
-  \item As an abbreviation, $[n] = [1, n] \forall n \in \N$, and $\pipe$ should be translated as ``for some'' or ``for which''.
+  \item As abbreviations: \begin{itemize}
+    \item $[n] = [1, n] \forall n \in \N$.
+    \item $\pipe$ should be translated as ``for some'' or ``for which''.
+  \end{itemize}
 \end{itemize}
 
 \section{Definition}
@@ -122,7 +125,7 @@ Each \textit{case element} $e_j$ is either a \textit{terminal} $t \in \Sigma$ or
 
 \section{PoP: Proof of Parsing}
 \label{sec:proof-of-parsing}
-We describe a tree-like data structure ``proof of parsing'' (PoP) which retains sufficient information to validate that a string belongs to a (strictly!) recursively enumerable language, as well as the validation function ``validate'' applied to the data structure.
+We describe a tree-like data structure ``proof of parsing'' (PoP) which retains sufficient information to validate that a string belongs to a recursively enumerable language, as well as the validation function ``validate'' applied to the data structure.
 
 % $p$ \textit{matches} an input string $I$
 % Each production $p \in \scr{P}$ can be \textit{matched} against some input string $I$ when \textbf{any} case $c_p \in \scr{C}_p$ matches $I$. $c_p$ matches $I$ iff \textbf{all} terminals and nonterminals are matched against consecutive non-overlapping subsequences of the input string $I$.
@@ -134,6 +137,8 @@ We describe a tree-like data structure ``proof of parsing'' (PoP) which retains 
   p^* \in \scr{P}.
 \end{equation}
 An S.P. grammar $SP$ alone is not sufficient information to unambiguously parse a string -- a specific production must also be provided (we have defined it to be this way). Therefore to get an \textit{executable grammar}, we select a single ``top'' production $p^* \in \scr{P}$. This is vaguely reminiscent of the \textit{start symbol} found in Chomsky grammars \explicitsecref{sec:chomsky-equivalence}.
+
+\textbf{TODO: this mechanism is the same way we should use for specifying precedence of non-top productions when a parse is completely ambiguous in a subtree!!!}
 
 \begin{equation}
   \label{eq:specialized}
@@ -148,6 +153,8 @@ The tuple $SP^*$ formed from the selection of $p^*$ is referred to as a \textit{
   I = \{t_i\}_{i=1}^n \pipe t_i \in \Sigma \forall i \in [n].
 \end{equation}
 An \textit{input string} $I$ is a finite sequence of \textit{tokens} $\{t_i\}_{i=1}^n$ from the alphabet $\Sigma$, where $\abs{I} = n$ is the number of elements in the sequence $I$.
+
+\textbf{TODO: we should not distinguish the act of parsing a finite vs infinite stream!}
 
 % \subsection{Partitioning the Input}
 % \label{sec:partitioning-the-input}
