@@ -83,20 +83,25 @@ pub mod token {
   /// The constraints required for any token stream parsed by this crate.
   pub trait Token = Debug+PartialEq+Eq+Hash+Copy+Clone+TypeName;
 }
-pub use token::Token;
 
 pub mod api {
-  use super::*;
+  use super::{token::*, *};
 
   #[derive(Debug, Clone, PartialEq, Eq, Hash, TypeName)]
   pub struct Literal<Tok: Token>(pub Vec<Tok>);
 
   impl From<&str> for Literal<char> {
-    fn from(s: &str) -> Self { Literal(s.chars().collect()) }
+    fn from(s: &str) -> Self { Self(s.chars().collect()) }
   }
 
-  // A reference to another production -- the string must match the assigned name
-  // of a production in a set of simultaneous productions.
+  impl<Tok: Token> From<&[Tok]> for Literal<Tok> {
+    fn from(s: &[Tok]) -> Self { Self(s.iter().cloned().collect()) }
+  }
+
+  /// A reference to another production.
+  ///
+  /// The string must match the assigned name of a production in a set of
+  /// simultaneous productions.
   #[derive(Debug, Clone, PartialEq, Eq, Hash, TypeName)]
   pub struct ProductionReference(String);
 
@@ -136,8 +141,6 @@ pub mod api {
 ///   ...,
 /// ]
 pub mod lowering_to_indices {
-  use super::{api::*, *};
-
   /// Graph Coordinates
   ///
   /// All these `Ref` types have nice properties, like being storeable without
@@ -220,7 +223,11 @@ pub mod lowering_to_indices {
 
   /// Mapping to Tokens
   pub mod mapping_to_tokens {
-    use super::{graph_coordinates::*, graph_representation::*, *};
+    use super::{
+      super::{api::*, token::*, *},
+      graph_coordinates::*,
+      graph_representation::*,
+    };
 
     /// TODO: ???
     #[derive(Debug, Clone, PartialEq, Eq)]
@@ -334,6 +341,7 @@ pub mod lowering_to_indices {
 pub mod grammar_indexing {
   use super::{
     lowering_to_indices::{graph_coordinates::*, graph_representation::*, mapping_to_tokens::*},
+    token::*,
     *,
   };
 
@@ -1163,7 +1171,7 @@ pub mod grammar_indexing {
 ///
 /// Implementation of parsing. Performance /does/ (eventually) matter here.
 pub mod parsing {
-  use super::{grammar_indexing::*, lowering_to_indices::graph_coordinates::*, *};
+  use super::{grammar_indexing::*, lowering_to_indices::graph_coordinates::*, token::*, *};
 
   #[derive(Debug, Clone)]
   pub struct Input<Tok: Token>(pub Vec<Tok>);
@@ -2186,9 +2194,11 @@ pub mod operators {
 }
 
 
+#[macro_use]
 pub mod binding {
   use super::{
-    api::*, grammar_indexing::*, lowering_to_indices::graph_coordinates::*, reconstruction::*, *,
+    api::*, grammar_indexing::*, lowering_to_indices::graph_coordinates::*, reconstruction::*,
+    token::*, *,
   };
 
   #[derive(Debug, Clone, PartialEq, Eq, Hash)]
@@ -2607,6 +2617,7 @@ mod tests {
     lowering_to_indices::{graph_coordinates::*, graph_representation::*, mapping_to_tokens::*},
     parsing::*,
     reconstruction::*,
+    token::*,
     *,
   };
 
