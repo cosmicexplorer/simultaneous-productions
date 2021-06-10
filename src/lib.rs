@@ -150,7 +150,13 @@ pub mod lowering_to_indices {
   /// We adopt the convention of abbreviated names for things used in
   /// algorithms.
   pub mod graph_coordinates {
-    /// Points to a particular Production within a Vec<ProductionImpl>.
+    #[cfg(doc)]
+    use super::{
+      super::api::{Case, Literal, Production, ProductionReference},
+      graph_representation::ProductionImpl,
+    };
+
+    /// Points to a particular Production within a sequence of [ProductionImpl].
     ///
     /// A version of [ProductionReference] which uses a [usize] for speed.
     #[derive(Debug, Copy, Clone, PartialEq, Eq, Hash)]
@@ -335,9 +341,9 @@ pub mod lowering_to_indices {
   }
 }
 
+/// Implementation for getting a [grammar_indexing::PreprocessedGrammar].
 ///
-/// Implementation for getting a `PreprocessedGrammar`. Performance doesn't
-/// matter here.
+/// Performance doesn't matter here.
 pub mod grammar_indexing {
   use super::{
     lowering_to_indices::{graph_coordinates::*, graph_representation::*, mapping_to_tokens::*},
