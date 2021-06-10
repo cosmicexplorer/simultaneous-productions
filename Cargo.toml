@@ -4,8 +4,8 @@ version = "0.0.0"
 authors = ["Danny McClanahan <1305167+cosmicexplorer@users.noreply.github.com>"]
 
 [dependencies]
-frunk = "0.1.9"
-gensym = "0.1.0"
-indexmap = { version = "1.0.2" }
+# frunk = "0.1.9"
+# gensym = "0.1.0"
+indexmap = "1.0.2"
 priority-queue = "0.6.0"
 typename = "0.1.1"

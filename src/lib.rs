@@ -53,7 +53,7 @@
 #![allow(clippy::mutex_atomic)]
 
 /* #[macro_use] */
-extern crate frunk;
+/* extern crate frunk; */
 /* #[macro_use] */
 /* extern crate gensym; */
 extern crate indexmap;
