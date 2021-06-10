@@ -1770,7 +1770,7 @@ pub mod reconstruction {
       }
     }
 
-    pub fn join(self, other: Self) -> Result<Self, ReconstructionError> {
+    pub fn join(self, other: Self) -> Self {
       dbg!(&self);
       dbg!(&other);
       let InProgressReconstruction {
@@ -1849,9 +1849,7 @@ pub mod reconstruction {
               left_side.push_back(inner_element);
             } else {
               /* TODO: support non-hierarchical input! */
-              return Err(ReconstructionError(
-                "TODO: non-hierarchical input recovery is not yet supported!".to_string(),
-              ));
+              todo!("non-hierarchical input recovery is not yet supported!");
             }
           },
           /* Shuffle everything down one! */
@@ -1887,20 +1885,18 @@ pub mod reconstruction {
         }
       }
       dbg!(&left_side);
-      Ok(InProgressReconstruction::with_elements(
-        left_side.into_iter().collect(),
-      ))
+      InProgressReconstruction::with_elements(left_side.into_iter().collect())
     }
 
-    pub fn joined(sub_reconstructions: Vec<Self>) -> Result<Self, ReconstructionError> {
+    pub fn joined(sub_reconstructions: Vec<Self>) -> Self {
       sub_reconstructions
         .into_iter()
-        .fold(Ok(InProgressReconstruction::empty()), |acc, next| {
-          acc.and_then(|acc| acc.join(next))
+        .fold(InProgressReconstruction::empty(), |acc, next| {
+          acc.join(next)
         })
     }
 
-    pub fn new(tree: SpanningSubtreeRef, parse: &Parse) -> Result<Self, ReconstructionError> {
+    pub fn new(tree: SpanningSubtreeRef, parse: &Parse) -> Self {
       let &Parse {
         grammar: ParseableGrammar {
           ref anon_step_mapping,
@@ -1923,28 +1919,25 @@ pub mod reconstruction {
           eprintln!("tree: {:?}", x);
           x
         })
-        .ok_or_else(|| {
-          ReconstructionError(format!(
-            "could not find tree ref {:?} in parse {:?}",
-            tree, parse
-          ))
-        })?;
+        .expect("tree ref should have been in parse");
 
       let (prologue, epilogue) = match parents {
-        None => Ok((
+        None => (
           InProgressReconstruction::with_elements(vec![ReconstructionElement::CompletedSub(
             CompleteSubReconstruction::State(*left),
           )]),
           InProgressReconstruction::with_elements(vec![ReconstructionElement::CompletedSub(
             CompleteSubReconstruction::State(*right),
           )]),
-        )),
+        ),
         Some(ParentInfo {
           left_parent,
           right_parent,
-        }) => Self::new(*left_parent, parse)
-          .and_then(|l| Self::new(*right_parent, parse).map(|r| (l, r))),
-      }?;
+        }) => (
+          Self::new(*left_parent, parse),
+          Self::new(*right_parent, parse),
+        ),
+      };
 
       dbg!(&prologue);
       dbg!(&epilogue);
@@ -2029,23 +2022,18 @@ pub mod reconstruction {
   pub struct CompletedWholeReconstruction(pub Vec<CompleteSubReconstruction>);
 
   impl CompletedWholeReconstruction {
-    pub fn new(
-      maybe_completed_constructions: InProgressReconstruction,
-    ) -> Result<Self, ReconstructionError> {
+    pub fn new(maybe_completed_constructions: InProgressReconstruction) -> Self {
       let sub_constructions: Vec<_> = maybe_completed_constructions
         .elements
         .into_iter()
         .map(|el| match el {
-          ReconstructionElement::Intermediate(intermediate_reconstruction) => {
-            Err(ReconstructionError(format!(
-              "expected all sub constructions to be completed! intermediate: {:?}",
-              intermediate_reconstruction
-            )))
+          ReconstructionElement::Intermediate(_) => {
+            unreachable!("expected all sub constructions to be completed!");
           },
-          ReconstructionElement::CompletedSub(x) => Ok(x),
+          ReconstructionElement::CompletedSub(x) => x,
         })
-        .collect::<Result<Vec<_>, _>>()?;
-      Ok(CompletedWholeReconstruction(sub_constructions))
+        .collect();
+      CompletedWholeReconstruction(sub_constructions)
     }
   }
 }
@@ -4229,8 +4217,8 @@ mod tests {
     let mut parse = Parse::initialize_with_trees_for_adjacent_pairs(&parseable_grammar);
 
     let spanning_subtree_ref = parse.get_next_parse();
-    let reconstructed = InProgressReconstruction::new(spanning_subtree_ref, &parse).unwrap();
-    let completely_reconstructed = CompletedWholeReconstruction::new(reconstructed).unwrap();
+    let reconstructed = InProgressReconstruction::new(spanning_subtree_ref, &parse);
+    let completely_reconstructed = CompletedWholeReconstruction::new(reconstructed);
     assert_eq!(
       completely_reconstructed,
       CompletedWholeReconstruction(vec![
@@ -4266,9 +4254,8 @@ mod tests {
       Parse::initialize_with_trees_for_adjacent_pairs(&longer_parseable_grammar);
     let first_parsed_longer_string = longer_parse.get_next_parse();
     let longer_reconstructed =
-      InProgressReconstruction::new(first_parsed_longer_string, &longer_parse).unwrap();
-    let longer_completely_reconstructed =
-      CompletedWholeReconstruction::new(longer_reconstructed).unwrap();
+      InProgressReconstruction::new(first_parsed_longer_string, &longer_parse);
+    let longer_completely_reconstructed = CompletedWholeReconstruction::new(longer_reconstructed);
     assert_eq!(
       longer_completely_reconstructed,
       CompletedWholeReconstruction(vec![
@@ -4383,9 +4370,8 @@ mod tests {
     let parseable_grammar = ParseableGrammar::new::<char>(preprocessed_grammar, &input);
     let mut parse = Parse::initialize_with_trees_for_adjacent_pairs(&parseable_grammar);
     let parsed_string = parse.get_next_parse();
-    let reconstructed_parse = InProgressReconstruction::new(parsed_string, &parse).unwrap();
-    let completely_reconstructed_parse =
-      CompletedWholeReconstruction::new(reconstructed_parse).unwrap();
+    let reconstructed_parse = InProgressReconstruction::new(parsed_string, &parse);
+    let completely_reconstructed_parse = CompletedWholeReconstruction::new(reconstructed_parse);
     assert_eq!(
       example
         .reconstruct::<usize>(&completely_reconstructed_parse)
