@@ -17,12 +17,14 @@
 */
 #![feature(fn_traits)]
 #![feature(trace_macros)]
+#![feature(trait_alias)]
 /* These clippy lint descriptions are purely non-functional and do not affect the functionality
  * or correctness of the code.
  * TODO: rustfmt breaks multiline comments when used one on top of another! (each with its own
  * pair of delimiters)
  * Note: run clippy with: rustup run nightly cargo-clippy! */
-#![deny(warnings)]
+#![allow(missing_docs)]
+#![doc(test(attr(deny(warnings))))]
 // Enable all clippy lints except for many of the pedantic ones. It's a shame this needs to be
 // copied and pasted across crates, but there doesn't appear to be a way to include inner attributes
 // from a common source.
@@ -73,14 +75,22 @@ use std::{
   rc::Rc,
 };
 
+pub mod token {
+  use typename::TypeName;
+
+  use std::{fmt::Debug, hash::Hash};
+
+  pub trait Token = Debug+PartialEq+Eq+Hash+Copy+Clone+TypeName;
+}
+pub use token::Token;
 
 pub mod binding {
-  use super::{grammar_indexing::*, lowering_to_indices::*, reconstruction::*, user_api::*, *};
+  use super::{api::*, grammar_indexing::*, lowering_to_indices::*, reconstruction::*, *};
 
   #[derive(Debug, Clone, PartialEq, Eq, Hash)]
   pub struct BindingError(String);
 
-  pub trait ProvidesProduction<Tok: Debug+PartialEq+Eq+Hash+Copy+Clone+TypeName> {
+  pub trait ProvidesProduction<Tok: Token> {
     fn as_production(&self) -> Production<Tok>;
     fn get_type_name(&self) -> TypeNameWrapper;
     fn get_acceptors(&self) -> Vec<Rc<Box<dyn PointerBoxingAcceptor>>>;
@@ -98,18 +108,18 @@ pub mod binding {
   }
 
   #[derive(Debug, Clone, PartialEq, Eq, TypeName)]
-  pub struct TypedCase<Tok: Debug+PartialEq+Eq+Hash+Copy+Clone+TypeName> {
+  pub struct TypedCase<Tok: Token> {
     pub case: Case<Tok>,
     pub acceptor: Rc<Box<dyn PointerBoxingAcceptor>>,
   }
 
   #[derive(Debug, Clone, PartialEq, Eq, TypeName)]
-  pub struct TypedProduction<Tok: Debug+PartialEq+Eq+Hash+Copy+Clone+TypeName> {
+  pub struct TypedProduction<Tok: Token> {
     cases: Vec<TypedCase<Tok>>,
     output_type: TypeNameWrapper,
   }
 
-  impl<Tok: Debug+PartialEq+Eq+Hash+Copy+Clone+TypeName> TypedProduction<Tok> {
+  impl<Tok: Token> TypedProduction<Tok> {
     pub fn new<Output: TypeName>(cases: Vec<TypedCase<Tok>>) -> Self {
       TypedProduction {
         cases,
@@ -118,9 +128,7 @@ pub mod binding {
     }
   }
 
-  impl<Tok: Debug+PartialEq+Eq+Hash+Copy+Clone+TypeName> ProvidesProduction<Tok>
-    for TypedProduction<Tok>
-  {
+  impl<Tok: Token> ProvidesProduction<Tok> for TypedProduction<Tok> {
     fn as_production(&self) -> Production<Tok> {
       Production(
         self
@@ -146,7 +154,7 @@ pub mod binding {
 
   #[derive(Debug, PartialEq, Eq, TypeName)]
   pub struct TypedSimultaneousProductions<
-    Tok: Debug+PartialEq+Eq+Hash+Copy+Clone+TypeName,
+    Tok: Token,
     /* Members: HList, */
   > {
     pub underlying: SimultaneousProductions<Tok>,
@@ -154,7 +162,7 @@ pub mod binding {
   }
 
   impl<
-      Tok: Debug+PartialEq+Eq+Hash+Copy+Clone+TypeName,
+      Tok: Token,
       /* Members: HList, */
     >
     TypedSimultaneousProductions<
@@ -486,11 +494,11 @@ pub mod binding {
 }
 
 
-pub mod user_api {
+pub mod api {
   use super::*;
 
   #[derive(Debug, Clone, PartialEq, Eq, Hash, TypeName)]
-  pub struct Literal<Tok: Debug+PartialEq+Eq+Hash+Copy+Clone+TypeName>(pub Vec<Tok>);
+  pub struct Literal<Tok: Token>(pub Vec<Tok>);
 
   impl From<&str> for Literal<char> {
     fn from(s: &str) -> Self { Literal(s.chars().collect()) }
@@ -506,19 +514,19 @@ pub mod user_api {
   }
 
   #[derive(Debug, Clone, PartialEq, Eq, Hash, TypeName)]
-  pub enum CaseElement<Tok: Debug+PartialEq+Eq+Hash+Copy+Clone+TypeName> {
+  pub enum CaseElement<Tok: Token> {
     Lit(Literal<Tok>),
     Prod(ProductionReference),
   }
 
   #[derive(Debug, Clone, PartialEq, Eq, Hash, TypeName)]
-  pub struct Case<Tok: Debug+PartialEq+Eq+Hash+Copy+Clone+TypeName>(pub Vec<CaseElement<Tok>>);
+  pub struct Case<Tok: Token>(pub Vec<CaseElement<Tok>>);
 
   #[derive(Debug, Clone, PartialEq, Eq, Hash, TypeName)]
-  pub struct Production<Tok: Debug+PartialEq+Eq+Hash+Copy+Clone+TypeName>(pub Vec<Case<Tok>>);
+  pub struct Production<Tok: Token>(pub Vec<Case<Tok>>);
 
   #[derive(Debug, Clone, PartialEq, Eq)]
-  pub struct SimultaneousProductions<Tok: Debug+PartialEq+Eq+Hash+Copy+Clone+TypeName>(
+  pub struct SimultaneousProductions<Tok: Token>(
     pub IndexMap<ProductionReference, Production<Tok>>,
   );
 }
@@ -536,7 +544,7 @@ pub mod user_api {
 ///   ...,
 /// ]
 pub mod lowering_to_indices {
-  use super::{user_api::*, *};
+  use super::{api::*, *};
 
   /// Graph Coordinates
   // NB: all these Refs have nice properties, which includes being storeable
@@ -610,7 +618,7 @@ pub mod lowering_to_indices {
   /// Mapping to Tokens
 
   #[derive(Debug, Clone, PartialEq, Eq)]
-  pub struct TokenGrammar<Tok: Debug+PartialEq+Eq+Hash+Copy+Clone+TypeName> {
+  pub struct TokenGrammar<Tok: Token> {
     pub graph: LoweredProductions,
     pub alphabet: Vec<Tok>,
   }
@@ -618,7 +626,7 @@ pub mod lowering_to_indices {
   #[derive(Debug, Clone, PartialEq, Eq)]
   pub struct GrammarConstructionError(pub String);
 
-  impl<Tok: Debug+PartialEq+Eq+Hash+Copy+Clone+TypeName> TokenGrammar<Tok> {
+  impl<Tok: Token> TokenGrammar<Tok> {
     fn walk_productions_and_split_literal_strings(
       prods: &SimultaneousProductions<Tok>,
     ) -> Result<Self, GrammarConstructionError> {
@@ -1389,7 +1397,7 @@ pub mod grammar_indexing {
   // I believe makes it easier to have the runtime we want just fall out of the
   // code without too much work.
   #[derive(Debug, Clone, PartialEq, Eq)]
-  pub struct PreprocessedGrammar<Tok: Debug+PartialEq+Eq+Hash+Copy+Clone+TypeName> {
+  pub struct PreprocessedGrammar<Tok: Token> {
     // These don't need to be quick to access or otherwise optimized for the algorithm until we
     // create a `Parse` -- these are chosen to reduce redundancy.
     // `M: T -> {Q}`, where `{Q}` is sets of states!
@@ -1399,7 +1407,7 @@ pub mod grammar_indexing {
     pub cyclic_graph_decomposition: CyclicGraphDecomposition,
   }
 
-  impl<Tok: Debug+PartialEq+Eq+Hash+Copy+Clone+TypeName> PreprocessedGrammar<Tok> {
+  impl<Tok: Token> PreprocessedGrammar<Tok> {
     /* Intended to reduce visual clutter in the implementation of interval
      * production. */
     fn make_pos_neg_anon_steps(
@@ -1544,7 +1552,7 @@ pub mod parsing {
   use super::{grammar_indexing::*, lowering_to_indices::*, *};
 
   #[derive(Debug, Clone)]
-  pub struct Input<Tok: Debug+PartialEq+Eq+Hash+Copy+Clone+TypeName>(pub Vec<Tok>);
+  pub struct Input<Tok: Token>(pub Vec<Tok>);
 
   #[derive(Debug, Copy, Clone, PartialEq, Eq, Hash)]
   pub struct InputTokenIndex(pub usize);
@@ -1709,7 +1717,7 @@ pub mod parsing {
       paired_segments
     }
 
-    fn get_possible_states_for_input<Tok: Debug+PartialEq+Eq+Hash+Copy+Clone+TypeName>(
+    fn get_possible_states_for_input<Tok: Token>(
       mapping: &IndexMap<Tok, Vec<TokenPosition>>,
       input: &Input<Tok>,
     ) -> Vec<PossibleStates> {
@@ -1733,10 +1741,7 @@ pub mod parsing {
         .collect()
     }
 
-    pub fn new<Tok: Debug+PartialEq+Eq+Hash+Copy+Clone+TypeName>(
-      grammar: PreprocessedGrammar<Tok>,
-      input: &Input<Tok>,
-    ) -> Self {
+    pub fn new<Tok: Token>(grammar: PreprocessedGrammar<Tok>, input: &Input<Tok>) -> Self {
       let PreprocessedGrammar {
         cyclic_graph_decomposition:
           CyclicGraphDecomposition {
@@ -2581,8 +2586,8 @@ pub mod operators {
 #[cfg(test)]
 mod tests {
   use super::{
-    binding::*, grammar_indexing::*, lowering_to_indices::*, parsing::*, reconstruction::*,
-    user_api::*, *,
+    api::*, binding::*, grammar_indexing::*, lowering_to_indices::*, parsing::*, reconstruction::*,
+    *,
   };
 
   #[test]
