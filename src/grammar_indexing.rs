@@ -189,7 +189,7 @@ impl EpsilonNodeStateSubgraph {
   fn trie_ref_for_vertex(&mut self, vtx: &EpsilonGraphVertex) -> TrieNodeRef {
     let basic_node = StackTrieNode::bare(vtx);
     let trie_node_ref_for_vertex = if let Some(x) = self.vertex_mapping.get(vtx) {
-      x.clone()
+      *x
     } else {
       let next_ref = TrieNodeRef(self.trie_node_universe.len());
       self.trie_node_universe.push(basic_node.clone());
@@ -389,7 +389,7 @@ impl EpsilonIntervalGraph {
       for cycle in all_stack_cycles.into_iter() {
         let SingleStackCycle(vertices) = cycle;
         for (cur_vtx_index, vtx) in vertices.iter().enumerate() {
-          let cur_trie_ref = ret.trie_ref_for_vertex(&vtx);
+          let cur_trie_ref = ret.trie_ref_for_vertex(vtx);
           let next_trie_ref = {
             let next_vtx_index = (cur_vtx_index + 1) % vertices.len();
             let next_vertex = vertices[next_vtx_index];
@@ -617,7 +617,7 @@ impl IntermediateTokenTransition {
       },
       /* `next` is the anonymous vertex, which is all we need it for. */
       EpsilonGraphVertex::Anon(_) => (vec![], vec![IntermediateTokenTransition {
-        cur_traversal_intermediate_nonterminals: intermediate_nonterminals_for_next_step.clone(),
+        cur_traversal_intermediate_nonterminals: intermediate_nonterminals_for_next_step,
         rest_of_interval: self.rest_of_interval[1..].to_vec(),
       }]),
       /* Similar to start and end, but the `todo` starts off at the state. */
@@ -665,12 +665,12 @@ impl IntermediateTokenTransition {
     let start = self
       .cur_traversal_intermediate_nonterminals
       .iter()
-      .nth(0)
+      .next()
       .unwrap();
     assert!(!self.rest_of_interval.is_empty());
     let next = self.rest_of_interval[0];
 
-    let (intermediate_nonterminals_for_next_step, cycles) = self.check_for_cycles(next.clone());
+    let (intermediate_nonterminals_for_next_step, cycles) = self.check_for_cycles(next);
     let (completed, todo) = self.process_next_vertex(
       start,
       next,
@@ -829,7 +829,7 @@ impl<Tok: Token> PreprocessedGrammar<Tok> {
 
   pub fn new(grammar: &TokenGrammar<Tok>) -> Self {
     let terminals_interval_graph: EpsilonIntervalGraph =
-      Self::produce_terminals_interval_graph(&grammar);
+      Self::produce_terminals_interval_graph(grammar);
     let cyclic_graph_decomposition: CyclicGraphDecomposition =
       terminals_interval_graph.connect_all_vertices();
     PreprocessedGrammar {

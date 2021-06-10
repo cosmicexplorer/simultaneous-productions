@@ -22,6 +22,7 @@ pub struct BindingError(String);
 pub trait ProvidesProduction<Tok: Token> {
   fn as_production(&self) -> Production<Tok>;
   fn get_type_name(&self) -> TypeNameWrapper;
+  #[allow(clippy::redundant_allocation)]
   fn get_acceptors(&self) -> Vec<Rc<Box<dyn PointerBoxingAcceptor>>>;
 }
 
@@ -37,6 +38,7 @@ impl TypeNameWrapper {
 #[derive(Debug, Clone, PartialEq, Eq, TypeName)]
 pub struct TypedCase<Tok: Token> {
   pub case: Case<Tok>,
+  #[allow(clippy::redundant_allocation)]
   pub acceptor: Rc<Box<dyn PointerBoxingAcceptor>>,
 }
 
@@ -85,6 +87,7 @@ pub struct TypedSimultaneousProductions<
   /* Members: HList, */
 > {
   pub underlying: SimultaneousProductions<Tok>,
+  #[allow(clippy::redundant_allocation)]
   pub bindings: IndexMap<ProdCaseRef, Rc<Box<dyn PointerBoxingAcceptor>>>,
 }
 
@@ -119,27 +122,27 @@ impl<
           let TypedProductionParamsDescription { output_type, .. } =
             acceptor_for_outer.type_params();
           let expected_output_type = TypeNameWrapper::for_type::<Output>();
-          if output_type != expected_output_type {
+          if output_type == expected_output_type {
+            self
+              .reconstruct_sub(acceptor_for_outer.clone(), &args)
+              .and_then(|result_rc: Box<dyn std::any::Any>| {
+                result_rc.downcast::<Output>().map_err(|_| {
+                  BindingError(format!(
+                    "prod case {:?} with args {:?} could not be downcast to {:?}",
+                    prod_case,
+                    args,
+                    TypeNameWrapper::for_type::<Output>()
+                  ))
+                })
+              })
+              .map(|x| *x)
+          } else {
             /* FIXME: how do we reasonably accept a type parameter upon reconstruction of
              * a parse? */
             Err(BindingError(format!(
               "output type {:?} for case {:?} did not match expected output type {:?}",
               output_type, prod_case, expected_output_type
             )))
-          } else {
-            self
-              .reconstruct_sub(acceptor_for_outer.clone(), &args)
-              .and_then(|result_rc: Box<dyn std::any::Any>| {
-                result_rc.downcast::<Output>().or_else(|_| {
-                  Err(BindingError(format!(
-                    "prod case {:?} with args {:?} could not be downcast to {:?}",
-                    prod_case,
-                    args,
-                    TypeNameWrapper::for_type::<Output>()
-                  )))
-                })
-              })
-              .map(|x| *x)
           }
         },
         x => Err(BindingError(format!(
@@ -152,10 +155,11 @@ impl<
     }
   }
 
+  #[allow(clippy::redundant_allocation)]
   fn reconstruct_sub(
     &self,
     acceptor: Rc<Box<dyn PointerBoxingAcceptor>>,
-    args: &Vec<CompleteSubReconstruction>,
+    args: &[CompleteSubReconstruction],
   ) -> Result<Box<dyn std::any::Any>, BindingError> {
     let sub_args: Vec<Box<dyn std::any::Any>> = args
       .iter()
@@ -167,26 +171,27 @@ impl<
           })?;
           self
             .reconstruct_sub(acceptor_for_outer.clone(), args)
-            .map(|x| Some(x))
+            .map(Some)
         },
       })
-      .flat_map(|x| x)
+      .flatten()
       .collect();
     let TypedProductionParamsDescription { params, .. } = acceptor.type_params();
-    if sub_args.len() != params.len() {
+    if sub_args.len() == params.len() {
+      acceptor
+        .accept_erased(sub_args)
+        .map_err(|e| BindingError(format!("acceptance error {:?}", e)))
+    } else {
       Err(BindingError(format!(
         "{:?} args for acceptor {:?} (expected {:?})",
         sub_args.len(),
         &acceptor,
         params.len()
       )))
-    } else {
-      acceptor
-        .accept_erased(sub_args)
-        .or_else(|e| Err(BindingError(format!("acceptance error {:?}", e))))
     }
   }
 
+  #[allow(clippy::redundant_allocation)]
   pub fn new(production_boxes: Vec<Rc<Box<dyn ProvidesProduction<Tok>>>>) -> Self {
     let underlying = SimultaneousProductions(
       production_boxes

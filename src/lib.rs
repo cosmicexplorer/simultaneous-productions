@@ -1,21 +1,23 @@
 /*
-    Description: Implement the Simultaneous Productions general parsing method.
-    Copyright (C) 2019-2021 Danny McClanahan <dmcC2@hypnicjerk.ai>
-    SPDX-License-Identifier: GPL-3.0
-
-    This program is free software: you can redistribute it and/or modify
-    it under the terms of the GNU General Public License as published by
-    the Free Software Foundation, either version 3 of the License, or
-    (at your option) any later version.
-
-    This program is distributed in the hope that it will be useful,
-    but WITHOUT ANY WARRANTY; without even the implied warranty of
-    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-    GNU General Public License for more details.
-
-    You should have received a copy of the GNU General Public License
-    along with this program.  If not, see <http://www.gnu.org/licenses/>.
-*/
+ * Description: Implement the Simultaneous Productions general parsing
+ * method.
+ *
+ * Copyright (C) 2019-2021 Danny McClanahan <dmcC2@hypnicjerk.ai>
+ * SPDX-License-Identifier: GPL-3.0
+ *
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation, either version 3 of the License, or
+ * (at your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with this program.  If not, see <http://www.gnu.org/licenses/>.
+ */
 #![feature(fn_traits)]
 #![feature(trace_macros)]
 #![feature(trait_alias)]
@@ -27,9 +29,9 @@
 #![allow(missing_docs)]
 /* Ensure any doctest warnings fails the doctest! */
 #![doc(test(attr(deny(warnings))))]
-// Enable all clippy lints except for many of the pedantic ones. It's a shame this needs to be
-// copied and pasted across crates, but there doesn't appear to be a way to include inner attributes
-// from a common source.
+/* Enable all clippy lints except for many of the pedantic ones. It's a shame this needs to be
+ * copied and pasted across crates, but there doesn't appear to be a way to include inner
+ * attributes from a common source. */
 #![deny(
   clippy::all,
   clippy::default_trait_access,
@@ -40,18 +42,18 @@
   clippy::unseparated_literal_suffix,
   clippy::used_underscore_binding
 )]
-// It is often more clear to show that nothing is being moved.
+/* It is often more clear to show that nothing is being moved. */
 #![allow(clippy::match_ref_pats)]
-// Subjective style.
+/* Subjective style. */
 #![allow(
   clippy::derive_hash_xor_eq,
   clippy::len_without_is_empty,
   clippy::redundant_field_names,
   clippy::too_many_arguments
 )]
-// Default isn't as big a deal as people seem to think it is.
+/* Default isn't as big a deal as people seem to think it is. */
 #![allow(clippy::new_without_default, clippy::new_ret_no_self)]
-// Arc<Mutex> can be more clear than needing to grok Orderings:
+/* Arc<Mutex> can be more clear than needing to grok Orderings. */
 #![allow(clippy::mutex_atomic)]
 
 extern crate indexmap;
@@ -87,7 +89,7 @@ pub mod api {
   }
 
   impl<Tok: Token> From<&[Tok]> for Literal<Tok> {
-    fn from(s: &[Tok]) -> Self { Self(s.iter().cloned().collect()) }
+    fn from(s: &[Tok]) -> Self { Self(s.to_vec()) }
   }
 
   /// A reference to another production within the same set.
@@ -264,7 +266,7 @@ pub mod lowering_to_indices {
               match el {
                 CaseElement::Lit(literal) => {
                   ret_els.extend(literal.0.iter().map(|cur_tok| {
-                    let (tok_ind, _) = all_tokens.insert_full(cur_tok.clone());
+                    let (tok_ind, _) = all_tokens.insert_full(*cur_tok);
                     CaseEl::Tok(TokRef(tok_ind))
                   }));
                 },
@@ -393,29 +395,25 @@ pub mod operators {
         .lower_bound
         .map(|i| if i > 0 { i - 1 } else { i })
         .unwrap_or(0);
-      let prologue: Vec<CaseEl> = (0..prologue_length)
-        .flat_map(|_| self.group.clone())
-        .collect();
+      let prologue = (0..prologue_length).flat_map(|_| self.group.clone());
 
-      let epilogue: Vec<CaseEl> = match self.upper_bound {
-        /* If we have a definite upper bound, make up the difference in length from the initial
-         * left side. */
-        Some(upper_bound) => (0..(upper_bound - prologue_length))
-          .flat_map(|_| self.group.clone())
-          .collect(),
-        /* If not, we can go forever, or not at all, so we can just apply a Kleene star to this! */
-        None => {
+      let epilogue: Box<dyn std::iter::Iterator<Item=CaseEl>> =
+        if let Some(upper_bound) = self.upper_bound {
+          /* If we have a definite upper bound, make up the difference in length from
+           * the initial left side. */
+          Box::new((0..(upper_bound - prologue_length)).flat_map(|_| self.group.clone()))
+        } else {
+          /* If not, we can go forever, or not at all, so we can just apply a Kleene
+           * star to this! */
           let starred = KleeneStar {
             group: self.group.clone(),
           };
           let OperatorResult { result } = starred.operate(prods);
-          result
-        },
-      };
+          Box::new(result.into_iter())
+        };
 
-      OperatorResult {
-        result: prologue.into_iter().chain(epilogue.into_iter()).collect(),
-      }
+      let result = prologue.chain(epilogue).collect();
+      OperatorResult { result }
     }
   }
 

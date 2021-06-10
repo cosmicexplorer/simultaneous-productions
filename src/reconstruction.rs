@@ -262,7 +262,7 @@ impl InProgressReconstruction {
             AnonStep::Positive(anon_sym) => {
               let maybe_ref: &UnflattenedProdCaseRef = anon_step_mapping
                 .get(anon_sym)
-                .expect(format!("no state found for anon sym {:?}", anon_sym).as_str());
+                .unwrap_or_else(|| unreachable!("no state found for anon sym {:?}", anon_sym));
               match maybe_ref {
                 &UnflattenedProdCaseRef::PassThrough => None,
                 &UnflattenedProdCaseRef::Case(ref x) => {
@@ -279,7 +279,7 @@ impl InProgressReconstruction {
             AnonStep::Negative(anon_sym) => {
               let maybe_ref: &UnflattenedProdCaseRef = anon_step_mapping
                 .get(anon_sym)
-                .expect(format!("no state found for anon sym {:?}", anon_sym).as_str());
+                .unwrap_or_else(|| unreachable!("no state found for anon sym {:?}", anon_sym));
               match maybe_ref {
                 &UnflattenedProdCaseRef::PassThrough => None,
                 &UnflattenedProdCaseRef::Case(ref x) => {

@@ -98,14 +98,14 @@ impl FlattenableToStates for SpanningSubtree {
         } = parse
           .get_spanning_subtree(left_parent)
           .unwrap()
-          .flatten_to_states(&parse);
+          .flatten_to_states(parse);
         let CompletelyFlattenedSubtree {
           states: right_states,
           input_range: right_range,
         } = parse
           .get_spanning_subtree(right_parent)
           .unwrap()
-          .flatten_to_states(&parse);
+          .flatten_to_states(parse);
         dbg!(&left_states);
         dbg!(&left_range);
         dbg!(&right_states);
@@ -118,7 +118,7 @@ impl FlattenableToStates for SpanningSubtree {
         assert_eq!(left_states.last(), right_states.first());
         let linked_states: Vec<LoweredState> = left_states
           .into_iter()
-          .chain(right_states[1..].into_iter().cloned())
+          .chain(right_states[1..].iter().cloned())
           .collect();
         CompletelyFlattenedSubtree {
           states: linked_states,
@@ -155,7 +155,7 @@ impl ParseableGrammar {
    * enables e.g. the use of SIMD instructions to find those series of
    * states! */
   fn connect_stack_diffs(
-    transitions: &Vec<CompletedStatePairWithVertices>,
+    transitions: &[CompletedStatePairWithVertices],
   ) -> IndexMap<StatePair, Vec<StackDiffSegment>> {
     let mut paired_segments: IndexMap<StatePair, Vec<StackDiffSegment>> = IndexMap::new();
 
@@ -182,17 +182,15 @@ impl ParseableGrammar {
      * vector with 2 more entries than `input`)! */
     vec![PossibleStates(vec![LoweredState::Start])]
       .into_iter()
-      .chain(input.0.iter().map(|tok| {
-        mapping
-          .get(tok)
-          .map(|positions| {
-            let states: Vec<_> = positions
-              .iter()
-              .map(|pos| LoweredState::Within(*pos))
-              .collect();
-            PossibleStates(states)
-          })
-          .expect(format!("no tokens found for token {:?} in input {:?}", tok, input).as_str())
+      .chain(input.0.iter().map(|tok| match mapping.get(tok) {
+        None => unreachable!("no tokens found for token {:?} in input {:?}", tok, input),
+        Some(positions) => {
+          let states: Vec<_> = positions
+            .iter()
+            .map(|pos| LoweredState::Within(*pos))
+            .collect();
+          PossibleStates(states)
+        },
       }))
       .chain(vec![PossibleStates(vec![LoweredState::End])])
       .collect()
@@ -276,7 +274,7 @@ impl Parse {
     let new_ref_id = SpanningSubtreeRef(self.spanning_subtree_table.len());
     let new_span = SpanningSubtree {
       input_span: span.input_span.clone(),
-      parents: span.parents.clone(),
+      parents: span.parents,
       id: new_ref_id,
     };
     self.spanning_subtree_table.push(new_span.clone());
@@ -292,9 +290,7 @@ impl Parse {
       .or_insert_with(IndexSet::new);
     (*right_entry).insert(new_span.clone());
 
-    self
-      .spans
-      .push(new_span.clone(), new_span.clone().range().width());
+    self.spans.push(new_span.clone(), new_span.range().width());
   }
 
   fn generate_subtrees_for_pair(
@@ -314,7 +310,7 @@ impl Parse {
           },
           input_range: InputRange::new(left_index, right_index),
           /* TODO: lexicographically sort these??? */
-          stack_diff: stack_diff.clone(),
+          stack_diff,
         },
         parents: None,
       })
@@ -403,8 +399,9 @@ impl Parse {
       )
     }) {
       match left_step.sequence(right_step) {
-        Ok(x) => {
-          if x.len() == 2 {
+        Ok(x) => match x.len() {
+          0 => {},
+          2 => {
             connected = cmp_left[(i + 1)..min_length]
               .iter()
               .cloned()
@@ -413,11 +410,10 @@ impl Parse {
               .chain(cmp_right[(i + 1)..min_length].iter().cloned())
               .collect();
             break;
-          } else if x.len() == 0 {
-            ()
-          } else {
+          },
+          _ => {
             panic!("unidentified sequence of stack steps: {:?}", x)
-          }
+          },
         },
         Err(_) => {
           return None;
