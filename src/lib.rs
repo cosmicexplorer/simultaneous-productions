@@ -80,6 +80,7 @@ pub mod token {
 
   use std::{fmt::Debug, hash::Hash};
 
+  /// The constraints required for any token stream parsed by this crate.
   pub trait Token = Debug+PartialEq+Eq+Hash+Copy+Clone+TypeName;
 }
 pub use token::Token;
@@ -121,6 +122,7 @@ pub mod api {
   );
 }
 
+/// ???
 ///
 /// (I think this is a "model" graph class of some sort, where the model is
 /// this "simultaneous productions" parsing formulation. See Spinrad's book
@@ -137,177 +139,191 @@ pub mod lowering_to_indices {
   use super::{api::*, *};
 
   /// Graph Coordinates
-  // NB: all these Refs have nice properties, which includes being storeable
-  // without reference to any particular graph, being totally ordered, and
-  // being able to be incremented.
+  ///
+  /// All these `Ref` types have nice properties, like being storeable without
+  /// reference to any particular graph, being totally ordered, and being able
+  /// to be incremented.
+  ///
+  /// We adopt the convention of abbreviated names for things used in
+  /// algorithms.
+  pub mod graph_coordinates {
+    /// Points to a particular Production within a Vec<ProductionImpl>.
+    ///
+    /// A version of [ProductionReference] which uses a [usize] for speed.
+    #[derive(Debug, Copy, Clone, PartialEq, Eq, Hash)]
+    pub struct ProdRef(pub usize);
 
-  // A version of `ProductionReference` which uses a `usize` for speed. We adopt
-  // the convention of abbreviated names for things used in algorithms.
-  // Points to a particular Production within a Vec<ProductionImpl>.
-  #[derive(Debug, Copy, Clone, PartialEq, Eq, Hash)]
-  pub struct ProdRef(pub usize);
+    /// Points to a particular case within a [Production].
+    #[derive(Debug, Copy, Clone, PartialEq, Eq, Hash)]
+    pub struct CaseRef(pub usize);
 
-  // Points to a particular case within a Production.
-  #[derive(Debug, Copy, Clone, PartialEq, Eq, Hash)]
-  pub struct CaseRef(pub usize);
+    /// Points to an element of a particular [Case].
+    #[derive(Debug, Copy, Clone, PartialEq, Eq, Hash)]
+    pub struct CaseElRef(pub usize);
 
-  // Points to an element of a particular Case.
-  #[derive(Debug, Copy, Clone, PartialEq, Eq, Hash)]
-  pub struct CaseElRef(pub usize);
+    /// This corresponds to a "state" in the simultaneous productions
+    /// terminology.
+    ///
+    /// This refers to a specific token, implying that we must be pointing to a
+    /// particular index of a particular [Literal].
+    #[derive(Debug, Copy, Clone, PartialEq, Eq, Hash)]
+    pub struct TokenPosition {
+      pub prod: ProdRef,
+      pub case: CaseRef,
+      pub case_el: CaseElRef,
+    }
 
-  /* This refers to a specific token, implying that we must be pointing to a
-   * particular index of a particular Literal. This corresponds to a "state"
-   * in the simultaneous productions terminology. */
-  #[derive(Debug, Copy, Clone, PartialEq, Eq, Hash)]
-  pub struct TokenPosition {
-    pub prod: ProdRef,
-    pub case: CaseRef,
-    pub case_el: CaseElRef,
-  }
-
-  #[cfg(test)]
-  impl TokenPosition {
-    pub fn new(prod_ind: usize, case_ind: usize, case_el_ind: usize) -> Self {
-      TokenPosition {
-        prod: ProdRef(prod_ind),
-        case: CaseRef(case_ind),
-        case_el: CaseElRef(case_el_ind),
+    #[cfg(test)]
+    impl TokenPosition {
+      pub fn new(prod_ind: usize, case_ind: usize, case_el_ind: usize) -> Self {
+        TokenPosition {
+          prod: ProdRef(prod_ind),
+          case: CaseRef(case_ind),
+          case_el: CaseElRef(case_el_ind),
+        }
       }
     }
   }
 
   /// Graph Representation
+  pub mod graph_representation {
+    use super::graph_coordinates::*;
 
-  // TODO: describe!
-  #[derive(Debug, Copy, Clone, PartialEq, Eq, Hash)]
-  pub struct TokRef(pub usize);
+    /// TODO: describe why this struct is here and not in
+    /// [super::graph_coordinates]!
+    #[derive(Debug, Copy, Clone, PartialEq, Eq, Hash)]
+    pub struct TokRef(pub usize);
 
-  #[derive(Debug, Copy, Clone, PartialEq, Eq)]
-  pub enum CaseEl {
-    Tok(TokRef),
-    Prod(ProdRef),
-  }
+    #[derive(Debug, Copy, Clone, PartialEq, Eq)]
+    pub enum CaseEl {
+      Tok(TokRef),
+      Prod(ProdRef),
+    }
 
-  #[derive(Debug, Clone, PartialEq, Eq)]
-  pub struct CaseImpl(pub Vec<CaseEl>);
+    #[derive(Debug, Clone, PartialEq, Eq)]
+    pub struct CaseImpl(pub Vec<CaseEl>);
 
-  #[derive(Debug, Clone, PartialEq, Eq)]
-  pub struct ProductionImpl(pub Vec<CaseImpl>);
+    #[derive(Debug, Clone, PartialEq, Eq)]
+    pub struct ProductionImpl(pub Vec<CaseImpl>);
 
-  #[derive(Debug, Clone, PartialEq, Eq)]
-  pub struct LoweredProductions(pub Vec<ProductionImpl>);
+    #[derive(Debug, Clone, PartialEq, Eq)]
+    pub struct LoweredProductions(pub Vec<ProductionImpl>);
 
-  impl LoweredProductions {
-    pub fn new_production(&mut self) -> (ProdRef, &mut ProductionImpl) {
-      let new_end_index = ProdRef(self.0.len());
-      self.0.push(ProductionImpl(vec![]));
-      (new_end_index, self.0.last_mut().unwrap())
+    impl LoweredProductions {
+      pub fn new_production(&mut self) -> (ProdRef, &mut ProductionImpl) {
+        let new_end_index = ProdRef(self.0.len());
+        self.0.push(ProductionImpl(vec![]));
+        (new_end_index, self.0.last_mut().unwrap())
+      }
     }
   }
 
   /// Mapping to Tokens
+  pub mod mapping_to_tokens {
+    use super::{graph_coordinates::*, graph_representation::*, *};
 
-  #[derive(Debug, Clone, PartialEq, Eq)]
-  pub struct TokenGrammar<Tok: Token> {
-    pub graph: LoweredProductions,
-    pub alphabet: Vec<Tok>,
-  }
+    /// TODO: ???
+    #[derive(Debug, Clone, PartialEq, Eq)]
+    pub struct TokenGrammar<Tok: Token> {
+      pub graph: LoweredProductions,
+      pub alphabet: Vec<Tok>,
+    }
 
-  #[derive(Debug, Clone, PartialEq, Eq)]
-  pub struct GrammarConstructionError(pub String);
-
-  impl<Tok: Token> TokenGrammar<Tok> {
-    fn walk_productions_and_split_literal_strings(prods: &SimultaneousProductions<Tok>) -> Self {
-      // Mapping from strings -> indices (TODO: from a type-indexed map, where each
-      // production returns the type!).
-      let prod_ref_mapping: HashMap<ProductionReference, usize> = prods
-        .0
-        .iter()
-        .enumerate()
-        .map(|(index, (prod_ref, _))| (prod_ref.clone(), index))
-        .collect();
-      // Collect all the tokens (splitting up literals) as we traverse the
-      // productions. So literal strings are "flattened" into their individual
-      // tokens.
-      let mut all_tokens: IndexSet<Tok> = IndexSet::new();
-      // Pretty straightforwardly map the productions into the new space.
-      let mut ret_prods: Vec<ProductionImpl> = Vec::new();
-      for (_, prod) in prods.0.iter() {
-        let mut ret_cases: Vec<CaseImpl> = Vec::new();
-        for case in prod.0.iter() {
-          let mut ret_els: Vec<CaseEl> = Vec::new();
-          for el in case.0.iter() {
-            match el {
-              CaseElement::Lit(literal) => {
-                ret_els.extend(literal.0.iter().map(|cur_tok| {
-                  let (tok_ind, _) = all_tokens.insert_full(cur_tok.clone());
-                  CaseEl::Tok(TokRef(tok_ind))
-                }));
-              },
-              CaseElement::Prod(prod_ref) => {
-                let matching_production_index = prod_ref_mapping
-                  .get(prod_ref)
-                  .expect("we assume all prod refs exist at this point");
-                ret_els.push(CaseEl::Prod(ProdRef(*matching_production_index)));
-              },
+    impl<Tok: Token> TokenGrammar<Tok> {
+      fn walk_productions_and_split_literal_strings(prods: &SimultaneousProductions<Tok>) -> Self {
+        // Mapping from strings -> indices (TODO: from a type-indexed map, where each
+        // production returns the type!).
+        let prod_ref_mapping: HashMap<ProductionReference, usize> = prods
+          .0
+          .iter()
+          .enumerate()
+          .map(|(index, (prod_ref, _))| (prod_ref.clone(), index))
+          .collect();
+        // Collect all the tokens (splitting up literals) as we traverse the
+        // productions. So literal strings are "flattened" into their individual
+        // tokens.
+        let mut all_tokens: IndexSet<Tok> = IndexSet::new();
+        // Pretty straightforwardly map the productions into the new space.
+        let mut ret_prods: Vec<ProductionImpl> = Vec::new();
+        for (_, prod) in prods.0.iter() {
+          let mut ret_cases: Vec<CaseImpl> = Vec::new();
+          for case in prod.0.iter() {
+            let mut ret_els: Vec<CaseEl> = Vec::new();
+            for el in case.0.iter() {
+              match el {
+                CaseElement::Lit(literal) => {
+                  ret_els.extend(literal.0.iter().map(|cur_tok| {
+                    let (tok_ind, _) = all_tokens.insert_full(cur_tok.clone());
+                    CaseEl::Tok(TokRef(tok_ind))
+                  }));
+                },
+                CaseElement::Prod(prod_ref) => {
+                  let matching_production_index = prod_ref_mapping
+                    .get(prod_ref)
+                    .expect("we assume all prod refs exist at this point");
+                  ret_els.push(CaseEl::Prod(ProdRef(*matching_production_index)));
+                },
+              }
             }
+            let cur_case = CaseImpl(ret_els);
+            ret_cases.push(cur_case);
           }
-          let cur_case = CaseImpl(ret_els);
-          ret_cases.push(cur_case);
+          let cur_prod = ProductionImpl(ret_cases);
+          ret_prods.push(cur_prod);
         }
-        let cur_prod = ProductionImpl(ret_cases);
-        ret_prods.push(cur_prod);
+        TokenGrammar {
+          graph: LoweredProductions(ret_prods),
+          alphabet: all_tokens.iter().cloned().collect(),
+        }
       }
-      TokenGrammar {
-        graph: LoweredProductions(ret_prods),
-        alphabet: all_tokens.iter().cloned().collect(),
+
+      pub fn new(prods: &SimultaneousProductions<Tok>) -> Self {
+        Self::walk_productions_and_split_literal_strings(prods)
       }
-    }
 
-    pub fn new(prods: &SimultaneousProductions<Tok>) -> Self {
-      Self::walk_productions_and_split_literal_strings(prods)
-    }
-
-    /* This is a tiny amount of complexity that we can reasonably conceal from
-     * the preprocessing step, so we do it here. It could be done in the
-     * same preprocessing pass, but we don't care about performance when
-     * lowering. */
-    pub fn index_token_states(&self) -> IndexMap<Tok, Vec<TokenPosition>> {
-      let mut token_states_index: IndexMap<Tok, Vec<TokenPosition>> = IndexMap::new();
-      let TokenGrammar {
-        graph: LoweredProductions(prods),
-        alphabet,
-      } = self;
-      /* TODO: consider making the iteration over the productions into a helper
-       * method! */
-      for (prod_ind, the_prod) in prods.iter().enumerate() {
-        let cur_prod_ref = ProdRef(prod_ind);
-        let ProductionImpl(cases) = the_prod;
-        for (case_ind, the_case) in cases.iter().enumerate() {
-          let cur_case_ref = CaseRef(case_ind);
-          let CaseImpl(elements_of_case) = the_case;
-          for (element_of_case_ind, the_element) in elements_of_case.iter().enumerate() {
-            let cur_el_ref = CaseElRef(element_of_case_ind);
-            match the_element {
-              CaseEl::Tok(TokRef(alphabet_token_number)) => {
-                let corresponding_token = alphabet.get(*alphabet_token_number)
+      /// ???
+      ///
+      /// This is a tiny amount of complexity that we can reasonably conceal
+      /// from the preprocessing step, so we do it here. It could be done
+      /// in the same preprocessing pass, but we don't care
+      /// about performance when lowering.
+      pub fn index_token_states(&self) -> IndexMap<Tok, Vec<TokenPosition>> {
+        let mut token_states_index: IndexMap<Tok, Vec<TokenPosition>> = IndexMap::new();
+        let TokenGrammar {
+          graph: LoweredProductions(prods),
+          alphabet,
+        } = self;
+        /* TODO: consider making the iteration over the productions into a helper
+         * method! */
+        for (prod_ind, the_prod) in prods.iter().enumerate() {
+          let cur_prod_ref = ProdRef(prod_ind);
+          let ProductionImpl(cases) = the_prod;
+          for (case_ind, the_case) in cases.iter().enumerate() {
+            let cur_case_ref = CaseRef(case_ind);
+            let CaseImpl(elements_of_case) = the_case;
+            for (element_of_case_ind, the_element) in elements_of_case.iter().enumerate() {
+              let cur_el_ref = CaseElRef(element_of_case_ind);
+              match the_element {
+                CaseEl::Tok(TokRef(alphabet_token_number)) => {
+                  let corresponding_token = alphabet.get(*alphabet_token_number)
                   .expect("token references are expected to be internally consistent with the alphabet of a TokenGrammar");
-                let cur_pos = TokenPosition {
-                  prod: cur_prod_ref,
-                  case: cur_case_ref,
-                  case_el: cur_el_ref,
-                };
-                let cur_tok_entry = token_states_index
-                  .entry(*corresponding_token)
-                  .or_insert(vec![]);
-                (*cur_tok_entry).push(cur_pos);
-              },
-              CaseEl::Prod(_) => (),
+                  let cur_pos = TokenPosition {
+                    prod: cur_prod_ref,
+                    case: cur_case_ref,
+                    case_el: cur_el_ref,
+                  };
+                  let cur_tok_entry = token_states_index
+                    .entry(*corresponding_token)
+                    .or_insert(vec![]);
+                  (*cur_tok_entry).push(cur_pos);
+                },
+                CaseEl::Prod(_) => (),
+              }
             }
           }
         }
+        token_states_index
       }
-      token_states_index
     }
   }
 }
@@ -316,7 +332,10 @@ pub mod lowering_to_indices {
 /// Implementation for getting a `PreprocessedGrammar`. Performance doesn't
 /// matter here.
 pub mod grammar_indexing {
-  use super::{lowering_to_indices::*, *};
+  use super::{
+    lowering_to_indices::{graph_coordinates::*, graph_representation::*, mapping_to_tokens::*},
+    *,
+  };
 
   #[derive(Debug, Copy, Clone, PartialEq, Eq, Hash, TypeName)]
   pub struct ProdCaseRef {
@@ -723,11 +742,12 @@ pub mod grammar_indexing {
     }
   }
 
-  /* For some given ProdRef, the intervals of nonterminals which begin at
-   * epsilon (start) or epsilon prime (end) for the given ProdRef. This is
-   * only a concept in the interval graph and is flattened to a single
-   * epsilon/epsilon prime when the PreprocessedGrammar is finally
-   * constructed. */
+  /// The intervals of nonterminals which begin at epsilon (start) or epsilon
+  /// prime (end) for some ProdRef.
+  ///
+  /// This is only a concept in the interval graph and is flattened to a single
+  /// epsilon/epsilon prime when the PreprocessedGrammar is finally
+  /// constructed.
   #[derive(Debug, Clone, PartialEq, Eq, Hash)]
   pub struct StartEndEpsilonIntervals {
     pub start_epsilons: Vec<ContiguousNonterminalInterval>,
@@ -775,8 +795,8 @@ pub mod grammar_indexing {
     rest_of_interval: Vec<EpsilonGraphVertex>,
   }
 
-  /* This Hash implementation is stable because the collection types in this
-   * struct have a specific ordering. */
+  /// This Hash implementation is stable because the collection types in this
+  /// struct have a specific ordering.
   impl Hash for IntermediateTokenTransition {
     fn hash<H: Hasher>(&self, state: &mut H) {
       for intermediate_vertex in self.cur_traversal_intermediate_nonterminals.iter() {
@@ -801,46 +821,51 @@ pub mod grammar_indexing {
       }
     }
 
-    // TODO: document this great method!!!
-    fn iterate_and_maybe_complete(
+    /// Check for cycles given a vertex `next`.
+    ///
+    /// This method supports multiple paths to the same vertex, each of which
+    /// are a cycle, by pulling out the constituent vertices from the
+    /// current set of "intermediate" nonterminals at
+    /// [Self::cur_traversal_intermediate_nonterminals].
+    fn check_for_cycles(
       &self,
+      next: EpsilonGraphVertex,
+    ) -> (IndexSet<EpsilonGraphVertex>, Vec<SingleStackCycle>) {
+      let mut prev_nonterminals = self.cur_traversal_intermediate_nonterminals.clone();
+      let (cur_vtx_ind, was_new_insert) = prev_nonterminals.insert_full(next);
+      if was_new_insert {
+        (prev_nonterminals, vec![])
+      } else {
+        /* If we have already seen this vertex, then a cycle was detected! */
+        /* The cycle contains the start vertex and all the ones after it. */
+        let cycle_elements: Vec<EpsilonGraphVertex> = prev_nonterminals
+          .iter()
+          .skip(cur_vtx_ind)
+          .cloned()
+          .collect();
+        let cur_cycle = SingleStackCycle(cycle_elements);
+        /* Shuffle all the intermediate vertices off, but keep the cycle start
+         * vertex. */
+        let remaining_elements: IndexSet<EpsilonGraphVertex> = prev_nonterminals
+          .into_iter()
+          .take(cur_vtx_ind + 1)
+          .collect();
+        (remaining_elements, vec![cur_cycle])
+      }
+    }
+
+    /// TODO: document this great method!!!
+    fn process_next_vertex(
+      &self,
+      start: &EpsilonGraphVertex,
+      next: EpsilonGraphVertex,
       indexed_intervals: &IndexMap<ProdRef, StartEndEpsilonIntervals>,
-    ) -> TransitionIterationResult {
-      assert!(!self.cur_traversal_intermediate_nonterminals.is_empty());
-      let start = self
-        .cur_traversal_intermediate_nonterminals
-        .iter()
-        .nth(0)
-        .unwrap();
-      assert!(!self.rest_of_interval.is_empty());
-      let next = self.rest_of_interval[0];
-      let (intermediate_nonterminals_for_next_step, cycles) = {
-        /* Check for cycles. This method supports multiple paths to the same vertex,
-         * each of which are a cycle, by pulling out the constituent
-         * vertices from the current set of "intermediate" nonterminals. */
-        let mut prev_nonterminals = self.cur_traversal_intermediate_nonterminals.clone();
-        let (cur_vtx_ind, was_new_insert) = prev_nonterminals.insert_full(next);
-        if was_new_insert {
-          (prev_nonterminals, vec![])
-        } else {
-          /* If we have already seen this vertex, then a cycle was detected! */
-          /* The cycle contains the start vertex and all the ones after it. */
-          let cycle_elements: Vec<EpsilonGraphVertex> = prev_nonterminals
-            .iter()
-            .skip(cur_vtx_ind)
-            .cloned()
-            .collect();
-          let cur_cycle = SingleStackCycle(cycle_elements);
-          /* Shuffle all the intermediate vertices off, but keep the cycle start
-           * vertex. */
-          let remaining_elements: IndexSet<EpsilonGraphVertex> = prev_nonterminals
-            .into_iter()
-            .take(cur_vtx_ind + 1)
-            .collect();
-          (remaining_elements, vec![cur_cycle])
-        }
-      };
-      let (completed, todo) = match next {
+      intermediate_nonterminals_for_next_step: IndexSet<EpsilonGraphVertex>,
+    ) -> (
+      Vec<CompletedStatePairWithVertices>,
+      Vec<IntermediateTokenTransition>,
+    ) {
+      match next {
         /* Complete a transition, but also add more continuing from the start vertex. */
         EpsilonGraphVertex::Start(start_prod_ref) => {
           /* We only have this single next node, since we always start or end at a
@@ -949,7 +974,29 @@ pub mod grammar_indexing {
             rest_of_interval: self.rest_of_interval[1..].to_vec(),
           }])
         },
-      };
+      }
+    }
+
+    fn iterate_and_maybe_complete(
+      &self,
+      indexed_intervals: &IndexMap<ProdRef, StartEndEpsilonIntervals>,
+    ) -> TransitionIterationResult {
+      assert!(!self.cur_traversal_intermediate_nonterminals.is_empty());
+      let start = self
+        .cur_traversal_intermediate_nonterminals
+        .iter()
+        .nth(0)
+        .unwrap();
+      assert!(!self.rest_of_interval.is_empty());
+      let next = self.rest_of_interval[0];
+
+      let (intermediate_nonterminals_for_next_step, cycles) = self.check_for_cycles(next.clone());
+      let (completed, todo) = self.process_next_vertex(
+        start,
+        next,
+        indexed_intervals,
+        intermediate_nonterminals_for_next_step,
+      );
       TransitionIterationResult {
         completed,
         /* NB: If cycles were detected, don't return any `todo` nodes, as we have already
@@ -991,7 +1038,7 @@ pub mod grammar_indexing {
       )
     }
 
-    // TODO: document this great method!!!
+    /// TODO: document this great method!!!
     pub fn produce_terminals_interval_graph(grammar: &TokenGrammar<Tok>) -> EpsilonIntervalGraph {
       /* We would like to just accept a LoweredProductions here, but we call this
        * method directly in testing, and without the whole grammar object
@@ -1116,7 +1163,7 @@ pub mod grammar_indexing {
 ///
 /// Implementation of parsing. Performance /does/ (eventually) matter here.
 pub mod parsing {
-  use super::{grammar_indexing::*, lowering_to_indices::*, *};
+  use super::{grammar_indexing::*, lowering_to_indices::graph_coordinates::*, *};
 
   #[derive(Debug, Clone)]
   pub struct Input<Tok: Token>(pub Vec<Tok>);
@@ -2042,7 +2089,7 @@ pub mod reconstruction {
 ///
 /// Syntax sugar for inline modifications to productions.
 pub mod operators {
-  use super::lowering_to_indices::*;
+  use super::lowering_to_indices::graph_representation::*;
 
   #[derive(Debug, Clone, PartialEq, Eq)]
   pub struct OperatorResult {
@@ -2140,7 +2187,9 @@ pub mod operators {
 
 
 pub mod binding {
-  use super::{api::*, grammar_indexing::*, lowering_to_indices::*, reconstruction::*, *};
+  use super::{
+    api::*, grammar_indexing::*, lowering_to_indices::graph_coordinates::*, reconstruction::*, *,
+  };
 
   #[derive(Debug, Clone, PartialEq, Eq, Hash)]
   pub struct BindingError(String);
@@ -2552,7 +2601,12 @@ pub mod binding {
 #[cfg(test)]
 mod tests {
   use super::{
-    api::*, binding::*, grammar_indexing::*, lowering_to_indices::*, parsing::*, reconstruction::*,
+    api::*,
+    binding::*,
+    grammar_indexing::*,
+    lowering_to_indices::{graph_coordinates::*, graph_representation::*, mapping_to_tokens::*},
+    parsing::*,
+    reconstruction::*,
     *,
   };
 
