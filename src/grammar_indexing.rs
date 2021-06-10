@@ -842,7 +842,7 @@ impl<Tok: Token> PreprocessedGrammar<Tok> {
 #[cfg(test)]
 mod tests {
   use super::*;
-  use crate::tests::{basic_productions, non_cyclic_productions};
+  use crate::test_framework::{basic_productions, non_cyclic_productions};
 
   #[test]
   fn token_grammar_state_indexing() {

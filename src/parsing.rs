@@ -588,7 +588,7 @@ impl Parse {
 #[cfg(test)]
 mod tests {
   use super::*;
-  use crate::{lowering_to_indices::mapping_to_tokens::*, tests::non_cyclic_productions};
+  use crate::{lowering_to_indices::mapping_to_tokens::*, test_framework::non_cyclic_productions};
 
   #[test]
   fn dynamic_parse_state() {

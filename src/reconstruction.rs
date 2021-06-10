@@ -345,7 +345,7 @@ mod tests {
   use super::*;
   use crate::{
     lowering_to_indices::{graph_coordinates::*, mapping_to_tokens::*},
-    tests::non_cyclic_productions,
+    test_framework::non_cyclic_productions,
   };
 
   #[test]
