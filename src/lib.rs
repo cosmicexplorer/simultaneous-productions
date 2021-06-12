@@ -56,26 +56,11 @@
 /* Arc<Mutex> can be more clear than needing to grok Orderings. */
 #![allow(clippy::mutex_atomic)]
 
-extern crate indexmap;
-extern crate priority_queue;
-extern crate typename;
-
 #[macro_use]
 pub mod binding;
 pub mod grammar_indexing;
-pub mod lowering_to_indices;
 pub mod parsing;
 pub mod reconstruction;
-
-/// Definition of the trait used to parameterize an atomic input component.
-pub mod token {
-  use typename::TypeName;
-
-  use std::{fmt::Debug, hash::Hash};
-
-  /// The constraints required for any token stream parsed by this crate.
-  pub trait Token = Debug+PartialEq+Eq+Hash+Copy+Clone+TypeName;
-}
 
 /// The basic structs which define an input grammar.
 ///
@@ -83,13 +68,18 @@ pub mod token {
 /// their stability guarantees can be much lower than the definitions in this
 /// module.
 pub mod api {
-  use super::token::*;
+  use sp_core::{
+    grammar_specification as core_spec,
+    graph_coordinates::{CaseElRef, CaseRef, Counter, ProdRef},
+    token::Token,
+  };
 
   use indexmap::IndexMap;
-  use typename::TypeName;
+
+  use std::marker::PhantomData;
 
   /// A contiguous sequence of tokens.
-  #[derive(Debug, Clone, PartialEq, Eq, Hash, TypeName)]
+  #[derive(Debug, Clone)]
   pub struct Literal<Tok: Token>(pub Vec<Tok>);
 
   impl From<&str> for Literal<char> {
@@ -100,37 +90,61 @@ pub mod api {
     fn from(s: &[Tok]) -> Self { Self(s.to_vec()) }
   }
 
+  impl<'a, Tok: Token> From<Literal<Tok>> for core_spec::Literal<'a, Tok> {
+    fn from(value: Literal<Tok>) -> Self { Self(&value) }
+  }
+
   /// A reference to another production within the same set.
   ///
   /// The string must match the assigned name of a [Production] in a set of
   /// [SimultaneousProductions].
-  #[derive(Debug, Clone, PartialEq, Eq, Hash, TypeName)]
-  pub struct ProductionReference(String);
+  #[derive(Debug, Clone, PartialEq, Eq, Hash)]
+  pub struct ProductionReference<'a, Tok: Token>(String, PhantomData<&'a Tok>);
 
-  impl ProductionReference {
-    pub fn new(s: &str) -> Self { ProductionReference(s.to_string()) }
+  impl<'a, Tok: Token> ProductionReference<'a, Tok> {
+    pub fn new(s: &str) -> Self { ProductionReference(s.to_string(), PhantomData) }
+  }
+
+  #[derive(Debug)]
+  pub enum LoweringError {
+    InvalidProduction(String),
+  }
+
+  impl<'a, Tok: Token> Counter for ProductionReference<'a, Tok> {
+    type Arena = SimultaneousProductions<'a, Tok>;
+    type Value = Result<ProdRef<'a, Tok>, LoweringError>;
+
+    fn dereference(&self, arena: Self::Arena) -> Self::Value {
+      match arena.0.get_full(&self.0) {
+        None => Err(LoweringError::InvalidProduction(format!(
+          "target of production reference {:?} should exist in S.P. {:?}!",
+          &self, arena,
+        ))),
+        Some((index, _, _)) => Ok(ProdRef::new(index)),
+      }
+    }
   }
 
   /// Each individual element that can be matched against some input in a case.
-  #[derive(Debug, Clone, PartialEq, Eq, Hash, TypeName)]
-  pub enum CaseElement<Tok: Token> {
+  #[derive(Debug, Clone)]
+  pub enum CaseElement<'a, Tok: Token> {
     Lit(Literal<Tok>),
-    Prod(ProductionReference),
+    Prod(ProductionReference<'a, Tok>),
   }
 
   /// A sequence of *elements* which, if successfully matched against some
   /// *input*, represents some *production*.
-  #[derive(Debug, Clone, PartialEq, Eq, Hash, TypeName)]
-  pub struct Case<Tok: Token>(pub Vec<CaseElement<Tok>>);
+  #[derive(Debug, Clone)]
+  pub struct Case<'a, Tok: Token>(pub Vec<CaseElement<'a, Tok>>);
 
   /// A disjunction of cases.
-  #[derive(Debug, Clone, PartialEq, Eq, Hash, TypeName)]
-  pub struct Production<Tok: Token>(pub Vec<Case<Tok>>);
+  #[derive(Debug, Clone)]
+  pub struct Production<'a, Tok: Token>(pub Vec<Case<'a, Tok>>);
 
   /// A conjunction of productions.
-  #[derive(Debug, Clone, PartialEq, Eq)]
-  pub struct SimultaneousProductions<Tok: Token>(
-    pub IndexMap<ProductionReference, Production<Tok>>,
+  #[derive(Debug, Clone)]
+  pub struct SimultaneousProductions<'a, Tok: Token>(
+    pub IndexMap<ProductionReference<'a, Tok>, Production<'a, Tok>>,
   );
 }
 
@@ -145,7 +159,7 @@ pub mod operators {
   }
 
   pub trait UnaryOperator {
-    fn operate(&self, prods: &mut LoweredProductions) -> OperatorResult;
+    fn operate(&self, prods: &mut DetokenizedProductions) -> OperatorResult;
   }
 
   #[derive(Debug, Clone, PartialEq, Eq)]
@@ -154,7 +168,7 @@ pub mod operators {
   }
 
   impl UnaryOperator for KleeneStar {
-    fn operate(&self, prods: &mut LoweredProductions) -> OperatorResult {
+    fn operate(&self, prods: &mut DetokenizedProductions) -> OperatorResult {
       let (new_prod_ref, &mut ProductionImpl(ref mut new_prod)) = prods.new_production();
       /* Add an empty case. */
       new_prod.push(CaseImpl(vec![]));
@@ -183,7 +197,7 @@ pub mod operators {
   }
 
   impl UnaryOperator for Repeated {
-    fn operate(&self, prods: &mut LoweredProductions) -> OperatorResult {
+    fn operate(&self, prods: &mut DetokenizedProductions) -> OperatorResult {
       let prologue_length = self
         .lower_bound
         .map(|i| if i > 0 { i - 1 } else { i })
@@ -216,7 +230,7 @@ pub mod operators {
   }
 
   impl UnaryOperator for Optional {
-    fn operate(&self, prods: &mut LoweredProductions) -> OperatorResult {
+    fn operate(&self, prods: &mut DetokenizedProductions) -> OperatorResult {
       let (new_prod_ref, &mut ProductionImpl(ref mut new_prod)) = prods.new_production();
       /* Add an empty case. */
       new_prod.push(CaseImpl(vec![]));
@@ -226,73 +240,5 @@ pub mod operators {
         result: vec![CaseEl::Prod(new_prod_ref)],
       }
     }
-  }
-}
-
-#[cfg(test)]
-pub mod test_framework {
-  use super::api::*;
-
-  pub fn non_cyclic_productions() -> SimultaneousProductions<char> {
-    SimultaneousProductions(
-      [
-        (
-          ProductionReference::new("a"),
-          Production(vec![Case(vec![CaseElement::Lit(Literal::from("ab"))])]),
-        ),
-        (
-          ProductionReference::new("b"),
-          Production(vec![
-            Case(vec![
-              CaseElement::Lit(Literal::from("ab")),
-              CaseElement::Prod(ProductionReference::new("a")),
-            ]),
-            Case(vec![
-              CaseElement::Prod(ProductionReference::new("a")),
-              CaseElement::Lit(Literal::from("a")),
-            ]),
-          ]),
-        ),
-      ]
-      .iter()
-      .cloned()
-      .collect(),
-    )
-  }
-
-  pub fn basic_productions() -> SimultaneousProductions<char> {
-    SimultaneousProductions(
-      [
-        (
-          ProductionReference::new("P_1"),
-          Production(vec![
-            Case(vec![CaseElement::Lit(Literal::from("abc"))]),
-            Case(vec![
-              CaseElement::Lit(Literal::from("a")),
-              CaseElement::Prod(ProductionReference::new("P_1")),
-              CaseElement::Lit(Literal::from("c")),
-            ]),
-            Case(vec![
-              CaseElement::Lit(Literal::from("bc")),
-              CaseElement::Prod(ProductionReference::new("P_2")),
-            ]),
-          ]),
-        ),
-        (
-          ProductionReference::new("P_2"),
-          Production(vec![
-            Case(vec![CaseElement::Prod(ProductionReference::new("P_1"))]),
-            Case(vec![CaseElement::Prod(ProductionReference::new("P_2"))]),
-            Case(vec![
-              CaseElement::Prod(ProductionReference::new("P_1")),
-              CaseElement::Lit(Literal::from("bc")),
-            ]),
-          ]),
-        ),
-      ]
-      .iter()
-      .cloned()
-      .collect(),
-    )
   }
 }

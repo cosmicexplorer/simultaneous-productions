@@ -344,9 +344,10 @@ impl CompletedWholeReconstruction {
 mod tests {
   use super::*;
   use crate::{
-    lowering_to_indices::{graph_coordinates::*, mapping_to_tokens::*},
-    test_framework::non_cyclic_productions,
+    lowering_to_indices::mapping_to_tokens::*,
+    test_framework::{new_token_position, non_cyclic_productions},
   };
+  use sp_core::graph_coordinates::*;
 
   #[test]
   fn reconstructs_from_parse() {
@@ -368,20 +369,12 @@ mod tests {
         CompleteSubReconstruction::State(LoweredState::Start),
         CompleteSubReconstruction::Completed(CompletedCaseReconstruction {
           prod_case: ProdCaseRef {
-            prod: ProdRef(0),
-            case: CaseRef(0)
+            prod: ProdRef::new(0),
+            case: CaseRef::new(0)
           },
           args: vec![
-            CompleteSubReconstruction::State(LoweredState::Within(TokenPosition {
-              prod: ProdRef(0),
-              case: CaseRef(0),
-              case_el: CaseElRef(0)
-            })),
-            CompleteSubReconstruction::State(LoweredState::Within(TokenPosition {
-              prod: ProdRef(0),
-              case: CaseRef(0),
-              case_el: CaseElRef(1)
-            })),
+            CompleteSubReconstruction::State(LoweredState::Within(new_token_position(0, 0, 0))),
+            CompleteSubReconstruction::State(LoweredState::Within(new_token_position(0, 0, 1))),
           ]
         }),
         CompleteSubReconstruction::State(LoweredState::End),
@@ -405,20 +398,20 @@ mod tests {
         CompleteSubReconstruction::State(LoweredState::Start),
         CompleteSubReconstruction::Completed(CompletedCaseReconstruction {
           prod_case: ProdCaseRef {
-            prod: ProdRef(1),
-            case: CaseRef(0),
+            prod: ProdRef::new(1),
+            case: CaseRef::new(0),
           },
           args: vec![
-            CompleteSubReconstruction::State(LoweredState::Within(TokenPosition::new(1, 0, 0))),
-            CompleteSubReconstruction::State(LoweredState::Within(TokenPosition::new(1, 0, 1))),
+            CompleteSubReconstruction::State(LoweredState::Within(new_token_position(1, 0, 0))),
+            CompleteSubReconstruction::State(LoweredState::Within(new_token_position(1, 0, 1))),
             CompleteSubReconstruction::Completed(CompletedCaseReconstruction {
               prod_case: ProdCaseRef {
-                prod: ProdRef(0),
-                case: CaseRef(0),
+                prod: ProdRef::new(0),
+                case: CaseRef::new(0),
               },
               args: vec![
-                CompleteSubReconstruction::State(LoweredState::Within(TokenPosition::new(0, 0, 0))),
-                CompleteSubReconstruction::State(LoweredState::Within(TokenPosition::new(0, 0, 1))),
+                CompleteSubReconstruction::State(LoweredState::Within(new_token_position(0, 0, 0))),
+                CompleteSubReconstruction::State(LoweredState::Within(new_token_position(0, 0, 1))),
               ],
             })
           ],

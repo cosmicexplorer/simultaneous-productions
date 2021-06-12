@@ -1,0 +1,11 @@
+[package]
+name = "sp-core"
+version = "0.0.0"
+authors = ["Danny McClanahan <1305167+cosmicexplorer@users.noreply.github.com>"]
+edition = "2018"
+
+[dependencies]
+# heapless = "0.7.1"
+# indexmap = "1.6.2"
+indexmap = { git = "https://github.com/cosmicexplorer/indexmap", rev = "38247ee7ed1ac469c174664c2d227c146be3fa47" }
+twox-hash = "1.6.0"

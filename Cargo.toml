@@ -7,6 +7,9 @@ edition = "2018"
 [dependencies]
 # frunk = "0.1.9"
 # gensym = "0.1.0"
+displaydoc = "0.2"
 indexmap = "1.0.2"
 priority-queue = "0.6.0"
+sp-core = { path = "core/" }
+thiserror = "1"
 typename = "0.1.1"

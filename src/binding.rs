@@ -1,10 +1,8 @@
 /* Copyright (C) 2021 Danny McClanahan <dmcC2@hypnicjerk.ai> */
 /* SPDX-License-Identifier: GPL-3.0 */
 
-use super::{
-  api::*, grammar_indexing::*, lowering_to_indices::graph_coordinates::*, reconstruction::*,
-  token::*,
-};
+use super::{api::*, grammar_indexing::*, reconstruction::*};
+use sp_core::{graph_coordinates::*, token::Token};
 
 use indexmap::IndexMap;
 use typename::TypeName;
@@ -37,7 +35,8 @@ impl TypeNameWrapper {
 
 #[derive(Debug, Clone, PartialEq, Eq, TypeName)]
 pub struct TypedCase<Tok: Token> {
-  pub case: Case<Tok>,
+  /* FIXME: remove 'static! */
+  pub case: Case<'static, Tok>,
   #[allow(clippy::redundant_allocation)]
   pub acceptor: Rc<Box<dyn PointerBoxingAcceptor>>,
 }
@@ -85,8 +84,9 @@ impl<Tok: Token> ProvidesProduction<Tok> for TypedProduction<Tok> {
 pub struct TypedSimultaneousProductions<
   Tok: Token,
   /* Members: HList, */
-> {
-  pub underlying: SimultaneousProductions<Tok>,
+  > {
+  /* FIXME: remove 'static! */
+  pub underlying: SimultaneousProductions<'static, Tok>,
   #[allow(clippy::redundant_allocation)]
   pub bindings: IndexMap<ProdCaseRef, Rc<Box<dyn PointerBoxingAcceptor>>>,
 }
@@ -210,7 +210,7 @@ impl<
       .cloned()
       .enumerate()
       .flat_map(|(prod_ind, prod)| {
-        let cur_prod_ref = ProdRef(prod_ind);
+        let cur_prod_ref = ProdRef::new(prod_ind);
         prod
           .get_acceptors()
           .into_iter()
@@ -218,7 +218,7 @@ impl<
           .map(move |(case_ind, acceptor)| {
             let cur_prod_case_ref = ProdCaseRef {
               prod: cur_prod_ref,
-              case: CaseRef(case_ind),
+              case: CaseRef::new(case_ind),
             };
             (cur_prod_case_ref, acceptor)
           })
