@@ -210,7 +210,7 @@ impl<
       .cloned()
       .enumerate()
       .flat_map(|(prod_ind, prod)| {
-        let cur_prod_ref = ProdRef::new(prod_ind);
+        let cur_prod_ref = ProdRef(prod_ind);
         prod
           .get_acceptors()
           .into_iter()
@@ -218,7 +218,7 @@ impl<
           .map(move |(case_ind, acceptor)| {
             let cur_prod_case_ref = ProdCaseRef {
               prod: cur_prod_ref,
-              case: CaseRef::new(case_ind),
+              case: CaseRef(case_ind),
             };
             (cur_prod_case_ref, acceptor)
           })

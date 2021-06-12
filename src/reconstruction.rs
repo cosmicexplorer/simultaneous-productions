@@ -369,8 +369,8 @@ mod tests {
         CompleteSubReconstruction::State(LoweredState::Start),
         CompleteSubReconstruction::Completed(CompletedCaseReconstruction {
           prod_case: ProdCaseRef {
-            prod: ProdRef::new(0),
-            case: CaseRef::new(0)
+            prod: ProdRef(0),
+            case: CaseRef(0)
           },
           args: vec![
             CompleteSubReconstruction::State(LoweredState::Within(new_token_position(0, 0, 0))),
@@ -398,16 +398,16 @@ mod tests {
         CompleteSubReconstruction::State(LoweredState::Start),
         CompleteSubReconstruction::Completed(CompletedCaseReconstruction {
           prod_case: ProdCaseRef {
-            prod: ProdRef::new(1),
-            case: CaseRef::new(0),
+            prod: ProdRef(1),
+            case: CaseRef(0),
           },
           args: vec![
             CompleteSubReconstruction::State(LoweredState::Within(new_token_position(1, 0, 0))),
             CompleteSubReconstruction::State(LoweredState::Within(new_token_position(1, 0, 1))),
             CompleteSubReconstruction::Completed(CompletedCaseReconstruction {
               prod_case: ProdCaseRef {
-                prod: ProdRef::new(0),
-                case: CaseRef::new(0),
+                prod: ProdRef(0),
+                case: CaseRef(0),
               },
               args: vec![
                 CompleteSubReconstruction::State(LoweredState::Within(new_token_position(0, 0, 0))),

@@ -120,7 +120,7 @@ pub mod api {
           "target of production reference {:?} should exist in S.P. {:?}!",
           &self, arena,
         ))),
-        Some((index, _, _)) => Ok(ProdRef::new(index)),
+        Some((index, _, _)) => Ok(ProdRef(index)),
       }
     }
   }

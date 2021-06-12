@@ -40,7 +40,7 @@ checksum = "ab5ef0d4909ef3724cc8cce6ccc8572c5c817592e9285f5464f8e86f8bd3726e"
 [[package]]
 name = "indexmap"
 version = "1.6.2"
-source = "git+https://github.com/cosmicexplorer/indexmap?rev=38247ee7ed1ac469c174664c2d227c146be3fa47#38247ee7ed1ac469c174664c2d227c146be3fa47"
+source = "git+https://github.com/cosmicexplorer/indexmap?rev=739d553180167f49d5316b57f618b350a4d245af#739d553180167f49d5316b57f618b350a4d245af"
 dependencies = [
  "autocfg",
  "hashbrown",

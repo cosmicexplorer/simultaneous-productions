@@ -18,11 +18,8 @@
  * along with this program.  If not, see <http://www.gnu.org/licenses/>.
  */
 #![no_std]
-#![warn(stable_features)]
 #![feature(trait_alias)]
-#![feature(generic_associated_types)]
 #![feature(allocator_api)]
-#![feature(alloc)]
 /* These clippy lint descriptions are purely non-functional and do not affect the functionality
  * or correctness of the code.
  * TODO: rustfmt breaks multiline comments when used one on top of another! (each with its own
@@ -62,7 +59,7 @@ pub(crate) mod grammar_indexing;
 pub(crate) mod interns;
 pub(crate) mod lowering_to_indices;
 
-pub use indexmap::vec;
+pub use indexmap::{collections, vec};
 
 /// Definition of the trait used to parameterize an atomic input component.
 pub mod token {
@@ -81,7 +78,7 @@ pub mod token {
 /// their stability guarantees can be much lower than the definitions in this
 /// module.
 pub mod grammar_specification {
-  use core::{convert::Into, iter::IntoIterator};
+  use core::{convert::Into, iter::IntoIterator, marker::PhantomData};
 
   /// A contiguous sequence of tokens.
   pub trait Literal<Tok>: IntoIterator<Item=Tok> {}
@@ -89,13 +86,14 @@ pub mod grammar_specification {
   pub trait ProductionReference<ID>: Into<ID> {}
 
   /// Each individual element that can be matched against some input in a case.
+  #[derive(Clone)]
   pub enum CaseElement<ID, Tok, Lit, PR>
   where
     Lit: Literal<Tok>,
     PR: ProductionReference<ID>,
   {
-    Lit(Lit),
-    Prod(PR),
+    Lit(Lit, PhantomData<Tok>),
+    Prod(PR, PhantomData<ID>),
   }
 
   /// A sequence of *elements* which, if successfully matched against some
@@ -129,77 +127,206 @@ pub mod grammar_specification {
 
 #[cfg(test)]
 pub mod test_framework {
-  use super::grammar_specification::*;
-  use crate::lowering_to_indices::graph_coordinates::*;
+  use super::grammar_specification as gs;
+  use crate::{lowering_to_indices::graph_coordinates as gc, vec::Vec};
 
-  pub fn new_token_position(prod_ind: usize, case_ind: usize, case_el_ind: usize) -> TokenPosition {
-    TokenPosition {
-      prod: ProdRef::new(prod_ind),
-      case: CaseRef::new(case_ind),
-      case_el: CaseElRef::new(case_el_ind),
+  use core::{fmt, iter::IntoIterator, marker::PhantomData, str};
+
+  pub fn new_token_position(
+    prod_ind: usize,
+    case_ind: usize,
+    case_el_ind: usize,
+  ) -> gc::TokenPosition {
+    gc::TokenPosition {
+      prod: gc::ProdRef(prod_ind),
+      case: gc::CaseRef(case_ind),
+      el: gc::CaseElRef(case_el_ind),
     }
   }
 
-  pub fn non_cyclic_productions() -> SimultaneousProductions<char> {
-    SimultaneousProductions(
+  #[derive(Clone)]
+  pub struct Lit(Vec<u8>);
+
+  impl From<&str> for Lit {
+    fn from(value: &str) -> Self { Self(value.as_bytes().to_vec()) }
+  }
+
+  impl fmt::Debug for Lit {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+      write!(f, "Lit({:?})", str::from_utf8(&self.0).unwrap())
+    }
+  }
+
+  impl IntoIterator for Lit {
+    type IntoIter = <Vec<char> as IntoIterator>::IntoIter;
+    type Item = char;
+
+    fn into_iter(self) -> Self::IntoIter {
+      let char_vec: Vec<char> = str::from_utf8(&self.0).unwrap().chars().collect();
+      char_vec.into_iter()
+    }
+  }
+
+  impl gs::Literal<char> for Lit {}
+
+  #[derive(Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+  pub struct ProductionReference(Vec<u8>);
+
+  impl From<&str> for ProductionReference {
+    fn from(value: &str) -> Self { Self(value.as_bytes().to_vec()) }
+  }
+
+  impl fmt::Debug for ProductionReference {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+      write!(
+        f,
+        "ProductionReference({:?})",
+        str::from_utf8(&self.0).unwrap()
+      )
+    }
+  }
+
+  impl gs::ProductionReference<ProductionReference> for ProductionReference {}
+
+  pub type CE = gs::CaseElement<ProductionReference, char, Lit, ProductionReference>;
+
+  #[derive(Clone)]
+  pub struct Case(Vec<CE>);
+
+  impl From<&[CE]> for Case {
+    fn from(value: &[CE]) -> Self { Self(value.to_vec()) }
+  }
+
+  impl IntoIterator for Case {
+    type IntoIter = <Vec<CE> as IntoIterator>::IntoIter;
+    type Item = CE;
+
+    fn into_iter(self) -> Self::IntoIter { self.0.into_iter() }
+  }
+
+  impl gs::Case<ProductionReference, char, Lit, ProductionReference> for Case {}
+
+  #[derive(Clone)]
+  pub struct Production(Vec<Case>);
+
+  impl From<&[Case]> for Production {
+    fn from(value: &[Case]) -> Self { Self(value.to_vec()) }
+  }
+
+  impl IntoIterator for Production {
+    type IntoIter = <Vec<Case> as IntoIterator>::IntoIter;
+    type Item = Case;
+
+    fn into_iter(self) -> Self::IntoIter { self.0.into_iter() }
+  }
+
+  impl gs::Production<ProductionReference, char, Lit, ProductionReference, Case> for Production {}
+
+  pub struct SP(Vec<(ProductionReference, Production)>);
+
+  impl From<&[(ProductionReference, Production)]> for SP {
+    fn from(value: &[(ProductionReference, Production)]) -> Self { Self(value.to_vec()) }
+  }
+
+  impl IntoIterator for SP {
+    type IntoIter = <Vec<(ProductionReference, Production)> as IntoIterator>::IntoIter;
+    type Item = (ProductionReference, Production);
+
+    fn into_iter(self) -> Self::IntoIter { self.0.into_iter() }
+  }
+
+  impl
+    gs::SimultaneousProductions<
+      ProductionReference,
+      char,
+      Lit,
+      ProductionReference,
+      Case,
+      Production,
+    > for SP
+  {
+  }
+
+  pub fn non_cyclic_productions() -> SP {
+    SP::from(
       [
         (
-          ProductionReference::new("a"),
-          Production(vec![Case(vec![CaseElement::Lit(Literal::from("ab"))])]),
+          ProductionReference::from("a"),
+          Production::from([Case::from([CE::Lit(Lit::from("ab"), PhantomData)].as_ref())].as_ref()),
         ),
         (
-          ProductionReference::new("b"),
-          Production(vec![
-            Case(vec![
-              CaseElement::Lit(Literal::from("ab")),
-              CaseElement::Prod(ProductionReference::new("a")),
-            ]),
-            Case(vec![
-              CaseElement::Prod(ProductionReference::new("a")),
-              CaseElement::Lit(Literal::from("a")),
-            ]),
-          ]),
+          ProductionReference::from("b"),
+          Production::from(
+            [
+              Case::from(
+                [
+                  CE::Lit(Lit::from("ab"), PhantomData),
+                  CE::Prod(ProductionReference::from("a"), PhantomData),
+                ]
+                .as_ref(),
+              ),
+              Case::from(
+                [
+                  CE::Prod(ProductionReference::from("a"), PhantomData),
+                  CE::Lit(Lit::from("a"), PhantomData),
+                ]
+                .as_ref(),
+              ),
+            ]
+            .as_ref(),
+          ),
         ),
       ]
-      .iter()
-      .cloned()
-      .collect(),
+      .as_ref(),
     )
   }
 
-  pub fn basic_productions() -> SimultaneousProductions<char> {
-    SimultaneousProductions(
+  pub fn basic_productions() -> SP {
+    SP::from(
       [
         (
-          ProductionReference::new("P_1"),
-          Production(vec![
-            Case(vec![CaseElement::Lit(Literal::from("abc"))]),
-            Case(vec![
-              CaseElement::Lit(Literal::from("a")),
-              CaseElement::Prod(ProductionReference::new("P_1")),
-              CaseElement::Lit(Literal::from("c")),
-            ]),
-            Case(vec![
-              CaseElement::Lit(Literal::from("bc")),
-              CaseElement::Prod(ProductionReference::new("P_2")),
-            ]),
-          ]),
+          ProductionReference::from("P_1"),
+          Production::from(
+            [
+              Case::from([CE::Lit(Lit::from("abc"), PhantomData)].as_ref()),
+              Case::from(
+                [
+                  CE::Lit(Lit::from("a"), PhantomData),
+                  CE::Prod(ProductionReference::from("P_1"), PhantomData),
+                  CE::Lit(Lit::from("c"), PhantomData),
+                ]
+                .as_ref(),
+              ),
+              Case::from(
+                [
+                  CE::Lit(Lit::from("bc"), PhantomData),
+                  CE::Prod(ProductionReference::from("P_2"), PhantomData),
+                ]
+                .as_ref(),
+              ),
+            ]
+            .as_ref(),
+          ),
         ),
         (
-          ProductionReference::new("P_2"),
-          Production(vec![
-            Case(vec![CaseElement::Prod(ProductionReference::new("P_1"))]),
-            Case(vec![CaseElement::Prod(ProductionReference::new("P_2"))]),
-            Case(vec![
-              CaseElement::Prod(ProductionReference::new("P_1")),
-              CaseElement::Lit(Literal::from("bc")),
-            ]),
-          ]),
+          ProductionReference::from("P_2"),
+          Production::from(
+            [
+              Case::from([CE::Prod(ProductionReference::from("P_1"), PhantomData)].as_ref()),
+              Case::from([CE::Prod(ProductionReference::from("P_2"), PhantomData)].as_ref()),
+              Case::from(
+                [
+                  CE::Prod(ProductionReference::from("P_1"), PhantomData),
+                  CE::Lit(Lit::from("bc"), PhantomData),
+                ]
+                .as_ref(),
+              ),
+            ]
+            .as_ref(),
+          ),
         ),
       ]
-      .iter()
-      .cloned()
-      .collect(),
+      .as_ref(),
     )
   }
 }

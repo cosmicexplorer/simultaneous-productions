@@ -628,14 +628,14 @@ mod tests {
           },
           vec![
             StackDiffSegment(vec![
-              NamedOrAnonStep::Named(StackStep::Positive(StackSym(ProdRef::new(0)))),
+              NamedOrAnonStep::Named(StackStep::Positive(StackSym(ProdRef(0)))),
               NamedOrAnonStep::Anon(AnonStep::Positive(AnonSym(0))),
             ]),
             StackDiffSegment(vec![
-              NamedOrAnonStep::Named(StackStep::Positive(StackSym(ProdRef::new(1)))),
+              NamedOrAnonStep::Named(StackStep::Positive(StackSym(ProdRef(1)))),
               NamedOrAnonStep::Anon(AnonStep::Positive(AnonSym(3))),
               NamedOrAnonStep::Anon(AnonStep::Positive(AnonSym(4))),
-              NamedOrAnonStep::Named(StackStep::Positive(StackSym(ProdRef::new(0)))),
+              NamedOrAnonStep::Named(StackStep::Positive(StackSym(ProdRef(0)))),
               NamedOrAnonStep::Anon(AnonStep::Positive(AnonSym(0))),
             ]),
           ]
@@ -644,27 +644,27 @@ mod tests {
           StatePair {
             left: LoweredState::Start,
             right: LoweredState::Within(TokenPosition {
-              prod: ProdRef::new(1),
-              case: CaseRef::new(0),
-              case_el: CaseElRef::new(0)
+              prod: ProdRef(1),
+              case: CaseRef(0),
+              case_el: CaseElRef(0)
             }),
           },
           vec![StackDiffSegment(vec![
-            NamedOrAnonStep::Named(StackStep::Positive(StackSym(ProdRef::new(1)))),
+            NamedOrAnonStep::Named(StackStep::Positive(StackSym(ProdRef(1)))),
             NamedOrAnonStep::Anon(AnonStep::Positive(AnonSym(1))),
           ])],
         ),
         (
           StatePair {
             left: LoweredState::Within(TokenPosition {
-              prod: ProdRef::new(0),
-              case: CaseRef::new(0),
-              case_el: CaseElRef::new(0)
+              prod: ProdRef(0),
+              case: CaseRef(0),
+              case_el: CaseElRef(0)
             }),
             right: LoweredState::Within(TokenPosition {
-              prod: ProdRef::new(0),
-              case: CaseRef::new(0),
-              case_el: CaseElRef::new(1)
+              prod: ProdRef(0),
+              case: CaseRef(0),
+              case_el: CaseElRef(1)
             }),
           },
           vec![StackDiffSegment(vec![]),]
@@ -672,14 +672,14 @@ mod tests {
         (
           StatePair {
             left: LoweredState::Within(TokenPosition {
-              prod: ProdRef::new(1),
-              case: CaseRef::new(0),
-              case_el: CaseElRef::new(0)
+              prod: ProdRef(1),
+              case: CaseRef(0),
+              case_el: CaseElRef(0)
             }),
             right: LoweredState::Within(TokenPosition {
-              prod: ProdRef::new(1),
-              case: CaseRef::new(0),
-              case_el: CaseElRef::new(1)
+              prod: ProdRef(1),
+              case: CaseRef(0),
+              case_el: CaseElRef(1)
             }),
           },
           vec![StackDiffSegment(vec![]),]
@@ -687,75 +687,75 @@ mod tests {
         (
           StatePair {
             left: LoweredState::Within(TokenPosition {
-              prod: ProdRef::new(1),
-              case: CaseRef::new(1),
-              case_el: CaseElRef::new(1)
+              prod: ProdRef(1),
+              case: CaseRef(1),
+              case_el: CaseElRef(1)
             }),
             right: LoweredState::End,
           },
           vec![StackDiffSegment(vec![
             NamedOrAnonStep::Anon(AnonStep::Negative(AnonSym(3))),
-            NamedOrAnonStep::Named(StackStep::Negative(StackSym(ProdRef::new(1)))),
+            NamedOrAnonStep::Named(StackStep::Negative(StackSym(ProdRef(1)))),
           ])],
         ),
         (
           StatePair {
             left: LoweredState::Within(TokenPosition {
-              prod: ProdRef::new(0),
-              case: CaseRef::new(0),
-              case_el: CaseElRef::new(1)
+              prod: ProdRef(0),
+              case: CaseRef(0),
+              case_el: CaseElRef(1)
             }),
             right: LoweredState::End,
           },
           vec![
             StackDiffSegment(vec![
               NamedOrAnonStep::Anon(AnonStep::Negative(AnonSym(0))),
-              NamedOrAnonStep::Named(StackStep::Negative(StackSym(ProdRef::new(0)))),
+              NamedOrAnonStep::Named(StackStep::Negative(StackSym(ProdRef(0)))),
             ]),
             StackDiffSegment(vec![
               NamedOrAnonStep::Anon(AnonStep::Negative(AnonSym(0))),
-              NamedOrAnonStep::Named(StackStep::Negative(StackSym(ProdRef::new(0)))),
+              NamedOrAnonStep::Named(StackStep::Negative(StackSym(ProdRef(0)))),
               NamedOrAnonStep::Anon(AnonStep::Negative(AnonSym(2))),
               NamedOrAnonStep::Anon(AnonStep::Negative(AnonSym(1))),
-              NamedOrAnonStep::Named(StackStep::Negative(StackSym(ProdRef::new(1)))),
+              NamedOrAnonStep::Named(StackStep::Negative(StackSym(ProdRef(1)))),
             ]),
           ]
         ),
         (
           StatePair {
             left: LoweredState::Within(TokenPosition {
-              prod: ProdRef::new(0),
-              case: CaseRef::new(0),
-              case_el: CaseElRef::new(1)
+              prod: ProdRef(0),
+              case: CaseRef(0),
+              case_el: CaseElRef(1)
             }),
             right: LoweredState::Within(TokenPosition {
-              prod: ProdRef::new(1),
-              case: CaseRef::new(1),
-              case_el: CaseElRef::new(1)
+              prod: ProdRef(1),
+              case: CaseRef(1),
+              case_el: CaseElRef(1)
             }),
           },
           vec![StackDiffSegment(vec![
             NamedOrAnonStep::Anon(AnonStep::Negative(AnonSym(0))),
-            NamedOrAnonStep::Named(StackStep::Negative(StackSym(ProdRef::new(0)))),
+            NamedOrAnonStep::Named(StackStep::Negative(StackSym(ProdRef(0)))),
             NamedOrAnonStep::Anon(AnonStep::Negative(AnonSym(4))),
           ]),]
         ),
         (
           StatePair {
             left: LoweredState::Within(TokenPosition {
-              prod: ProdRef::new(1),
-              case: CaseRef::new(0),
-              case_el: CaseElRef::new(1)
+              prod: ProdRef(1),
+              case: CaseRef(0),
+              case_el: CaseElRef(1)
             }),
             right: LoweredState::Within(TokenPosition {
-              prod: ProdRef::new(0),
-              case: CaseRef::new(0),
-              case_el: CaseElRef::new(0)
+              prod: ProdRef(0),
+              case: CaseRef(0),
+              case_el: CaseElRef(0)
             }),
           },
           vec![StackDiffSegment(vec![
             NamedOrAnonStep::Anon(AnonStep::Positive(AnonSym(2))),
-            NamedOrAnonStep::Named(StackStep::Positive(StackSym(ProdRef::new(0)))),
+            NamedOrAnonStep::Named(StackStep::Positive(StackSym(ProdRef(0)))),
             NamedOrAnonStep::Anon(AnonStep::Positive(AnonSym(0))),
           ]),]
         ),
@@ -786,9 +786,9 @@ mod tests {
               state_pair: StatePair {
                 left: LoweredState::Start,
                 right: LoweredState::Within(TokenPosition {
-                  prod: ProdRef::new(0),
-                  case: CaseRef::new(0),
-                  case_el: CaseElRef::new(0)
+                  prod: ProdRef(0),
+                  case: CaseRef(0),
+                  case_el: CaseElRef(0)
                 })
               },
               input_range: InputRange {
@@ -796,7 +796,7 @@ mod tests {
                 right_index: InputTokenIndex(1)
               },
               stack_diff: StackDiffSegment(vec![
-                NamedOrAnonStep::Named(StackStep::Positive(StackSym(ProdRef::new(0)))),
+                NamedOrAnonStep::Named(StackStep::Positive(StackSym(ProdRef(0)))),
                 NamedOrAnonStep::Anon(AnonStep::Positive(AnonSym(0))),
               ]),
             },
@@ -811,9 +811,9 @@ mod tests {
               state_pair: StatePair {
                 left: LoweredState::Start,
                 right: LoweredState::Within(TokenPosition {
-                  prod: ProdRef::new(0),
-                  case: CaseRef::new(0),
-                  case_el: CaseElRef::new(0)
+                  prod: ProdRef(0),
+                  case: CaseRef(0),
+                  case_el: CaseElRef(0)
                 })
               },
               input_range: InputRange {
@@ -821,10 +821,10 @@ mod tests {
                 right_index: InputTokenIndex(1)
               },
               stack_diff: StackDiffSegment(vec![
-                NamedOrAnonStep::Named(StackStep::Positive(StackSym(ProdRef::new(1)))),
+                NamedOrAnonStep::Named(StackStep::Positive(StackSym(ProdRef(1)))),
                 NamedOrAnonStep::Anon(AnonStep::Positive(AnonSym(3))),
                 NamedOrAnonStep::Anon(AnonStep::Positive(AnonSym(4))),
-                NamedOrAnonStep::Named(StackStep::Positive(StackSym(ProdRef::new(0)))),
+                NamedOrAnonStep::Named(StackStep::Positive(StackSym(ProdRef(0)))),
                 NamedOrAnonStep::Anon(AnonStep::Positive(AnonSym(0))),
               ])
             },
@@ -839,9 +839,9 @@ mod tests {
               state_pair: StatePair {
                 left: LoweredState::Start,
                 right: LoweredState::Within(TokenPosition {
-                  prod: ProdRef::new(1),
-                  case: CaseRef::new(0),
-                  case_el: CaseElRef::new(0)
+                  prod: ProdRef(1),
+                  case: CaseRef(0),
+                  case_el: CaseElRef(0)
                 })
               },
               input_range: InputRange {
@@ -849,7 +849,7 @@ mod tests {
                 right_index: InputTokenIndex(1)
               },
               stack_diff: StackDiffSegment(vec![
-                NamedOrAnonStep::Named(StackStep::Positive(StackSym(ProdRef::new(1)))),
+                NamedOrAnonStep::Named(StackStep::Positive(StackSym(ProdRef(1)))),
                 NamedOrAnonStep::Anon(AnonStep::Positive(AnonSym(1))),
               ]),
             },
@@ -863,14 +863,14 @@ mod tests {
             input_span: FlattenedSpanInfo {
               state_pair: StatePair {
                 left: LoweredState::Within(TokenPosition {
-                  prod: ProdRef::new(0),
-                  case: CaseRef::new(0),
-                  case_el: CaseElRef::new(0)
+                  prod: ProdRef(0),
+                  case: CaseRef(0),
+                  case_el: CaseElRef(0)
                 }),
                 right: LoweredState::Within(TokenPosition {
-                  prod: ProdRef::new(0),
-                  case: CaseRef::new(0),
-                  case_el: CaseElRef::new(1)
+                  prod: ProdRef(0),
+                  case: CaseRef(0),
+                  case_el: CaseElRef(1)
                 })
               },
               input_range: InputRange {
@@ -889,14 +889,14 @@ mod tests {
             input_span: FlattenedSpanInfo {
               state_pair: StatePair {
                 left: LoweredState::Within(TokenPosition {
-                  prod: ProdRef::new(1),
-                  case: CaseRef::new(0),
-                  case_el: CaseElRef::new(0)
+                  prod: ProdRef(1),
+                  case: CaseRef(0),
+                  case_el: CaseElRef(0)
                 }),
                 right: LoweredState::Within(TokenPosition {
-                  prod: ProdRef::new(1),
-                  case: CaseRef::new(0),
-                  case_el: CaseElRef::new(1)
+                  prod: ProdRef(1),
+                  case: CaseRef(0),
+                  case_el: CaseElRef(1)
                 })
               },
               input_range: InputRange {
@@ -915,9 +915,9 @@ mod tests {
             input_span: FlattenedSpanInfo {
               state_pair: StatePair {
                 left: LoweredState::Within(TokenPosition {
-                  prod: ProdRef::new(0),
-                  case: CaseRef::new(0),
-                  case_el: CaseElRef::new(1)
+                  prod: ProdRef(0),
+                  case: CaseRef(0),
+                  case_el: CaseElRef(1)
                 }),
                 right: LoweredState::End
               },
@@ -927,7 +927,7 @@ mod tests {
               },
               stack_diff: StackDiffSegment(vec![
                 NamedOrAnonStep::Anon(AnonStep::Negative(AnonSym(0))),
-                NamedOrAnonStep::Named(StackStep::Negative(StackSym(ProdRef::new(0)))),
+                NamedOrAnonStep::Named(StackStep::Negative(StackSym(ProdRef(0)))),
               ])
             },
             parents: None,
@@ -940,9 +940,9 @@ mod tests {
             input_span: FlattenedSpanInfo {
               state_pair: StatePair {
                 left: LoweredState::Within(TokenPosition {
-                  prod: ProdRef::new(0),
-                  case: CaseRef::new(0),
-                  case_el: CaseElRef::new(1)
+                  prod: ProdRef(0),
+                  case: CaseRef(0),
+                  case_el: CaseElRef(1)
                 }),
                 right: LoweredState::End
               },
@@ -952,10 +952,10 @@ mod tests {
               },
               stack_diff: StackDiffSegment(vec![
                 NamedOrAnonStep::Anon(AnonStep::Negative(AnonSym(0))),
-                NamedOrAnonStep::Named(StackStep::Negative(StackSym(ProdRef::new(0)))),
+                NamedOrAnonStep::Named(StackStep::Negative(StackSym(ProdRef(0)))),
                 NamedOrAnonStep::Anon(AnonStep::Negative(AnonSym(2))),
                 NamedOrAnonStep::Anon(AnonStep::Negative(AnonSym(1))),
-                NamedOrAnonStep::Named(StackStep::Negative(StackSym(ProdRef::new(1))))
+                NamedOrAnonStep::Named(StackStep::Negative(StackSym(ProdRef(1))))
               ]),
             },
             parents: None,
@@ -1034,7 +1034,7 @@ mod tests {
         stack_diff: StackDiffSegment(vec![
           NamedOrAnonStep::Anon(AnonStep::Negative(AnonSym(2))),
           NamedOrAnonStep::Anon(AnonStep::Negative(AnonSym(1))),
-          NamedOrAnonStep::Named(StackStep::Negative(StackSym(ProdRef::new(1)))),
+          NamedOrAnonStep::Named(StackStep::Negative(StackSym(ProdRef(1)))),
         ]),
       },
       parents: Some(ParentInfo {
@@ -1063,14 +1063,14 @@ mod tests {
         states: vec![
           LoweredState::Start,
           LoweredState::Within(TokenPosition {
-            prod: ProdRef::new(0),
-            case: CaseRef::new(0),
-            case_el: CaseElRef::new(0)
+            prod: ProdRef(0),
+            case: CaseRef(0),
+            case_el: CaseElRef(0)
           }),
           LoweredState::Within(TokenPosition {
-            prod: ProdRef::new(0),
-            case: CaseRef::new(0),
-            case_el: CaseElRef::new(1)
+            prod: ProdRef(0),
+            case: CaseRef(0),
+            case_el: CaseElRef(1)
           }),
           LoweredState::End,
         ],
