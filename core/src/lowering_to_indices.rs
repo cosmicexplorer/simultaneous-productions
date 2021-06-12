@@ -41,8 +41,8 @@ pub mod graph_coordinates {
     fn from(value: usize) -> Self { Self(value) }
   }
 
-  impl Into<usize> for ProdRef {
-    fn into(self) -> usize { self.0 }
+  impl From<ProdRef> for usize {
+    fn from(value: ProdRef) -> Self { value.0 }
   }
 
   #[derive(Debug, Copy, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
@@ -52,8 +52,8 @@ pub mod graph_coordinates {
     fn from(value: usize) -> Self { Self(value) }
   }
 
-  impl Into<usize> for CaseRef {
-    fn into(self) -> usize { self.0 }
+  impl From<CaseRef> for usize {
+    fn from(value: CaseRef) -> Self { value.0 }
   }
 
   #[derive(Debug, Copy, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
@@ -63,8 +63,8 @@ pub mod graph_coordinates {
     fn from(value: usize) -> Self { Self(value) }
   }
 
-  impl Into<usize> for CaseElRef {
-    fn into(self) -> usize { self.0 }
+  impl From<CaseElRef> for usize {
+    fn from(value: CaseElRef) -> Self { value.0 }
   }
 
   #[derive(Debug, Copy, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
@@ -91,11 +91,11 @@ pub mod graph_coordinates {
     fn from(value: usize) -> Self { Self(value) }
   }
 
-  impl Into<usize> for TokRef {
-    fn into(self) -> usize { self.0 }
+  impl From<TokRef> for usize {
+    fn from(value: TokRef) -> Self { value.0 }
   }
 
-  #[derive(Debug, Copy, Clone, PartialEq, Eq)]
+  #[derive(Debug, Copy, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
   pub enum CaseEl {
     Tok(TokRef),
     Prod(ProdRef),
@@ -103,347 +103,367 @@ pub mod graph_coordinates {
 }
 
 pub mod grammar_building {
-  use super::graph_coordinates as gc;
-  #[cfg(doc)]
-  use super::graph_coordinates::{ProdRef, TokenPosition};
-  #[cfg(doc)]
-  use crate::grammar_specification::{Literal, ProductionReference};
-  use crate::{grammar_specification as gs, interns::InternArena, vec::Vec};
+  pub use containers::*;
+  pub use result::*;
 
-  /* use heapless::{FnvIndexMap, FnvIndexSet, IndexMap, IndexSet, Vec}; */
-  use indexmap::IndexMap;
-  use twox_hash::XxHash64;
+  pub(super) mod containers {
+    use super::super::graph_coordinates as gc;
+    use crate::{
+      interns::InternArena,
+      types::{DefaultHasher, Vec},
+    };
 
-  use core::{
-    alloc::Allocator,
-    fmt,
-    hash::{BuildHasherDefault, Hash},
-  };
+    /* use heapless::{FnvIndexMap, FnvIndexSet, IndexMap, IndexSet, Vec}; */
+    use indexmap::IndexMap;
 
-  #[derive(Debug)]
-  pub struct Case<Arena>(pub Vec<gc::CaseEl, Arena>)
-  where Arena: Allocator;
+    use core::alloc::Allocator;
+
+    #[derive(Debug)]
+    pub struct Case<Arena>(pub Vec<gc::CaseEl, Arena>)
+    where Arena: Allocator;
 
 
-  impl<Arena> PartialEq for Case<Arena>
-  where Arena: Allocator
-  {
-    fn eq(&self, other: &Self) -> bool { self.0 == other.0 }
-  }
-
-  impl<Arena> Eq for Case<Arena> where Arena: Allocator {}
-
-  impl<Arena> Clone for Case<Arena>
-  where Arena: Allocator+Clone
-  {
-    fn clone(&self) -> Self { Self(self.0.clone()) }
-  }
-
-  #[derive(Debug)]
-  pub struct Production<Arena>(pub Vec<Case<Arena>, Arena>)
-  where Arena: Allocator;
-
-  impl<Arena> PartialEq for Production<Arena>
-  where Arena: Allocator
-  {
-    fn eq(&self, other: &Self) -> bool { self.0 == other.0 }
-  }
-
-  impl<Arena> Eq for Production<Arena> where Arena: Allocator {}
-
-  impl<Arena> Clone for Production<Arena>
-  where Arena: Allocator+Clone
-  {
-    fn clone(&self) -> Self { Self(self.0.clone()) }
-  }
-
-  #[derive(Debug)]
-  pub struct DetokenizedProductions<Arena>(
-    IndexMap<gc::ProdRef, Production<Arena>, Arena, BuildHasherDefault<XxHash64>>,
-  )
-  where Arena: Allocator+Clone;
-
-  impl<Arena> PartialEq for DetokenizedProductions<Arena>
-  where Arena: Allocator+Clone
-  {
-    fn eq(&self, other: &Self) -> bool { self.0 == other.0 }
-  }
-
-  impl<Arena> Eq for DetokenizedProductions<Arena> where Arena: Allocator+Clone {}
-
-  impl<Arena> Clone for DetokenizedProductions<Arena>
-  where Arena: Allocator+Clone
-  {
-    fn clone(&self) -> Self { Self(self.0.clone()) }
-  }
-
-  impl<Arena> DetokenizedProductions<Arena>
-  where Arena: Allocator+Clone
-  {
-    pub fn new_in(arena: Arena) -> Self { Self(IndexMap::new_in(arena)) }
-
-    pub fn insert_new_production(&mut self, entry: (gc::ProdRef, Production<Arena>)) {
-      let (key, value) = entry;
-      match self.0.insert_full(key, value) {
-        (_, Some(_)) => unreachable!("expected all productions to have unique IDs"),
-        (_, None) => (),
-      }
-    }
-
-    pub fn into_index_map(
-      self,
-    ) -> IndexMap<gc::ProdRef, Production<Arena>, Arena, BuildHasherDefault<XxHash64>> {
-      self.0
-    }
-  }
-
-  /// An alphabet of tokens for a grammar.
-  #[derive(Debug, Clone)]
-  pub struct Alphabet<Tok, Arena>(pub InternArena<Tok, gc::TokRef, Arena>)
-  where Arena: Allocator;
-
-  impl<Tok, Arena> PartialEq for Alphabet<Tok, Arena>
-  where
-    Tok: Eq,
-    Arena: Allocator,
-  {
-    fn eq(&self, other: &Self) -> bool { self.0 == other.0 }
-  }
-
-  impl<Tok, Arena> Eq for Alphabet<Tok, Arena>
-  where
-    Tok: Eq,
-    Arena: Allocator,
-  {
-  }
-
-  #[derive(Debug)]
-  pub struct AlphabetMapping<Arena>(
-    IndexMap<gc::TokRef, Vec<gc::TokenPosition, Arena>, Arena, BuildHasherDefault<XxHash64>>,
-  )
-  where Arena: Allocator+Clone;
-
-  impl<Arena> PartialEq for AlphabetMapping<Arena>
-  where Arena: Allocator+Clone
-  {
-    fn eq(&self, other: &Self) -> bool { self.0 == other.0 }
-  }
-
-  impl<Arena> Eq for AlphabetMapping<Arena> where Arena: Allocator+Clone {}
-
-  impl<Arena> Clone for AlphabetMapping<Arena>
-  where Arena: Allocator+Clone
-  {
-    fn clone(&self) -> Self { Self(self.0.clone()) }
-  }
-
-  impl<Arena> AlphabetMapping<Arena>
-  where Arena: Allocator+Clone
-  {
-    pub fn new_in(arena: Arena) -> Self { Self(IndexMap::new_in(arena)) }
-
-    pub fn insert_new_position(&mut self, entry: (gc::TokRef, gc::TokenPosition)) {
-      let (key, new_value) = entry;
-      let arena = self.0.arena();
-      let entry = self.0.entry(key).or_insert_with(|| Vec::new_in(arena));
-      (*entry).push(new_value);
-    }
-
-    pub fn into_index_map(
-      self,
-    ) -> IndexMap<gc::TokRef, Vec<gc::TokenPosition, Arena>, Arena, BuildHasherDefault<XxHash64>>
+    impl<Arena> PartialEq for Case<Arena>
+    where Arena: Allocator
     {
-      self.0
+      fn eq(&self, other: &Self) -> bool { self.0 == other.0 }
     }
-  }
 
-  pub enum GrammarConstructionError<ID> {
-    DuplicateProductionId(ID),
-    UnrecognizedProdRefId(ID),
-  }
+    impl<Arena> Eq for Case<Arena> where Arena: Allocator {}
 
-  impl<ID> fmt::Debug for GrammarConstructionError<ID>
-  where ID: fmt::Debug
-  {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-      match self {
-        Self::DuplicateProductionId(id) => {
-          write!(
-            f,
-            "GrammarConstructionError::DuplicateProductionId({:?})",
-            id
-          )
-        },
-        Self::UnrecognizedProdRefId(id) => {
-          write!(
-            f,
-            "GrammarConstructionError::UnrecognizedProdRefId({:?})",
-            id
-          )
-        },
-      }
-    }
-  }
-
-  impl<ID> PartialEq for GrammarConstructionError<ID>
-  where ID: Eq
-  {
-    fn eq(&self, other: &Self) -> bool {
-      match (self, other) {
-        (Self::DuplicateProductionId(id1), Self::DuplicateProductionId(id2)) if id1 == id2 => true,
-        (Self::UnrecognizedProdRefId(id1), Self::UnrecognizedProdRefId(id2)) if id1 == id2 => true,
-        _ => false,
-      }
-    }
-  }
-
-  impl<ID> Eq for GrammarConstructionError<ID> where ID: Eq {}
-
-  #[derive(Debug)]
-  pub struct TokenGrammar<Tok, Arena>
-  where Arena: Allocator+Clone
-  {
-    pub graph: DetokenizedProductions<Arena>,
-    pub alphabet: Alphabet<Tok, Arena>,
-    pub token_states: AlphabetMapping<Arena>,
-  }
-
-  impl<Tok, Arena> PartialEq for TokenGrammar<Tok, Arena>
-  where
-    Tok: Eq,
-    Arena: Allocator+Clone,
-  {
-    fn eq(&self, other: &Self) -> bool {
-      self.graph == other.graph
-        && self.alphabet == other.alphabet
-        && self.token_states == other.token_states
-    }
-  }
-
-  impl<Tok, Arena> Eq for TokenGrammar<Tok, Arena>
-  where
-    Tok: Eq,
-    Arena: Allocator+Clone,
-  {
-  }
-
-  impl<Tok, Arena> TokenGrammar<Tok, Arena>
-  where Arena: Allocator+Clone
-  {
-    pub fn arena(&self) -> Arena { self.alphabet.0.arena() }
-  }
-
-  impl<Tok, Arena> Clone for TokenGrammar<Tok, Arena>
-  where
-    Tok: Clone,
-    Arena: Allocator+Clone,
-  {
-    fn clone(&self) -> Self {
-      Self {
-        graph: self.graph.clone(),
-        alphabet: self.alphabet.clone(),
-        token_states: self.token_states.clone(),
-      }
-    }
-  }
-
-  impl<Tok, Arena> TokenGrammar<Tok, Arena>
-  where
-    Tok: Hash+Eq,
-    Arena: Allocator+Clone,
-  {
-    /// Walk productions and split literal strings.
-    ///
-    /// This method does two things:
-    /// 1. Flatten out [Literal]s into individual tokens, and store a mapping of
-    /// all    the [locations][TokenPosition] each token is located at.
-    /// 2. Match up [ProductionReference]s to [ProdRef]s, or error out.
-    pub fn new<ID, Lit, PR, C, P, SP>(
-      sp: SP,
-      arena: Arena,
-    ) -> Result<Self, GrammarConstructionError<ID>>
-    where
-      ID: Hash+Eq+Clone,
-      Lit: gs::Literal<Tok>,
-      PR: gs::ProductionReference<ID>,
-      C: gs::Case<ID, Tok, Lit, PR>,
-      P: gs::Production<ID, Tok, Lit, PR, C>,
-      SP: gs::SimultaneousProductions<ID, Tok, Lit, PR, C, P>,
+    impl<Arena> Clone for Case<Arena>
+    where Arena: Allocator+Clone
     {
-      let (all_prods, id_prod_mapping) = {
-        let mut all_prods: InternArena<P, gc::ProdRef, Arena> = InternArena::new(arena.clone());
-        let mut id_prod_mapping: IndexMap<ID, gc::ProdRef, Arena, BuildHasherDefault<XxHash64>> =
-          IndexMap::new_in(arena.clone());
-        for (prod_ref, prod) in sp.into_iter() {
-          let intern_token = all_prods.intern_always_new_increasing(prod);
-          let id: ID = prod_ref.into();
-          if let Some(_) = id_prod_mapping.insert(id.clone(), intern_token) {
-            return Err(GrammarConstructionError::DuplicateProductionId(id));
-          }
+      fn clone(&self) -> Self { Self(self.0.clone()) }
+    }
+
+    #[derive(Debug)]
+    pub struct Production<Arena>(pub Vec<Case<Arena>, Arena>)
+    where Arena: Allocator;
+
+    impl<Arena> PartialEq for Production<Arena>
+    where Arena: Allocator
+    {
+      fn eq(&self, other: &Self) -> bool { self.0 == other.0 }
+    }
+
+    impl<Arena> Eq for Production<Arena> where Arena: Allocator {}
+
+    impl<Arena> Clone for Production<Arena>
+    where Arena: Allocator+Clone
+    {
+      fn clone(&self) -> Self { Self(self.0.clone()) }
+    }
+
+    #[derive(Debug)]
+    pub struct DetokenizedProductions<Arena>(
+      IndexMap<gc::ProdRef, Production<Arena>, Arena, DefaultHasher>,
+    )
+    where Arena: Allocator+Clone;
+
+    impl<Arena> PartialEq for DetokenizedProductions<Arena>
+    where Arena: Allocator+Clone
+    {
+      fn eq(&self, other: &Self) -> bool { self.0 == other.0 }
+    }
+
+    impl<Arena> Eq for DetokenizedProductions<Arena> where Arena: Allocator+Clone {}
+
+    impl<Arena> Clone for DetokenizedProductions<Arena>
+    where Arena: Allocator+Clone
+    {
+      fn clone(&self) -> Self { Self(self.0.clone()) }
+    }
+
+    impl<Arena> DetokenizedProductions<Arena>
+    where Arena: Allocator+Clone
+    {
+      pub fn new_in(arena: Arena) -> Self { Self(IndexMap::new_in(arena)) }
+
+      pub fn insert_new_production(&mut self, entry: (gc::ProdRef, Production<Arena>)) {
+        let (key, value) = entry;
+        match self.0.insert_full(key, value) {
+          (_, Some(_)) => unreachable!("expected all productions to have unique IDs"),
+          (_, None) => (),
         }
-        (all_prods.into_vec(), id_prod_mapping)
-      };
+      }
 
-      // Collect all the tokens (splitting up literals) as we traverse the
-      // productions. So literal strings are "flattened" into their individual
-      // tokens.
-      let mut alphabet: InternArena<Tok, gc::TokRef, Arena> = InternArena::new(arena.clone());
-      let mut token_states: AlphabetMapping<Arena> = AlphabetMapping::new_in(arena.clone());
-      let mut ret_prods: DetokenizedProductions<Arena> =
-        DetokenizedProductions::new_in(arena.clone());
+      pub fn into_index_map(
+        self,
+      ) -> IndexMap<gc::ProdRef, Production<Arena>, Arena, DefaultHasher> {
+        self.0
+      }
+    }
 
-      for (prod_ref, prod) in all_prods.into_iter() {
-        let mut ret_cases: Vec<Case<Arena>, Arena> = Vec::new_in(arena.clone());
-        for (case_ind, case) in prod.into_iter().enumerate() {
-          let case_ref: gc::CaseRef = case_ind.into();
-          let mut ret_els: Vec<gc::CaseEl, Arena> = Vec::new_in(arena.clone());
-          /* We want to track the positions of each token within each literal as well,
-           * so we can't directly use .enumerate() */
-          let mut case_el_ind: usize = 0;
-          for el in case.into_iter() {
-            match el {
-              gs::CaseElement::Lit(lit, _) => {
-                for tok in lit.into_iter() {
-                  let tok_ref = alphabet.intern_exclusive(tok);
+    /// An alphabet of tokens for a grammar.
+    #[derive(Debug, Clone)]
+    pub struct Alphabet<Tok, Arena>(pub InternArena<Tok, gc::TokRef, Arena>)
+    where Arena: Allocator;
 
-                  ret_els.push(gc::CaseEl::Tok(tok_ref));
+    impl<Tok, Arena> PartialEq for Alphabet<Tok, Arena>
+    where
+      Tok: Eq,
+      Arena: Allocator,
+    {
+      fn eq(&self, other: &Self) -> bool { self.0 == other.0 }
+    }
 
-                  let el_ref: gc::CaseElRef = case_el_ind.into();
-                  let cur_pos = gc::TokenPosition {
-                    prod: prod_ref,
-                    case: case_ref,
-                    el: el_ref,
-                  };
-                  token_states.insert_new_position((tok_ref, cur_pos));
+    impl<Tok, Arena> Eq for Alphabet<Tok, Arena>
+    where
+      Tok: Eq,
+      Arena: Allocator,
+    {
+    }
 
-                  case_el_ind += 1;
-                }
-              },
-              gs::CaseElement::Prod(prod_ref, _) => {
-                let id: ID = prod_ref.into();
-                let pr: gc::ProdRef = match id_prod_mapping.get(&id) {
-                  Some(pr) => *pr,
-                  None => {
-                    return Err(GrammarConstructionError::UnrecognizedProdRefId(id));
-                  },
-                };
+    #[derive(Debug)]
+    pub struct AlphabetMapping<Arena>(
+      IndexMap<gc::TokRef, Vec<gc::TokenPosition, Arena>, Arena, DefaultHasher>,
+    )
+    where Arena: Allocator+Clone;
 
-                ret_els.push(gc::CaseEl::Prod(pr));
+    impl<Arena> PartialEq for AlphabetMapping<Arena>
+    where Arena: Allocator+Clone
+    {
+      fn eq(&self, other: &Self) -> bool { self.0 == other.0 }
+    }
 
-                case_el_ind += 1;
-              },
+    impl<Arena> Eq for AlphabetMapping<Arena> where Arena: Allocator+Clone {}
+
+    impl<Arena> Clone for AlphabetMapping<Arena>
+    where Arena: Allocator+Clone
+    {
+      fn clone(&self) -> Self { Self(self.0.clone()) }
+    }
+
+    impl<Arena> AlphabetMapping<Arena>
+    where Arena: Allocator+Clone
+    {
+      pub fn new_in(arena: Arena) -> Self { Self(IndexMap::new_in(arena)) }
+
+      pub fn insert_new_position(&mut self, entry: (gc::TokRef, gc::TokenPosition)) {
+        let (key, new_value) = entry;
+        let arena = self.0.arena();
+        let entry = self.0.entry(key).or_insert_with(|| Vec::new_in(arena));
+        (*entry).push(new_value);
+      }
+
+      pub fn into_index_map(
+        self,
+      ) -> IndexMap<gc::TokRef, Vec<gc::TokenPosition, Arena>, Arena, DefaultHasher> {
+        self.0
+      }
+    }
+  }
+
+  pub(super) mod result {
+    use super::{super::graph_coordinates as gc, containers::*};
+    use crate::{
+      grammar_specification as gs,
+      interns::InternArena,
+      types::{DefaultHasher, Vec},
+    };
+
+    #[cfg(doc)]
+    use super::super::graph_coordinates::{ProdRef, TokenPosition};
+    #[cfg(doc)]
+    use crate::grammar_specification::{Literal, ProductionReference};
+
+    use indexmap::IndexMap;
+
+    use core::{alloc::Allocator, fmt, hash::Hash};
+
+    pub enum GrammarConstructionError<ID> {
+      DuplicateProductionId(ID),
+      UnrecognizedProdRefId(ID),
+    }
+
+    impl<ID> fmt::Debug for GrammarConstructionError<ID>
+    where ID: fmt::Debug
+    {
+      fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match self {
+          Self::DuplicateProductionId(id) => {
+            write!(
+              f,
+              "GrammarConstructionError::DuplicateProductionId({:?})",
+              id
+            )
+          },
+          Self::UnrecognizedProdRefId(id) => {
+            write!(
+              f,
+              "GrammarConstructionError::UnrecognizedProdRefId({:?})",
+              id
+            )
+          },
+        }
+      }
+    }
+
+    impl<ID> PartialEq for GrammarConstructionError<ID>
+    where ID: Eq
+    {
+      fn eq(&self, other: &Self) -> bool {
+        match (self, other) {
+          (Self::DuplicateProductionId(id1), Self::DuplicateProductionId(id2)) if id1 == id2 => {
+            true
+          },
+          (Self::UnrecognizedProdRefId(id1), Self::UnrecognizedProdRefId(id2)) if id1 == id2 => {
+            true
+          },
+          _ => false,
+        }
+      }
+    }
+
+    impl<ID> Eq for GrammarConstructionError<ID> where ID: Eq {}
+
+    #[derive(Debug)]
+    pub struct TokenGrammar<Tok, Arena>
+    where Arena: Allocator+Clone
+    {
+      pub graph: DetokenizedProductions<Arena>,
+      pub alphabet: Alphabet<Tok, Arena>,
+      pub token_states: AlphabetMapping<Arena>,
+    }
+
+    impl<Tok, Arena> PartialEq for TokenGrammar<Tok, Arena>
+    where
+      Tok: Eq,
+      Arena: Allocator+Clone,
+    {
+      fn eq(&self, other: &Self) -> bool {
+        self.graph == other.graph
+          && self.alphabet == other.alphabet
+          && self.token_states == other.token_states
+      }
+    }
+
+    impl<Tok, Arena> Eq for TokenGrammar<Tok, Arena>
+    where
+      Tok: Eq,
+      Arena: Allocator+Clone,
+    {
+    }
+
+    impl<Tok, Arena> TokenGrammar<Tok, Arena>
+    where Arena: Allocator+Clone
+    {
+      pub fn arena(&self) -> Arena { self.alphabet.0.arena() }
+    }
+
+    impl<Tok, Arena> Clone for TokenGrammar<Tok, Arena>
+    where
+      Tok: Clone,
+      Arena: Allocator+Clone,
+    {
+      fn clone(&self) -> Self {
+        Self {
+          graph: self.graph.clone(),
+          alphabet: self.alphabet.clone(),
+          token_states: self.token_states.clone(),
+        }
+      }
+    }
+
+    impl<Tok, Arena> TokenGrammar<Tok, Arena>
+    where
+      Tok: Hash+Eq,
+      Arena: Allocator+Clone,
+    {
+      /// Walk productions and split literal strings.
+      ///
+      /// This method does two things:
+      /// 1. Flatten out [Literal]s into individual tokens, and store a mapping
+      /// of all    the [locations][TokenPosition] each token is located
+      /// at. 2. Match up [ProductionReference]s to [ProdRef]s, or error
+      /// out.
+      pub fn new<ID, PR, C, P, SP>(
+        sp: SP,
+        arena: Arena,
+      ) -> Result<Self, GrammarConstructionError<_>>
+      where
+        ID: Hash+Eq,
+        PR: gs::ProductionReference<ID=ID>,
+        C: gs::Case<PR=PR>,
+        P: gs::Production<C=C>,
+        SP: gs::SimultaneousProductions<P=P>,
+      {
+        let (all_prods, id_prod_mapping) = {
+          let mut all_prods: InternArena<P, gc::ProdRef, Arena> = InternArena::new(arena.clone());
+          let mut id_prod_mapping: IndexMap<ID, gc::ProdRef, Arena, DefaultHasher> =
+            IndexMap::new_in(arena.clone());
+          for (prod_ref, prod) in sp.into_iter() {
+            let intern_token = all_prods.intern_always_new_increasing(prod);
+            let id: PR::ID = prod_ref.into();
+            if let Some(_) = id_prod_mapping.insert(id.clone(), intern_token) {
+              return Err(GrammarConstructionError::DuplicateProductionId(id));
             }
           }
-          ret_cases.push(Case(ret_els));
-        }
-        ret_prods.insert_new_production((prod_ref, Production(ret_cases)));
-      }
+          (all_prods.into_vec(), id_prod_mapping)
+        };
 
-      Ok(Self {
-        graph: ret_prods,
-        alphabet: Alphabet(alphabet),
-        token_states,
-      })
+        // Collect all the tokens (splitting up literals) as we traverse the
+        // productions. So literal strings are "flattened" into their individual
+        // tokens.
+        let mut alphabet: InternArena<Tok, gc::TokRef, Arena> = InternArena::new(arena.clone());
+        let mut token_states: AlphabetMapping<Arena> = AlphabetMapping::new_in(arena.clone());
+        let mut ret_prods: DetokenizedProductions<Arena> =
+          DetokenizedProductions::new_in(arena.clone());
+
+        for (prod_ref, prod) in all_prods.into_iter() {
+          let mut ret_cases: Vec<Case<Arena>, Arena> = Vec::new_in(arena.clone());
+          for (case_ind, case) in prod.into_iter().enumerate() {
+            let case_ref: gc::CaseRef = case_ind.into();
+            let mut ret_els: Vec<gc::CaseEl, Arena> = Vec::new_in(arena.clone());
+            /* We want to track the positions of each token within each literal as well,
+             * so we can't directly use .enumerate() */
+            let mut case_el_ind: usize = 0;
+            for el in case.into_iter() {
+              match el {
+                gs::CaseElement::Lit(lit, _) => {
+                  for tok in lit.into_iter() {
+                    let tok_ref = alphabet.intern_exclusive(tok);
+
+                    ret_els.push(gc::CaseEl::Tok(tok_ref));
+
+                    let el_ref: gc::CaseElRef = case_el_ind.into();
+                    let cur_pos = gc::TokenPosition {
+                      prod: prod_ref,
+                      case: case_ref,
+                      el: el_ref,
+                    };
+                    token_states.insert_new_position((tok_ref, cur_pos));
+
+                    case_el_ind += 1;
+                  }
+                },
+                gs::CaseElement::Prod(prod_ref, _) => {
+                  let id: ID = prod_ref.into();
+                  let pr: gc::ProdRef = match id_prod_mapping.get(&id) {
+                    Some(pr) => *pr,
+                    None => {
+                      return Err(GrammarConstructionError::UnrecognizedProdRefId(id));
+                    },
+                  };
+
+                  ret_els.push(gc::CaseEl::Prod(pr));
+
+                  case_el_ind += 1;
+                },
+              }
+            }
+            ret_cases.push(Case(ret_els));
+          }
+          ret_prods.insert_new_production((prod_ref, Production(ret_cases)));
+        }
+
+        Ok(Self {
+          graph: ret_prods,
+          alphabet: Alphabet(alphabet),
+          token_states,
+        })
+      }
     }
   }
 }
@@ -451,9 +471,11 @@ pub mod grammar_building {
 #[cfg(test)]
 mod tests {
   use super::{grammar_building as gb, graph_coordinates as gc};
-  use crate::{interns::InternArena, test_framework::*, vec::Vec};
-
-  use indexmap::Global;
+  use crate::{
+    interns::InternArena,
+    test_framework::*,
+    types::{Global, Vec},
+  };
 
   use core::marker::PhantomData;
 

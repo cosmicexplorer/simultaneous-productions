@@ -6,6 +6,6 @@ edition = "2018"
 
 [dependencies]
 # heapless = "0.7.1"
-# indexmap = "1.6.2"
 indexmap = { git = "https://github.com/cosmicexplorer/indexmap", rev = "739d553180167f49d5316b57f618b350a4d245af" }
+priority-queue = { git = "https://github.com/cosmicexplorer/priority-queue", rev = "1e442346b34765f21ad5ed9413a628946802ef73" }
 twox-hash = "1.6.0"

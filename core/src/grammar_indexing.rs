@@ -7,20 +7,18 @@
 
 use crate::{
   lowering_to_indices::{grammar_building as gb, graph_coordinates as gc},
-  vec::Vec,
+  types::DefaultHasher,
+  types::Vec,
 };
 
 use indexmap::{IndexMap, IndexSet};
-use twox_hash::XxHash64;
 
 use core::{
   alloc::Allocator,
   cmp::{Eq, PartialEq},
   fmt,
-  hash::{BuildHasherDefault, Hash, Hasher},
+  hash::{Hash, Hasher},
 };
-
-type DefaultHasher = BuildHasherDefault<XxHash64>;
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq, Hash)]
 pub enum UnflattenedProdCaseRef {
@@ -1124,12 +1122,10 @@ where Arena: Allocator+Clone
 #[cfg(test)]
 mod tests {
   use super::*;
-  use crate::test_framework::{basic_productions, new_token_position, non_cyclic_productions};
-
-  use indexmap::Global;
-  use twox_hash::XxHash64;
-
-  use core::hash::BuildHasherDefault;
+  use crate::{
+    test_framework::{basic_productions, new_token_position, non_cyclic_productions},
+    types::{DefaultHasher, Global},
+  };
 
   #[test]
   fn token_grammar_state_indexing() {
@@ -1286,7 +1282,7 @@ mod tests {
       ]
       .iter()
       .cloned()
-      .collect::<IndexMap<_, _, Global, BuildHasherDefault<XxHash64>>>(),
+      .collect::<IndexMap<_, _, Global, DefaultHasher>>(),
     });
 
     /* Now check for indices. */
@@ -1311,7 +1307,7 @@ mod tests {
       .to_vec()
       .iter()
       .cloned()
-      .collect::<IndexMap<_, _, Global, BuildHasherDefault<XxHash64>>>()
+      .collect::<IndexMap<_, _, Global, DefaultHasher>>()
     );
 
     /* Now check that the transition graph is as we expect. */
@@ -1720,12 +1716,12 @@ mod tests {
       ]
       .iter()
       .cloned()
-      .collect::<IndexMap<_, _, Global, BuildHasherDefault<XxHash64>>>(),
+      .collect::<IndexMap<_, _, Global, DefaultHasher>>(),
     );
 
     let other_cyclic_graph_decomposition = CyclicGraphDecomposition {
       cyclic_subgraph: EpsilonNodeStateSubgraph {
-        vertex_mapping: IndexMap::<_, _, Global, BuildHasherDefault<XxHash64>>::new_in(Global),
+        vertex_mapping: IndexMap::<_, _, Global, DefaultHasher>::new_in(Global),
         trie_node_universe: Vec::new_in(Global),
       },
       pairwise_state_transitions: [
@@ -1927,7 +1923,7 @@ mod tests {
       ]
       .iter()
       .cloned()
-      .collect::<IndexMap<_, _, Global, BuildHasherDefault<XxHash64>>>(),
+      .collect::<IndexMap<_, _, Global, DefaultHasher>>(),
     };
 
     assert_eq!(
@@ -1973,7 +1969,7 @@ mod tests {
       ]
       .iter()
       .cloned()
-      .collect::<IndexMap<_, _, Global, BuildHasherDefault<XxHash64>>>()
+      .collect::<IndexMap<_, _, Global, DefaultHasher>>()
     );
 
     assert_eq!(
@@ -2064,7 +2060,7 @@ mod tests {
       ]
       .iter()
       .cloned()
-      .collect::<IndexMap<_, _, Global, BuildHasherDefault<XxHash64>>>()
+      .collect::<IndexMap<_, _, Global, DefaultHasher>>()
     );
 
     let all_trie_nodes: &[StackTrieNode<Global>] = preprocessed_grammar
@@ -2087,11 +2083,11 @@ mod tests {
           next_nodes: [StackTrieNextEntry::Incomplete(TrieNodeRef(1))]
             .iter()
             .cloned()
-            .collect::<IndexSet<_, Global, BuildHasherDefault<XxHash64>>>(),
+            .collect::<IndexSet<_, Global, DefaultHasher>>(),
           prev_nodes: [StackTrieNextEntry::Incomplete(TrieNodeRef(2))]
             .iter()
             .cloned()
-            .collect::<IndexSet<_, Global, BuildHasherDefault<XxHash64>>>()
+            .collect::<IndexSet<_, Global, DefaultHasher>>()
         },
         /* 1 */
         StackTrieNode {
@@ -2103,11 +2099,11 @@ mod tests {
           next_nodes: [StackTrieNextEntry::Incomplete(TrieNodeRef(2))]
             .iter()
             .cloned()
-            .collect::<IndexSet<_, Global, BuildHasherDefault<XxHash64>>>(),
+            .collect::<IndexSet<_, Global, DefaultHasher>>(),
           prev_nodes: [StackTrieNextEntry::Incomplete(TrieNodeRef(0))]
             .iter()
             .cloned()
-            .collect::<IndexSet<_, Global, BuildHasherDefault<XxHash64>>>()
+            .collect::<IndexSet<_, Global, DefaultHasher>>()
         },
         /* 2 */
         StackTrieNode {
@@ -2119,11 +2115,11 @@ mod tests {
           next_nodes: [StackTrieNextEntry::Incomplete(TrieNodeRef(0))]
             .iter()
             .cloned()
-            .collect::<IndexSet<_, Global, BuildHasherDefault<XxHash64>>>(),
+            .collect::<IndexSet<_, Global, DefaultHasher>>(),
           prev_nodes: [StackTrieNextEntry::Incomplete(TrieNodeRef(1))]
             .iter()
             .cloned()
-            .collect::<IndexSet<_, Global, BuildHasherDefault<XxHash64>>>()
+            .collect::<IndexSet<_, Global, DefaultHasher>>()
         },
         /* 3 */
         StackTrieNode {
@@ -2140,14 +2136,14 @@ mod tests {
           ]
           .iter()
           .cloned()
-          .collect::<IndexSet<_, Global, BuildHasherDefault<XxHash64>>>(),
+          .collect::<IndexSet<_, Global, DefaultHasher>>(),
           prev_nodes: [
             StackTrieNextEntry::Incomplete(TrieNodeRef(5)),
             StackTrieNextEntry::Incomplete(TrieNodeRef(17))
           ]
           .iter()
           .cloned()
-          .collect::<IndexSet<_, Global, BuildHasherDefault<XxHash64>>>()
+          .collect::<IndexSet<_, Global, DefaultHasher>>()
         },
         /* 4 */
         StackTrieNode {
@@ -2159,11 +2155,11 @@ mod tests {
           next_nodes: [StackTrieNextEntry::Incomplete(TrieNodeRef(5))]
             .iter()
             .cloned()
-            .collect::<IndexSet<_, Global, BuildHasherDefault<XxHash64>>>(),
+            .collect::<IndexSet<_, Global, DefaultHasher>>(),
           prev_nodes: [StackTrieNextEntry::Incomplete(TrieNodeRef(3))]
             .iter()
             .cloned()
-            .collect::<IndexSet<_, Global, BuildHasherDefault<XxHash64>>>()
+            .collect::<IndexSet<_, Global, DefaultHasher>>()
         },
         /* 5 */
         StackTrieNode {
@@ -2175,11 +2171,11 @@ mod tests {
           next_nodes: [StackTrieNextEntry::Incomplete(TrieNodeRef(3))]
             .iter()
             .cloned()
-            .collect::<IndexSet<_, Global, BuildHasherDefault<XxHash64>>>(),
+            .collect::<IndexSet<_, Global, DefaultHasher>>(),
           prev_nodes: [StackTrieNextEntry::Incomplete(TrieNodeRef(4))]
             .iter()
             .cloned()
-            .collect::<IndexSet<_, Global, BuildHasherDefault<XxHash64>>>()
+            .collect::<IndexSet<_, Global, DefaultHasher>>()
         },
         /* 6 */
         StackTrieNode {
@@ -2187,11 +2183,11 @@ mod tests {
           next_nodes: [StackTrieNextEntry::Incomplete(TrieNodeRef(7))]
             .iter()
             .cloned()
-            .collect::<IndexSet<_, Global, BuildHasherDefault<XxHash64>>>(),
+            .collect::<IndexSet<_, Global, DefaultHasher>>(),
           prev_nodes: [StackTrieNextEntry::Incomplete(TrieNodeRef(9))]
             .iter()
             .cloned()
-            .collect::<IndexSet<_, Global, BuildHasherDefault<XxHash64>>>()
+            .collect::<IndexSet<_, Global, DefaultHasher>>()
         },
         /* 7 */
         StackTrieNode {
@@ -2203,11 +2199,11 @@ mod tests {
           next_nodes: [StackTrieNextEntry::Incomplete(TrieNodeRef(8))]
             .iter()
             .cloned()
-            .collect::<IndexSet<_, Global, BuildHasherDefault<XxHash64>>>(),
+            .collect::<IndexSet<_, Global, DefaultHasher>>(),
           prev_nodes: [StackTrieNextEntry::Incomplete(TrieNodeRef(6))]
             .iter()
             .cloned()
-            .collect::<IndexSet<_, Global, BuildHasherDefault<XxHash64>>>()
+            .collect::<IndexSet<_, Global, DefaultHasher>>()
         },
         /* 8 */
         StackTrieNode {
@@ -2221,11 +2217,11 @@ mod tests {
           next_nodes: [StackTrieNextEntry::Incomplete(TrieNodeRef(9))]
             .iter()
             .cloned()
-            .collect::<IndexSet<_, Global, BuildHasherDefault<XxHash64>>>(),
+            .collect::<IndexSet<_, Global, DefaultHasher>>(),
           prev_nodes: [StackTrieNextEntry::Incomplete(TrieNodeRef(7))]
             .iter()
             .cloned()
-            .collect::<IndexSet<_, Global, BuildHasherDefault<XxHash64>>>()
+            .collect::<IndexSet<_, Global, DefaultHasher>>()
         },
         /* 9 */
         StackTrieNode {
@@ -2237,11 +2233,11 @@ mod tests {
           next_nodes: [StackTrieNextEntry::Incomplete(TrieNodeRef(6))]
             .iter()
             .cloned()
-            .collect::<IndexSet<_, Global, BuildHasherDefault<XxHash64>>>(),
+            .collect::<IndexSet<_, Global, DefaultHasher>>(),
           prev_nodes: [StackTrieNextEntry::Incomplete(TrieNodeRef(8))]
             .iter()
             .cloned()
-            .collect::<IndexSet<_, Global, BuildHasherDefault<XxHash64>>>()
+            .collect::<IndexSet<_, Global, DefaultHasher>>()
         },
         /* 10 */
         StackTrieNode {
@@ -2249,11 +2245,11 @@ mod tests {
           next_nodes: [StackTrieNextEntry::Incomplete(TrieNodeRef(11))]
             .iter()
             .cloned()
-            .collect::<IndexSet<_, Global, BuildHasherDefault<XxHash64>>>(),
+            .collect::<IndexSet<_, Global, DefaultHasher>>(),
           prev_nodes: [StackTrieNextEntry::Incomplete(TrieNodeRef(13))]
             .iter()
             .cloned()
-            .collect::<IndexSet<_, Global, BuildHasherDefault<XxHash64>>>()
+            .collect::<IndexSet<_, Global, DefaultHasher>>()
         },
         /* 11 */
         StackTrieNode {
@@ -2265,11 +2261,11 @@ mod tests {
           next_nodes: [StackTrieNextEntry::Incomplete(TrieNodeRef(12))]
             .iter()
             .cloned()
-            .collect::<IndexSet<_, Global, BuildHasherDefault<XxHash64>>>(),
+            .collect::<IndexSet<_, Global, DefaultHasher>>(),
           prev_nodes: [StackTrieNextEntry::Incomplete(TrieNodeRef(10))]
             .iter()
             .cloned()
-            .collect::<IndexSet<_, Global, BuildHasherDefault<XxHash64>>>()
+            .collect::<IndexSet<_, Global, DefaultHasher>>()
         },
         /* 12 */
         StackTrieNode {
@@ -2286,14 +2282,14 @@ mod tests {
           ]
           .iter()
           .cloned()
-          .collect::<IndexSet<_, Global, BuildHasherDefault<XxHash64>>>(),
+          .collect::<IndexSet<_, Global, DefaultHasher>>(),
           prev_nodes: [
             StackTrieNextEntry::Incomplete(TrieNodeRef(11)),
             StackTrieNextEntry::Incomplete(TrieNodeRef(15))
           ]
           .iter()
           .cloned()
-          .collect::<IndexSet<_, Global, BuildHasherDefault<XxHash64>>>()
+          .collect::<IndexSet<_, Global, DefaultHasher>>()
         },
         /* 13 */
         StackTrieNode {
@@ -2305,11 +2301,11 @@ mod tests {
           next_nodes: [StackTrieNextEntry::Incomplete(TrieNodeRef(10))]
             .iter()
             .cloned()
-            .collect::<IndexSet<_, Global, BuildHasherDefault<XxHash64>>>(),
+            .collect::<IndexSet<_, Global, DefaultHasher>>(),
           prev_nodes: [StackTrieNextEntry::Incomplete(TrieNodeRef(12))]
             .iter()
             .cloned()
-            .collect::<IndexSet<_, Global, BuildHasherDefault<XxHash64>>>()
+            .collect::<IndexSet<_, Global, DefaultHasher>>()
         },
         /* 14 */
         StackTrieNode {
@@ -2321,11 +2317,11 @@ mod tests {
           next_nodes: [StackTrieNextEntry::Incomplete(TrieNodeRef(15))]
             .iter()
             .cloned()
-            .collect::<IndexSet<_, Global, BuildHasherDefault<XxHash64>>>(),
+            .collect::<IndexSet<_, Global, DefaultHasher>>(),
           prev_nodes: [StackTrieNextEntry::Incomplete(TrieNodeRef(3))]
             .iter()
             .cloned()
-            .collect::<IndexSet<_, Global, BuildHasherDefault<XxHash64>>>()
+            .collect::<IndexSet<_, Global, DefaultHasher>>()
         },
         /* 15 */
         StackTrieNode {
@@ -2337,11 +2333,11 @@ mod tests {
           next_nodes: [StackTrieNextEntry::Incomplete(TrieNodeRef(12))]
             .iter()
             .cloned()
-            .collect::<IndexSet<_, Global, BuildHasherDefault<XxHash64>>>(),
+            .collect::<IndexSet<_, Global, DefaultHasher>>(),
           prev_nodes: [StackTrieNextEntry::Incomplete(TrieNodeRef(14))]
             .iter()
             .cloned()
-            .collect::<IndexSet<_, Global, BuildHasherDefault<XxHash64>>>()
+            .collect::<IndexSet<_, Global, DefaultHasher>>()
         },
         /* 16 */
         StackTrieNode {
@@ -2353,11 +2349,11 @@ mod tests {
           next_nodes: [StackTrieNextEntry::Incomplete(TrieNodeRef(17))]
             .iter()
             .cloned()
-            .collect::<IndexSet<_, Global, BuildHasherDefault<XxHash64>>>(),
+            .collect::<IndexSet<_, Global, DefaultHasher>>(),
           prev_nodes: [StackTrieNextEntry::Incomplete(TrieNodeRef(12))]
             .iter()
             .cloned()
-            .collect::<IndexSet<_, Global, BuildHasherDefault<XxHash64>>>()
+            .collect::<IndexSet<_, Global, DefaultHasher>>()
         },
         /* 17 */
         StackTrieNode {
@@ -2369,11 +2365,11 @@ mod tests {
           next_nodes: [StackTrieNextEntry::Incomplete(TrieNodeRef(3))]
             .iter()
             .cloned()
-            .collect::<IndexSet<_, Global, BuildHasherDefault<XxHash64>>>(),
+            .collect::<IndexSet<_, Global, DefaultHasher>>(),
           prev_nodes: [StackTrieNextEntry::Incomplete(TrieNodeRef(16))]
             .iter()
             .cloned()
-            .collect::<IndexSet<_, Global, BuildHasherDefault<XxHash64>>>()
+            .collect::<IndexSet<_, Global, DefaultHasher>>()
         }
       ]
       .as_ref()

@@ -101,6 +101,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "priority-queue"
+version = "1.1.1"
+source = "git+https://github.com/cosmicexplorer/priority-queue?rev=1e442346b34765f21ad5ed9413a628946802ef73#1e442346b34765f21ad5ed9413a628946802ef73"
+dependencies = [
+ "autocfg",
+ "indexmap 1.6.2 (git+https://github.com/cosmicexplorer/indexmap?rev=739d553180167f49d5316b57f618b350a4d245af)",
+]
+
+[[package]]
 name = "proc-macro2"
 version = "0.4.30"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -183,7 +192,7 @@ version = "0.0.0"
 dependencies = [
  "displaydoc",
  "indexmap 1.6.2 (registry+https://github.com/rust-lang/crates.io-index)",
- "priority-queue",
+ "priority-queue 0.6.0",
  "sp-core",
  "thiserror",
  "typename",
@@ -194,6 +203,7 @@ name = "sp-core"
 version = "0.0.0"
 dependencies = [
  "indexmap 1.6.2 (git+https://github.com/cosmicexplorer/indexmap?rev=739d553180167f49d5316b57f618b350a4d245af)",
+ "priority-queue 1.1.1",
  "twox-hash",
 ]
 

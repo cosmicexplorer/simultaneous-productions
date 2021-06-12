@@ -1,7 +1,7 @@
 /* Copyright (C) 2021 Danny McClanahan <dmcC2@hypnicjerk.ai> */
 /* SPDX-License-Identifier: GPL-3.0 */
 
-use crate::vec::Vec;
+use crate::types::Vec;
 
 use core::{alloc::Allocator, fmt, marker::PhantomData};
 

@@ -59,6 +59,15 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "ac74c624d6b2d21f425f752262f42188365d7b8ff1aff74c82e45136510a4857"
 
 [[package]]
+name = "priority-queue"
+version = "1.1.1"
+source = "git+https://github.com/cosmicexplorer/priority-queue?rev=1e442346b34765f21ad5ed9413a628946802ef73#1e442346b34765f21ad5ed9413a628946802ef73"
+dependencies = [
+ "autocfg",
+ "indexmap",
+]
+
+[[package]]
 name = "rand"
 version = "0.7.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -104,6 +113,7 @@ name = "sp-core"
 version = "0.0.0"
 dependencies = [
  "indexmap",
+ "priority-queue",
  "twox-hash",
 ]
 

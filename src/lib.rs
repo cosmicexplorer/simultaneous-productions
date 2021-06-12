@@ -58,7 +58,6 @@
 
 #[macro_use]
 pub mod binding;
-pub mod grammar_indexing;
 pub mod parsing;
 pub mod reconstruction;
 

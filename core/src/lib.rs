@@ -20,6 +20,7 @@
 #![no_std]
 #![feature(trait_alias)]
 #![feature(allocator_api)]
+#![feature(associated_type_defaults)]
 /* These clippy lint descriptions are purely non-functional and do not affect the functionality
  * or correctness of the code.
  * TODO: rustfmt breaks multiline comments when used one on top of another! (each with its own
@@ -58,8 +59,16 @@
 pub(crate) mod grammar_indexing;
 pub(crate) mod interns;
 pub(crate) mod lowering_to_indices;
+pub(crate) mod parsing;
 
-pub use indexmap::{collections, vec};
+pub(crate) mod types {
+  pub use indexmap::{vec::Vec, Global};
+  use twox_hash::XxHash64;
+
+  use core::hash::BuildHasherDefault;
+
+  pub type DefaultHasher = BuildHasherDefault<XxHash64>;
+}
 
 /// Definition of the trait used to parameterize an atomic input component.
 pub mod token {
@@ -72,63 +81,93 @@ pub mod token {
   pub trait Token = Debug+Display+PartialEq+Eq+Hash+Copy+Clone;
 }
 
-/// The basic structs which define an input grammar.
+/// The basic traits which define an input *grammar* (TODO: link to paper!).
 ///
-/// While macros may be able to streamline the process of declaring a grammar,
-/// their stability guarantees can be much lower than the definitions in this
-/// module.
+/// *Implementation Note: While macros may be able to streamline the process of
+/// declaring a grammar, their stability guarantees can be much lower than the
+/// definitions in this module.*
 pub mod grammar_specification {
-  use core::{convert::Into, iter::IntoIterator, marker::PhantomData};
+  #[cfg(doc)]
+  use super::input_stream::Input;
+
+  use core::{convert::Into, iter::IntoIterator};
 
   /// A contiguous sequence of tokens.
-  pub trait Literal<Tok>: IntoIterator<Item=Tok> {}
+  pub trait Literal: IntoIterator {
+    /// Specifies the type of "token" to iterate over when constructing a
+    /// grammar.
+    ///
+    /// This parameter is separate from the tokens we can actually parse with in
+    /// [Input::Tok];
+    type Tok;
+    /// Override [IntoIterator::Item] with this trait's parameter.
+    ///
+    /// *Implementation Note: We could just leave this trait empty, but that
+    /// would make it unclear there is an `Item` type that needs to be
+    /// set elsewhere.*
+    type Item = Self::Tok;
+  }
 
-  pub trait ProductionReference<ID>: Into<ID> {}
+  pub trait ProductionReference: Into<Self::ID> {
+    type ID;
+  }
 
   /// Each individual element that can be matched against some input in a case.
-  #[derive(Clone)]
-  pub enum CaseElement<ID, Tok, Lit, PR>
+  pub enum CaseElement<Lit, PR>
   where
-    Lit: Literal<Tok>,
-    PR: ProductionReference<ID>,
+    Lit: Literal,
+    PR: ProductionReference,
   {
-    Lit(Lit, PhantomData<Tok>),
-    Prod(PR, PhantomData<ID>),
+    Lit(Lit),
+    Prod(PR),
   }
 
   /// A sequence of *elements* which, if successfully matched against some
   /// *input*, represents some *production*.
-  pub trait Case<ID, Tok, Lit, PR>: IntoIterator<Item=CaseElement<ID, Tok, Lit, PR>>
-  where
-    Lit: Literal<Tok>,
-    PR: ProductionReference<ID>,
-  {
+  pub trait Case: IntoIterator {
+    type Lit: Literal;
+    type PR: ProductionReference;
+    type Tok = Self::Lit::Tok;
+    type ID = Self::PR::ID;
+    type Item = CaseElement<Self::Lit, Self::PR>;
   }
 
   /// A disjunction of cases.
-  pub trait Production<ID, Tok, Lit, PR, C>: IntoIterator<Item=C>
-  where
-    Lit: Literal<Tok>,
-    PR: ProductionReference<ID>,
-    C: Case<ID, Tok, Lit, PR>,
-  {
+  pub trait Production: IntoIterator {
+    type C: Case;
+    type PR = Self::C::PR;
+    type Tok = Self::C::Tok;
+    type ID = Self::C::ID;
+    type Item = Self::C;
   }
 
   /// A conjunction of productions.
-  pub trait SimultaneousProductions<ID, Tok, Lit, PR, C, P>: IntoIterator<Item=(PR, P)>
-  where
-    Lit: Literal<Tok>,
-    PR: ProductionReference<ID>,
-    C: Case<ID, Tok, Lit, PR>,
-    P: Production<ID, Tok, Lit, PR, C>,
-  {
+  pub trait SimultaneousProductions: IntoIterator {
+    type P: Production;
+    type C = Self::P::C;
+    type PR = Self::P::PR;
+    type Tok = Self::P::Tok;
+    type ID = Self::P::ID;
+    type Item = (Self::PR, Self::P);
   }
 }
 
+/// The basic traits which define *input* and *output*.
+pub mod input_stream {
+  use core::iter::Iterator;
+
+  pub trait Input {
+    type Tok;
+  }
+}
+
+/// Helper methods to improve ergonomics of testing in a [`no_std`] environment.
+///
+/// [`no_std`]: https://docs.rust-embedded.org/book/intro/no-std.html
 #[cfg(test)]
 pub mod test_framework {
   use super::grammar_specification as gs;
-  use crate::{lowering_to_indices::graph_coordinates as gc, vec::Vec};
+  use crate::{lowering_to_indices::graph_coordinates as gc, types::Vec};
 
   use core::{fmt, iter::IntoIterator, marker::PhantomData, str};
 
@@ -188,7 +227,7 @@ pub mod test_framework {
 
   impl gs::ProductionReference<ProductionReference> for ProductionReference {}
 
-  pub type CE = gs::CaseElement<ProductionReference, char, Lit, ProductionReference>;
+  pub type CE = gs::CaseElement<Lit, ProductionReference>;
 
   #[derive(Clone)]
   pub struct Case(Vec<CE>);
