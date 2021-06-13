@@ -19,14 +19,15 @@ use core::{
   hash::{Hash, Hasher},
 };
 
-#[derive(Debug, Copy, Clone)]
-pub struct Input<'a, Tok>(pub &'a [Tok]);
+#[derive(Debug, Clone)]
+pub struct Input<Tok, Arena>(pub Vec<Tok, Arena>)
+where Arena: Allocator;
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub struct InputTokenIndex(pub usize);
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
-struct InputRange {
+pub struct InputRange {
   left_index: InputTokenIndex,
   right_index: InputTokenIndex,
 }
@@ -386,7 +387,7 @@ where Arena: Allocator+Clone
   fn get_possible_states_for_input<Tok>(
     alphabet: &gb::Alphabet<Tok, Arena>,
     mapping: &gb::AlphabetMapping<Arena>,
-    input: &Input<Tok>,
+    input: &Input<Tok, Arena>,
   ) -> Result<Vec<PossibleStates<Arena>, Arena>, ParsingInputFailure<Tok>>
   where
     Tok: Hash+Eq+fmt::Debug+Clone,
@@ -427,7 +428,7 @@ where Arena: Allocator+Clone
 
   pub fn new<Tok>(
     grammar: gi::PreprocessedGrammar<Tok, Arena>,
-    input: &Input<Tok>,
+    input: &Input<Tok, Arena>,
   ) -> Result<Self, ParsingInputFailure<Tok>>
   where
     Tok: Hash+Eq+fmt::Debug+Clone,

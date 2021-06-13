@@ -163,12 +163,12 @@ impl EpsilonGraphVertex {
   }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Copy, Clone, PartialEq, Eq, Hash)]
 pub enum StackStepError {
   StepConcatenationError(NamedOrAnonStep, NamedOrAnonStep),
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+#[derive(Debug, Copy, Clone, PartialEq, Eq, Hash)]
 pub enum NamedOrAnonStep {
   Named(StackStep),
   Anon(AnonStep),
@@ -1181,7 +1181,7 @@ mod tests {
   #[test]
   fn token_grammar_state_indexing() {
     let prods = non_cyclic_productions();
-    let grammar: gb::TokenGrammar<Lit, Global> = gb::TokenGrammar::new(prods, Global).unwrap();
+    let grammar: gb::TokenGrammar<char, Global> = gb::TokenGrammar::new(prods, Global).unwrap();
     assert_eq!(
       grammar
         .token_states
@@ -1216,7 +1216,7 @@ mod tests {
   #[test]
   fn terminals_interval_graph() {
     let noncyclic_prods = non_cyclic_productions();
-    let noncyclic_grammar: gb::TokenGrammar<Lit, Global> =
+    let noncyclic_grammar: gb::TokenGrammar<char, Global> =
       gb::TokenGrammar::new(noncyclic_prods, Global).unwrap();
 
     let (noncyclic_interval_graph, _, _) =
@@ -1549,7 +1549,7 @@ mod tests {
     /* TODO: test `.find_start_end_indices()` and `.connect_all_vertices()` here
      * too! */
     let prods = basic_productions();
-    let grammar: gb::TokenGrammar<Lit, Global> = gb::TokenGrammar::new(prods, Global).unwrap();
+    let grammar: gb::TokenGrammar<char, Global> = gb::TokenGrammar::new(prods, Global).unwrap();
     let (interval_graph, _, _) = PreprocessedGrammar::produce_terminals_interval_graph(grammar);
     assert_eq!(&interval_graph, &EpsilonIntervalGraph {
       all_intervals: [
@@ -1748,7 +1748,7 @@ mod tests {
   #[test]
   fn noncyclic_transition_graph() {
     let prods = non_cyclic_productions();
-    let grammar: gb::TokenGrammar<Lit, Global> = gb::TokenGrammar::new(prods, Global).unwrap();
+    let grammar: gb::TokenGrammar<char, Global> = gb::TokenGrammar::new(prods, Global).unwrap();
     let preprocessed_grammar = PreprocessedGrammar::new(grammar);
     let first_a = new_token_position(0, 0, 0);
     let first_b = new_token_position(0, 0, 1);
@@ -1987,7 +1987,7 @@ mod tests {
   #[test]
   fn cyclic_transition_graph() {
     let prods = basic_productions();
-    let grammar: gb::TokenGrammar<Lit, Global> = gb::TokenGrammar::new(prods, Global).unwrap();
+    let grammar: gb::TokenGrammar<char, Global> = gb::TokenGrammar::new(prods, Global).unwrap();
     let preprocessed_grammar = PreprocessedGrammar::new(grammar);
 
     let first_a = new_token_position(0, 0, 0);

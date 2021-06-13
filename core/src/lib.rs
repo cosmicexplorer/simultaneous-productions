@@ -100,7 +100,10 @@ pub mod grammar_specification {
   #[cfg(doc)]
   use super::input_stream::Input;
 
-  use core::{convert::Into, iter::IntoIterator};
+  use core::{
+    convert::Into,
+    iter::{IntoIterator, Iterator},
+  };
 
   /// A contiguous sequence of tokens.
   pub trait Literal: IntoIterator {
@@ -123,7 +126,7 @@ pub mod grammar_specification {
   }
 
   /// Each individual element that can be matched against some input in a case.
-  #[derive(Debug, Clone, PartialEq, Eq, Hash)]
+  #[derive(Debug, Copy, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
   pub enum CaseElement<Lit, PR>
   where
     Lit: Literal,
@@ -138,28 +141,22 @@ pub mod grammar_specification {
   pub trait Case: IntoIterator {
     type Lit: Literal;
     type PR: ProductionReference;
-    type Tok = <<Self as Case>::Lit as Literal>::Tok;
-    type ID = <<Self as Case>::PR as ProductionReference>::ID;
     type Item = CaseElement<Self::Lit, Self::PR>;
   }
 
   /// A disjunction of cases.
   pub trait Production: IntoIterator {
     type C: Case;
-    type PR = <<Self as Production>::C as Case>::PR;
-    type Tok = <<Self as Production>::C as Case>::Tok;
-    type ID = <<Self as Production>::C as Case>::ID;
     type Item = Self::C;
   }
 
   /// A conjunction of productions.
   pub trait SimultaneousProductions: IntoIterator {
     type P: Production;
-    type C = <<Self as SimultaneousProductions>::P as Production>::C;
-    type PR = <<Self as SimultaneousProductions>::P as Production>::PR;
-    type Tok = <<Self as SimultaneousProductions>::P as Production>::Tok;
-    type ID = <<Self as SimultaneousProductions>::P as Production>::ID;
-    type Item = (Self::PR, Self::P);
+    type Item = (
+      <<<Self as SimultaneousProductions>::P as Production>::C as Case>::PR,
+      Self::P,
+    );
   }
 }
 
@@ -186,7 +183,10 @@ pub mod execution {
 #[cfg(test)]
 pub mod test_framework {
   use super::grammar_specification as gs;
-  use crate::{lowering_to_indices::graph_coordinates as gc, types::Vec};
+  use crate::{
+    lowering_to_indices::graph_coordinates as gc,
+    types::{Global, Vec},
+  };
 
   use core::{
     fmt,
@@ -319,6 +319,7 @@ pub mod test_framework {
   }
 
   impl gs::SimultaneousProductions for SP {
+    /* type Item = Box<(ProductionReference, Self::P), Global>; */
     type P = Production;
   }
 

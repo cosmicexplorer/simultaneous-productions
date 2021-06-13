@@ -292,7 +292,12 @@ pub mod grammar_building {
 
     use indexmap::IndexMap;
 
-    use core::{alloc::Allocator, fmt, hash::Hash};
+    use core::{
+      alloc::Allocator,
+      fmt,
+      hash::Hash,
+      iter::{IntoIterator, Iterator},
+    };
 
     pub enum GrammarConstructionError<ID> {
       DuplicateProductionId(ID),
@@ -402,16 +407,17 @@ pub mod grammar_building {
       /// of all    the [locations][TokenPosition] each token is located
       /// at. 2. Match up [ProductionReference]s to [ProdRef]s, or error
       /// out.
-      pub fn new<ID, PR, C, P, SP>(
+      pub fn new<ID, PR, C, P, SP, Lit>(
         sp: SP,
         arena: Arena,
       ) -> Result<Self, GrammarConstructionError<ID>>
       where
+        Lit: gs::Literal<Tok=Tok>+IntoIterator<Item=Tok>,
         ID: Hash+Eq+Clone,
         PR: gs::ProductionReference<ID=ID>,
-        C: gs::Case<PR=PR>,
-        P: gs::Production<C=C>,
-        SP: gs::SimultaneousProductions<P=P>,
+        C: gs::Case<PR=PR>+IntoIterator<Item=gs::CaseElement<Lit, PR>>,
+        P: gs::Production<C=C>+IntoIterator<Item=C>,
+        SP: gs::SimultaneousProductions<P=P>+IntoIterator<Item=(PR, P)>,
       {
         let (all_prods, id_prod_mapping) = {
           let mut all_prods: InternArena<P, gc::ProdRef, Arena> = InternArena::new(arena.clone());
@@ -624,7 +630,7 @@ mod tests {
       )]
       .as_ref(),
     );
-    let grammar: Result<gb::TokenGrammar<Lit, Global>, _> = gb::TokenGrammar::new(prods, Global);
+    let grammar: Result<gb::TokenGrammar<char, Global>, _> = gb::TokenGrammar::new(prods, Global);
     assert_eq!(
       grammar,
       Err(gb::GrammarConstructionError::UnrecognizedProdRefId(
