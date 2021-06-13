@@ -14,7 +14,7 @@ pub enum ReconstructionError {}
 ///
 /// TODO: why is this the appropriate representation for an intermediate
 /// reconstruction?
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+#[derive(Clone)]
 pub struct IntermediateReconstruction<Arena>
 where Arena: Allocator
 {
@@ -41,7 +41,7 @@ where Arena: Allocator+Clone
   fn allocator_handoff(&self) -> Arena { self.args.allocator().clone() }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+#[derive(Clone)]
 pub enum DirectionalIntermediateReconstruction<Arena>
 where Arena: Allocator
 {
@@ -117,11 +117,12 @@ where Arena: Allocator+Clone
 {
   pub fn joined(sub_reconstructions: Vec<Self, Arena>) -> Self {
     let arena = sub_reconstructions.allocator().clone();
-    sub_reconstructions
-      .into_iter()
-      .fold(InProgressReconstruction::new_in(arena), |acc, next| {
-        acc.join(next)
-      })
+    sub_reconstructions.into_iter().fold(
+      InProgressReconstruction {
+        elements: Vec::new_in(arena),
+      },
+      |acc, next| acc.join(next),
+    )
   }
 
   pub fn join(self, other: Self) -> Self {
@@ -277,17 +278,19 @@ where Arena: Allocator+Clone
 
     let (prologue, epilogue) = match parents {
       None => {
-        let mut left: Vec<_, Arena> = Vec::with_capacity_in(1, arena.clone());
-        left.push(ReconstructionElement::CompletedSub(
+        let mut left_ret: Vec<_, Arena> = Vec::with_capacity_in(1, arena.clone());
+        left_ret.push(ReconstructionElement::CompletedSub(
           CompleteSubReconstruction::State(*left),
         ));
-        let mut right: Vec<_, Arena> = Vec::with_capacity_in(1, arena.clone());
-        right.push(ReconstructionElement::CompletedSub(
+        let mut right_ret: Vec<_, Arena> = Vec::with_capacity_in(1, arena.clone());
+        right_ret.push(ReconstructionElement::CompletedSub(
           CompleteSubReconstruction::State(*right),
         ));
         (
-          InProgressReconstruction { elements: left },
-          InProgressReconstruction { elements: right },
+          InProgressReconstruction { elements: left_ret },
+          InProgressReconstruction {
+            elements: right_ret,
+          },
         )
       },
       Some(p::ParentInfo {
@@ -325,7 +328,7 @@ where Arena: Allocator+Clone
                 let mut elements: Vec<_, Arena> = Vec::with_capacity_in(1, arena.clone());
                 elements.push(ReconstructionElement::Intermediate(
                   DirectionalIntermediateReconstruction::Rightwards(
-                    IntermediateReconstruction::empty_for_case(*x),
+                    IntermediateReconstruction::empty_for_case(*x, arena.clone()),
                   ),
                 ));
                 Some(InProgressReconstruction { elements })
@@ -342,7 +345,7 @@ where Arena: Allocator+Clone
                 let mut elements: Vec<_, Arena> = Vec::with_capacity_in(1, arena.clone());
                 elements.push(ReconstructionElement::Intermediate(
                   DirectionalIntermediateReconstruction::Leftwards(
-                    IntermediateReconstruction::empty_for_case(*x),
+                    IntermediateReconstruction::empty_for_case(*x, arena.clone()),
                   ),
                 ));
                 Some(InProgressReconstruction { elements })
@@ -362,7 +365,7 @@ where Arena: Allocator+Clone
   }
 }
 
-#[derive(Clone)]
+#[derive(Debug, Clone)]
 pub struct CompletedCaseReconstruction<Arena>
 where Arena: Allocator
 {
@@ -370,7 +373,17 @@ where Arena: Allocator
   pub args: Vec<CompleteSubReconstruction<Arena>, Arena>,
 }
 
-#[derive(Clone)]
+impl<Arena> PartialEq for CompletedCaseReconstruction<Arena>
+where Arena: Allocator
+{
+  fn eq(&self, other: &Self) -> bool {
+    self.prod_case == other.prod_case && self.args == other.args
+  }
+}
+
+impl<Arena> Eq for CompletedCaseReconstruction<Arena> where Arena: Allocator {}
+
+#[derive(Debug, Clone)]
 pub enum CompleteSubReconstruction<Arena>
 where Arena: Allocator
 {
@@ -378,7 +391,21 @@ where Arena: Allocator
   Completed(CompletedCaseReconstruction<Arena>),
 }
 
-#[derive(Clone)]
+impl<Arena> PartialEq for CompleteSubReconstruction<Arena>
+where Arena: Allocator
+{
+  fn eq(&self, other: &Self) -> bool {
+    match (self, other) {
+      (Self::State(x), Self::State(y)) if x == y => true,
+      (Self::Completed(x), Self::Completed(y)) if x == y => true,
+      _ => false,
+    }
+  }
+}
+
+impl<Arena> Eq for CompleteSubReconstruction<Arena> where Arena: Allocator {}
+
+#[derive(Debug, Clone)]
 pub struct CompletedWholeReconstruction<Arena>(pub Vec<CompleteSubReconstruction<Arena>, Arena>)
 where Arena: Allocator;
 
@@ -401,6 +428,14 @@ where Arena: Allocator+Clone
   }
 }
 
+impl<Arena> PartialEq for CompletedWholeReconstruction<Arena>
+where Arena: Allocator
+{
+  fn eq(&self, other: &Self) -> bool { self.0 == other.0 }
+}
+
+impl<Arena> Eq for CompletedWholeReconstruction<Arena> where Arena: Allocator {}
+
 #[cfg(test)]
 mod tests {
   use super::*;
@@ -419,7 +454,8 @@ mod tests {
     let preprocessed_grammar = gi::PreprocessedGrammar::new(token_grammar);
     let string_input = "ab";
     let input = p::Input(string_input.chars().collect());
-    let parseable_grammar = p::ParseableGrammar::new::<char>(preprocessed_grammar.clone(), &input);
+    let parseable_grammar =
+      p::ParseableGrammar::new::<char>(preprocessed_grammar.clone(), &input).unwrap();
 
     let mut parse = p::Parse::initialize_with_trees_for_adjacent_pairs(&parseable_grammar);
 
@@ -445,6 +481,7 @@ mod tests {
               ))),
             ]
             .as_ref()
+            .to_vec()
           }),
           CompleteSubReconstruction::State(gi::LoweredState::End),
         ]
@@ -457,7 +494,7 @@ mod tests {
     let longer_string_input = "abab";
     let longer_input = p::Input(longer_string_input.chars().collect());
     let longer_parseable_grammar =
-      p::ParseableGrammar::new::<char>(preprocessed_grammar, &longer_input);
+      p::ParseableGrammar::new::<char>(preprocessed_grammar, &longer_input).unwrap();
     let mut longer_parse =
       p::Parse::initialize_with_trees_for_adjacent_pairs(&longer_parseable_grammar);
     let first_parsed_longer_string = longer_parse.get_next_parse();

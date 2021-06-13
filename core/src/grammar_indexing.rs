@@ -987,7 +987,7 @@ where Arena: Allocator+Clone
 /// the runtime we want just fall out of the code without too much work.
 ///
 /// TODO: ^???
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct PreprocessedGrammar<Tok, Arena>
 where Arena: Allocator+Clone
 {
