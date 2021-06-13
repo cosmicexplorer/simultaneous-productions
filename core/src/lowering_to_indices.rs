@@ -109,6 +109,7 @@ pub mod grammar_building {
   pub(super) mod containers {
     use super::super::graph_coordinates as gc;
     use crate::{
+      allocation::HandoffAllocable,
       interns::InternArena,
       types::{DefaultHasher, Vec},
     };
@@ -200,6 +201,14 @@ pub mod grammar_building {
     pub struct Alphabet<Tok, Arena>(pub InternArena<Tok, gc::TokRef, Arena>)
     where Arena: Allocator;
 
+    impl<Tok, Arena> HandoffAllocable for Alphabet<Tok, Arena>
+    where Arena: Allocator+Clone
+    {
+      type Arena = Arena;
+
+      fn allocator_handoff(&self) -> Arena { self.0.allocator_handoff() }
+    }
+
     impl<Tok, Arena> PartialEq for Alphabet<Tok, Arena>
     where
       Tok: Eq,
@@ -220,6 +229,14 @@ pub mod grammar_building {
       IndexMap<gc::TokRef, Vec<gc::TokenPosition, Arena>, Arena, DefaultHasher>,
     )
     where Arena: Allocator+Clone;
+
+    impl<Arena> HandoffAllocable for AlphabetMapping<Arena>
+    where Arena: Allocator+Clone
+    {
+      type Arena = Arena;
+
+      fn allocator_handoff(&self) -> Arena { self.0.arena() }
+    }
 
     impl<Arena> PartialEq for AlphabetMapping<Arena>
     where Arena: Allocator+Clone
@@ -242,9 +259,13 @@ pub mod grammar_building {
 
       pub fn insert_new_position(&mut self, entry: (gc::TokRef, gc::TokenPosition)) {
         let (key, new_value) = entry;
-        let arena = self.0.arena();
+        let arena = self.allocator_handoff();
         let entry = self.0.entry(key).or_insert_with(|| Vec::new_in(arena));
         (*entry).push(new_value);
+      }
+
+      pub fn get(&self, tok_ref: gc::TokRef) -> Option<&[gc::TokenPosition]> {
+        self.0.get(&tok_ref).map(|ps| ps.as_ref())
       }
 
       pub fn into_index_map(
@@ -258,6 +279,7 @@ pub mod grammar_building {
   pub(super) mod result {
     use super::{super::graph_coordinates as gc, containers::*};
     use crate::{
+      allocation::HandoffAllocable,
       grammar_specification as gs,
       interns::InternArena,
       types::{DefaultHasher, Vec},
@@ -346,10 +368,12 @@ pub mod grammar_building {
     {
     }
 
-    impl<Tok, Arena> TokenGrammar<Tok, Arena>
+    impl<Tok, Arena> HandoffAllocable for TokenGrammar<Tok, Arena>
     where Arena: Allocator+Clone
     {
-      pub fn arena(&self) -> Arena { self.alphabet.0.arena() }
+      type Arena = Arena;
+
+      fn allocator_handoff(&self) -> Arena { self.alphabet.allocator_handoff() }
     }
 
     impl<Tok, Arena> Clone for TokenGrammar<Tok, Arena>
@@ -381,9 +405,9 @@ pub mod grammar_building {
       pub fn new<ID, PR, C, P, SP>(
         sp: SP,
         arena: Arena,
-      ) -> Result<Self, GrammarConstructionError<_>>
+      ) -> Result<Self, GrammarConstructionError<ID>>
       where
-        ID: Hash+Eq,
+        ID: Hash+Eq+Clone,
         PR: gs::ProductionReference<ID=ID>,
         C: gs::Case<PR=PR>,
         P: gs::Production<C=C>,
@@ -421,7 +445,7 @@ pub mod grammar_building {
             let mut case_el_ind: usize = 0;
             for el in case.into_iter() {
               match el {
-                gs::CaseElement::Lit(lit, _) => {
+                gs::CaseElement::Lit(lit) => {
                   for tok in lit.into_iter() {
                     let tok_ref = alphabet.intern_exclusive(tok);
 
@@ -438,7 +462,7 @@ pub mod grammar_building {
                     case_el_ind += 1;
                   }
                 },
-                gs::CaseElement::Prod(prod_ref, _) => {
+                gs::CaseElement::Prod(prod_ref) => {
                   let id: ID = prod_ref.into();
                   let pr: gc::ProdRef = match id_prod_mapping.get(&id) {
                     Some(pr) => *pr,
@@ -484,12 +508,7 @@ mod tests {
     let prods = SP::from(
       [(
         ProductionReference::from("xxx"),
-        Production::from(
-          [Case::from(
-            [CE::Lit(Lit::from("cabc"), PhantomData)].as_ref(),
-          )]
-          .as_ref(),
-        ),
+        Production::from([Case::from([CE::Lit(Lit::from("cabc"))].as_ref())].as_ref()),
       )]
       .as_ref(),
     );
@@ -595,8 +614,8 @@ mod tests {
         Production::from(
           [Case::from(
             [
-              CE::Lit(Lit::from("ab"), PhantomData),
-              CE::Prod(ProductionReference::from("c"), PhantomData),
+              CE::Lit(Lit::from("ab")),
+              CE::Prod(ProductionReference::from("c")),
             ]
             .as_ref(),
           )]
@@ -605,8 +624,9 @@ mod tests {
       )]
       .as_ref(),
     );
+    let grammar: Result<gb::TokenGrammar<Lit, Global>, _> = gb::TokenGrammar::new(prods, Global);
     assert_eq!(
-      gb::TokenGrammar::new(prods, Global),
+      grammar,
       Err(gb::GrammarConstructionError::UnrecognizedProdRefId(
         ProductionReference::from("c")
       ))

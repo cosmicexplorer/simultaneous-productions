@@ -1,14 +1,20 @@
 /* Copyright (C) 2021 Danny McClanahan <dmcC2@hypnicjerk.ai> */
 /* SPDX-License-Identifier: GPL-3.0 */
 
-//! Implementation for getting a [super::grammar_indexing::PreprocessedGrammar].
+//! Implementation for getting a [PreprocessedGrammar].
 //!
-//! Performance doesn't matter here.
+//! This phase is **extremely complex** and **may not work yet!** This module
+//! detects all *stack cycles* and *contiguous state
+//! transitions* so that later in [super::parsing] we can ensure the parsing
+//! will always terminate by *bounding context-sensitivity* **(TODO: link to
+//! paper!)**.
+//!
+//! *Implementation Note: Performance doesn't matter here.*
 
 use crate::{
+  allocation::HandoffAllocable,
   lowering_to_indices::{grammar_building as gb, graph_coordinates as gc},
-  types::DefaultHasher,
-  types::Vec,
+  types::{DefaultHasher, Vec},
 };
 
 use indexmap::{IndexMap, IndexSet};
@@ -205,6 +211,14 @@ impl NamedOrAnonStep {
 pub struct StackDiffSegment<Arena>(pub Vec<NamedOrAnonStep, Arena>)
 where Arena: Allocator;
 
+impl<Arena> HandoffAllocable for StackDiffSegment<Arena>
+where Arena: Allocator+Clone
+{
+  type Arena = Arena;
+
+  fn allocator_handoff(&self) -> Arena { self.0.allocator().clone() }
+}
+
 impl<Arena> PartialEq for StackDiffSegment<Arena>
 where Arena: Allocator
 {
@@ -219,6 +233,12 @@ where Arena: Allocator
   fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
     write!(f, "StackDiffSegment({:?})", &self.0)
   }
+}
+
+impl<Arena> Hash for StackDiffSegment<Arena>
+where Arena: Allocator
+{
+  fn hash<H: Hasher>(&self, state: &mut H) { self.0.hash(state) }
 }
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq, Hash)]
@@ -288,6 +308,14 @@ where Arena: Allocator+Clone
   pub trie_node_universe: Vec<StackTrieNode<Arena>, Arena>,
 }
 
+impl<Arena> HandoffAllocable for EpsilonNodeStateSubgraph<Arena>
+where Arena: Allocator+Clone
+{
+  type Arena = Arena;
+
+  fn allocator_handoff(&self) -> Arena { self.vertex_mapping.arena() }
+}
+
 impl<Arena> PartialEq for EpsilonNodeStateSubgraph<Arena>
 where Arena: Allocator+Clone
 {
@@ -318,7 +346,7 @@ where Arena: Allocator+Clone
   }
 
   fn trie_ref_for_vertex(&mut self, vtx: &EpsilonGraphVertex) -> TrieNodeRef {
-    let basic_node = StackTrieNode::bare(*vtx, self.vertex_mapping.arena());
+    let basic_node = StackTrieNode::bare(*vtx, self.allocator_handoff());
     let trie_node_ref_for_vertex = if let Some(x) = self.vertex_mapping.get(vtx) {
       *x
     } else {
@@ -390,6 +418,14 @@ where Arena: Allocator+Clone
   pub anon_step_mapping: IndexMap<AnonSym, UnflattenedProdCaseRef, Arena, DefaultHasher>,
 }
 
+impl<Arena> HandoffAllocable for EpsilonIntervalGraph<Arena>
+where Arena: Allocator+Clone
+{
+  type Arena = Arena;
+
+  fn allocator_handoff(&self) -> Arena { self.anon_step_mapping.arena() }
+}
+
 impl<Arena> PartialEq for EpsilonIntervalGraph<Arena>
 where Arena: Allocator+Clone
 {
@@ -406,7 +442,7 @@ where Arena: Allocator+Clone
   pub fn find_start_end_indices(
     &self,
   ) -> IndexMap<gc::ProdRef, StartEndEpsilonIntervals<Arena>, Arena, DefaultHasher> {
-    let arena = self.anon_step_mapping.arena();
+    let arena = self.allocator_handoff();
     let mut epsilon_subscripts_index: IndexMap<
       gc::ProdRef,
       StartEndEpsilonIntervals<Arena>,
@@ -440,7 +476,7 @@ where Arena: Allocator+Clone
 
   pub fn connect_all_vertices(self) -> CyclicGraphDecomposition<Arena> {
     let intervals_indexed_by_start_and_end = self.find_start_end_indices();
-    let arena = self.anon_step_mapping.arena();
+    let arena = self.allocator_handoff();
     let EpsilonIntervalGraph {
       all_intervals,
       anon_step_mapping,
@@ -592,7 +628,19 @@ where Arena: Allocator
 {
   cur_traversal_intermediate_nonterminals: Vec<EpsilonGraphVertex, Arena>,
   rest_of_interval: Vec<EpsilonGraphVertex, Arena>,
-  arena: Arena,
+}
+
+impl<Arena> HandoffAllocable for IntermediateTokenTransition<Arena>
+where Arena: Allocator+Clone
+{
+  type Arena = Arena;
+
+  fn allocator_handoff(&self) -> Arena {
+    self
+      .cur_traversal_intermediate_nonterminals
+      .allocator()
+      .clone()
+  }
 }
 
 impl<Arena> PartialEq for IntermediateTokenTransition<Arena>
@@ -640,7 +688,6 @@ where Arena: Allocator+Clone
     IntermediateTokenTransition {
       cur_traversal_intermediate_nonterminals: cur_start,
       rest_of_interval: cur_rest,
-      arena: arena.clone(),
     }
   }
 
@@ -657,7 +704,7 @@ where Arena: Allocator+Clone
     IndexSet<EpsilonGraphVertex, Arena, DefaultHasher>,
     Option<SingleStackCycle<Arena>>,
   ) {
-    let arena = self.arena.clone();
+    let arena = self.allocator_handoff();
     let mut prev_nonterminals: IndexSet<EpsilonGraphVertex, Arena, DefaultHasher> =
       IndexSet::with_capacity_in(
         self.cur_traversal_intermediate_nonterminals.len(),
@@ -702,7 +749,7 @@ where Arena: Allocator+Clone
     Vec<CompletedStatePairWithVertices<Arena>, Arena>,
     Vec<IntermediateTokenTransition<Arena>, Arena>,
   ) {
-    let arena = self.arena.clone();
+    let arena = self.allocator_handoff();
     match next {
       /* Complete a transition, but also add more continuing from the start vertex. */
       EpsilonGraphVertex::Start(start_prod_ref) => {
@@ -736,7 +783,6 @@ where Arena: Allocator+Clone
             IntermediateTokenTransition {
               cur_traversal_intermediate_nonterminals: nonterminals,
               rest_of_interval: rest,
-              arena: arena.clone(),
             }
           },
         ));
@@ -806,7 +852,6 @@ where Arena: Allocator+Clone
             IntermediateTokenTransition {
               cur_traversal_intermediate_nonterminals: nonterminals,
               rest_of_interval: rest,
-              arena: arena.clone(),
             }
           },
         ));
@@ -830,7 +875,6 @@ where Arena: Allocator+Clone
         ret.push(IntermediateTokenTransition {
           cur_traversal_intermediate_nonterminals: nonterminals,
           rest_of_interval: rest,
-          arena: arena.clone(),
         });
 
         (Vec::new_in(arena), ret)
@@ -883,7 +927,6 @@ where Arena: Allocator+Clone
         single_transition.push(IntermediateTokenTransition {
           cur_traversal_intermediate_nonterminals: single_nonterminal,
           rest_of_interval: rest,
-          arena,
         });
 
         (completed, single_transition)
@@ -900,7 +943,7 @@ where Arena: Allocator+Clone
       DefaultHasher,
     >,
   ) -> TransitionIterationResult<Arena> {
-    let arena = self.arena.clone();
+    let arena = self.allocator_handoff();
 
     assert!(!self.cur_traversal_intermediate_nonterminals.is_empty());
     let start = self
@@ -962,6 +1005,14 @@ where Arena: Allocator+Clone
   pub alphabet: gb::Alphabet<Tok, Arena>,
 }
 
+impl<Tok, Arena> HandoffAllocable for PreprocessedGrammar<Tok, Arena>
+where Arena: Allocator+Clone
+{
+  type Arena = Arena;
+
+  fn allocator_handoff(&self) -> Arena { self.alphabet.allocator_handoff() }
+}
+
 impl<Tok, Arena> PreprocessedGrammar<Tok, Arena>
 where Arena: Allocator+Clone
 {
@@ -998,7 +1049,7 @@ where Arena: Allocator+Clone
       alphabet,
       token_states,
     } = grammar;
-    let arena = alphabet.0.arena();
+    let arena = alphabet.allocator_handoff();
     let prods = production_graph.into_index_map();
     /* We would really like to use .flat_map()s here, but it's not clear how to
      * do that while mutating the global `cur_anon_sym_index` value. When
@@ -1123,14 +1174,14 @@ where Arena: Allocator+Clone
 mod tests {
   use super::*;
   use crate::{
-    test_framework::{basic_productions, new_token_position, non_cyclic_productions},
+    test_framework::{basic_productions, new_token_position, non_cyclic_productions, Lit},
     types::{DefaultHasher, Global},
   };
 
   #[test]
   fn token_grammar_state_indexing() {
     let prods = non_cyclic_productions();
-    let grammar = gb::TokenGrammar::new(prods, Global).unwrap();
+    let grammar: gb::TokenGrammar<Lit, Global> = gb::TokenGrammar::new(prods, Global).unwrap();
     assert_eq!(
       grammar
         .token_states
@@ -1165,7 +1216,8 @@ mod tests {
   #[test]
   fn terminals_interval_graph() {
     let noncyclic_prods = non_cyclic_productions();
-    let noncyclic_grammar = gb::TokenGrammar::new(noncyclic_prods, Global).unwrap();
+    let noncyclic_grammar: gb::TokenGrammar<Lit, Global> =
+      gb::TokenGrammar::new(noncyclic_prods, Global).unwrap();
 
     let (noncyclic_interval_graph, _, _) =
       PreprocessedGrammar::produce_terminals_interval_graph(noncyclic_grammar);
@@ -1497,7 +1549,7 @@ mod tests {
     /* TODO: test `.find_start_end_indices()` and `.connect_all_vertices()` here
      * too! */
     let prods = basic_productions();
-    let grammar = gb::TokenGrammar::new(prods, Global).unwrap();
+    let grammar: gb::TokenGrammar<Lit, Global> = gb::TokenGrammar::new(prods, Global).unwrap();
     let (interval_graph, _, _) = PreprocessedGrammar::produce_terminals_interval_graph(grammar);
     assert_eq!(&interval_graph, &EpsilonIntervalGraph {
       all_intervals: [
@@ -1696,7 +1748,7 @@ mod tests {
   #[test]
   fn noncyclic_transition_graph() {
     let prods = non_cyclic_productions();
-    let grammar = gb::TokenGrammar::new(prods, Global).unwrap();
+    let grammar: gb::TokenGrammar<Lit, Global> = gb::TokenGrammar::new(prods, Global).unwrap();
     let preprocessed_grammar = PreprocessedGrammar::new(grammar);
     let first_a = new_token_position(0, 0, 0);
     let first_b = new_token_position(0, 0, 1);
@@ -1935,7 +1987,7 @@ mod tests {
   #[test]
   fn cyclic_transition_graph() {
     let prods = basic_productions();
-    let grammar = gb::TokenGrammar::new(prods, Global).unwrap();
+    let grammar: gb::TokenGrammar<Lit, Global> = gb::TokenGrammar::new(prods, Global).unwrap();
     let preprocessed_grammar = PreprocessedGrammar::new(grammar);
 
     let first_a = new_token_position(0, 0, 0);

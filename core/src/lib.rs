@@ -21,6 +21,7 @@
 #![feature(trait_alias)]
 #![feature(allocator_api)]
 #![feature(associated_type_defaults)]
+#![feature(generators, generator_trait)]
 /* These clippy lint descriptions are purely non-functional and do not affect the functionality
  * or correctness of the code.
  * TODO: rustfmt breaks multiline comments when used one on top of another! (each with its own
@@ -81,6 +82,15 @@ pub mod token {
   pub trait Token = Debug+Display+PartialEq+Eq+Hash+Copy+Clone;
 }
 
+pub mod allocation {
+  use core::alloc::Allocator;
+
+  pub trait HandoffAllocable {
+    type Arena: Allocator;
+    fn allocator_handoff(&self) -> Self::Arena;
+  }
+}
+
 /// The basic traits which define an input *grammar* (TODO: link to paper!).
 ///
 /// *Implementation Note: While macros may be able to streamline the process of
@@ -113,6 +123,7 @@ pub mod grammar_specification {
   }
 
   /// Each individual element that can be matched against some input in a case.
+  #[derive(Debug, Clone, PartialEq, Eq, Hash)]
   pub enum CaseElement<Lit, PR>
   where
     Lit: Literal,
@@ -127,41 +138,49 @@ pub mod grammar_specification {
   pub trait Case: IntoIterator {
     type Lit: Literal;
     type PR: ProductionReference;
-    type Tok = Self::Lit::Tok;
-    type ID = Self::PR::ID;
+    type Tok = <<Self as Case>::Lit as Literal>::Tok;
+    type ID = <<Self as Case>::PR as ProductionReference>::ID;
     type Item = CaseElement<Self::Lit, Self::PR>;
   }
 
   /// A disjunction of cases.
   pub trait Production: IntoIterator {
     type C: Case;
-    type PR = Self::C::PR;
-    type Tok = Self::C::Tok;
-    type ID = Self::C::ID;
+    type PR = <<Self as Production>::C as Case>::PR;
+    type Tok = <<Self as Production>::C as Case>::Tok;
+    type ID = <<Self as Production>::C as Case>::ID;
     type Item = Self::C;
   }
 
   /// A conjunction of productions.
   pub trait SimultaneousProductions: IntoIterator {
     type P: Production;
-    type C = Self::P::C;
-    type PR = Self::P::PR;
-    type Tok = Self::P::Tok;
-    type ID = Self::P::ID;
+    type C = <<Self as SimultaneousProductions>::P as Production>::C;
+    type PR = <<Self as SimultaneousProductions>::P as Production>::PR;
+    type Tok = <<Self as SimultaneousProductions>::P as Production>::Tok;
+    type ID = <<Self as SimultaneousProductions>::P as Production>::ID;
     type Item = (Self::PR, Self::P);
   }
 }
 
-/// The basic traits which define *input* and *output*.
-pub mod input_stream {
-  use core::iter::Iterator;
+/// The basic traits which define the *input*, *actions*, and *output* of a
+/// parse.
+pub mod execution {
+  use core::iter::{IntoIterator, Iterator};
 
-  pub trait Input {
+  pub trait Input: Iterator {
     type Tok;
+    type Item = Self::Tok;
+  }
+
+  pub trait Output: IntoIterator {
+    type Out;
+    type Item = Self::Out;
   }
 }
 
-/// Helper methods to improve ergonomics of testing in a [`no_std`] environment.
+/// Helper methods to improve the ergonomics of testing in a [`no_std`]
+/// environment.
 ///
 /// [`no_std`]: https://docs.rust-embedded.org/book/intro/no-std.html
 #[cfg(test)]
@@ -169,7 +188,13 @@ pub mod test_framework {
   use super::grammar_specification as gs;
   use crate::{lowering_to_indices::graph_coordinates as gc, types::Vec};
 
-  use core::{fmt, iter::IntoIterator, marker::PhantomData, str};
+  use core::{
+    fmt,
+    hash::{Hash, Hasher},
+    iter::IntoIterator,
+    marker::PhantomData,
+    str,
+  };
 
   pub fn new_token_position(
     prod_ind: usize,
@@ -206,7 +231,19 @@ pub mod test_framework {
     }
   }
 
-  impl gs::Literal<char> for Lit {}
+  impl gs::Literal for Lit {
+    type Tok = char;
+  }
+
+  impl Hash for Lit {
+    fn hash<H: Hasher>(&self, state: &mut H) { self.0.hash(state); }
+  }
+
+  impl PartialEq for Lit {
+    fn eq(&self, other: &Self) -> bool { self.0 == other.0 }
+  }
+
+  impl Eq for Lit {}
 
   #[derive(Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
   pub struct ProductionReference(Vec<u8>);
@@ -225,7 +262,9 @@ pub mod test_framework {
     }
   }
 
-  impl gs::ProductionReference<ProductionReference> for ProductionReference {}
+  impl gs::ProductionReference for ProductionReference {
+    type ID = Self;
+  }
 
   pub type CE = gs::CaseElement<Lit, ProductionReference>;
 
@@ -243,7 +282,10 @@ pub mod test_framework {
     fn into_iter(self) -> Self::IntoIter { self.0.into_iter() }
   }
 
-  impl gs::Case<ProductionReference, char, Lit, ProductionReference> for Case {}
+  impl gs::Case for Case {
+    type Lit = Lit;
+    type PR = ProductionReference;
+  }
 
   #[derive(Clone)]
   pub struct Production(Vec<Case>);
@@ -259,7 +301,9 @@ pub mod test_framework {
     fn into_iter(self) -> Self::IntoIter { self.0.into_iter() }
   }
 
-  impl gs::Production<ProductionReference, char, Lit, ProductionReference, Case> for Production {}
+  impl gs::Production for Production {
+    type C = Case;
+  }
 
   pub struct SP(Vec<(ProductionReference, Production)>);
 
@@ -274,16 +318,8 @@ pub mod test_framework {
     fn into_iter(self) -> Self::IntoIter { self.0.into_iter() }
   }
 
-  impl
-    gs::SimultaneousProductions<
-      ProductionReference,
-      char,
-      Lit,
-      ProductionReference,
-      Case,
-      Production,
-    > for SP
-  {
+  impl gs::SimultaneousProductions for SP {
+    type P = Production;
   }
 
   pub fn non_cyclic_productions() -> SP {
@@ -291,7 +327,7 @@ pub mod test_framework {
       [
         (
           ProductionReference::from("a"),
-          Production::from([Case::from([CE::Lit(Lit::from("ab"), PhantomData)].as_ref())].as_ref()),
+          Production::from([Case::from([CE::Lit(Lit::from("ab"))].as_ref())].as_ref()),
         ),
         (
           ProductionReference::from("b"),
@@ -299,15 +335,15 @@ pub mod test_framework {
             [
               Case::from(
                 [
-                  CE::Lit(Lit::from("ab"), PhantomData),
-                  CE::Prod(ProductionReference::from("a"), PhantomData),
+                  CE::Lit(Lit::from("ab")),
+                  CE::Prod(ProductionReference::from("a")),
                 ]
                 .as_ref(),
               ),
               Case::from(
                 [
-                  CE::Prod(ProductionReference::from("a"), PhantomData),
-                  CE::Lit(Lit::from("a"), PhantomData),
+                  CE::Prod(ProductionReference::from("a")),
+                  CE::Lit(Lit::from("a")),
                 ]
                 .as_ref(),
               ),
@@ -327,19 +363,19 @@ pub mod test_framework {
           ProductionReference::from("P_1"),
           Production::from(
             [
-              Case::from([CE::Lit(Lit::from("abc"), PhantomData)].as_ref()),
+              Case::from([CE::Lit(Lit::from("abc"))].as_ref()),
               Case::from(
                 [
-                  CE::Lit(Lit::from("a"), PhantomData),
-                  CE::Prod(ProductionReference::from("P_1"), PhantomData),
-                  CE::Lit(Lit::from("c"), PhantomData),
+                  CE::Lit(Lit::from("a")),
+                  CE::Prod(ProductionReference::from("P_1")),
+                  CE::Lit(Lit::from("c")),
                 ]
                 .as_ref(),
               ),
               Case::from(
                 [
-                  CE::Lit(Lit::from("bc"), PhantomData),
-                  CE::Prod(ProductionReference::from("P_2"), PhantomData),
+                  CE::Lit(Lit::from("bc")),
+                  CE::Prod(ProductionReference::from("P_2")),
                 ]
                 .as_ref(),
               ),
@@ -351,12 +387,12 @@ pub mod test_framework {
           ProductionReference::from("P_2"),
           Production::from(
             [
-              Case::from([CE::Prod(ProductionReference::from("P_1"), PhantomData)].as_ref()),
-              Case::from([CE::Prod(ProductionReference::from("P_2"), PhantomData)].as_ref()),
+              Case::from([CE::Prod(ProductionReference::from("P_1"))].as_ref()),
+              Case::from([CE::Prod(ProductionReference::from("P_2"))].as_ref()),
               Case::from(
                 [
-                  CE::Prod(ProductionReference::from("P_1"), PhantomData),
-                  CE::Lit(Lit::from("bc"), PhantomData),
+                  CE::Prod(ProductionReference::from("P_1")),
+                  CE::Lit(Lit::from("bc")),
                 ]
                 .as_ref(),
               ),

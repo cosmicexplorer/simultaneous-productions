@@ -1,7 +1,7 @@
 /* Copyright (C) 2021 Danny McClanahan <dmcC2@hypnicjerk.ai> */
 /* SPDX-License-Identifier: GPL-3.0 */
 
-use crate::types::Vec;
+use crate::{allocation::HandoffAllocable, types::Vec};
 
 use core::{alloc::Allocator, fmt, marker::PhantomData};
 
@@ -9,7 +9,6 @@ pub struct InternArena<T, R, Arena>
 where Arena: Allocator
 {
   obarray: Vec<T, Arena>,
-  arena: Arena,
   _x: PhantomData<R>,
 }
 
@@ -24,18 +23,24 @@ where
 }
 
 impl<T, R, Arena> InternArena<T, R, Arena>
-where Arena: Allocator+Clone
+where Arena: Allocator
 {
   pub fn new(arena: Arena) -> Self {
     Self {
-      obarray: Vec::new_in(arena.clone()),
-      arena,
+      obarray: Vec::new_in(arena),
       _x: PhantomData,
     }
   }
-
-  pub fn arena(&self) -> Arena { self.arena.clone() }
 }
+
+impl<T, R, Arena> HandoffAllocable for InternArena<T, R, Arena>
+where Arena: Allocator+Clone
+{
+  type Arena = Arena;
+
+  fn allocator_handoff(&self) -> Arena { self.obarray.allocator().clone() }
+}
+
 
 impl<T, R, Arena> Clone for InternArena<T, R, Arena>
 where
@@ -45,7 +50,6 @@ where
   fn clone(&self) -> Self {
     Self {
       obarray: self.obarray.clone(),
-      arena: self.arena.clone(),
       _x: PhantomData,
     }
   }
@@ -69,7 +73,7 @@ where
   Arena: Allocator+Clone,
 {
   pub fn into_vec(self) -> Vec<(R, T), Arena> {
-    let mut ret: Vec<(R, T), Arena> = Vec::new_in(self.arena.clone());
+    let mut ret: Vec<(R, T), Arena> = Vec::new_in(self.allocator_handoff());
     let pairs = self
       .obarray
       .into_iter()
@@ -89,7 +93,6 @@ where
     let arena = value.allocator().clone();
     Self {
       obarray: value,
-      arena,
       _x: PhantomData,
     }
   }
@@ -115,6 +118,8 @@ where
   Arena: Allocator,
 {
   fn key_for(&self, x: &T) -> Option<R> { self.obarray.iter().position(|y| y == x).map(R::from) }
+
+  pub fn retrieve_intern(&self, x: &T) -> Option<R> { self.key_for(x) }
 
   pub fn intern_exclusive(&mut self, x: T) -> R {
     self
