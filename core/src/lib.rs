@@ -61,6 +61,7 @@ pub(crate) mod grammar_indexing;
 pub(crate) mod interns;
 pub(crate) mod lowering_to_indices;
 pub(crate) mod parsing;
+pub(crate) mod reconstruction;
 
 pub(crate) mod types {
   pub use indexmap::{vec::Vec, Global};
