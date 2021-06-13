@@ -1,81 +1,133 @@
 /* Copyright (C) 2021 Danny McClanahan <dmcC2@hypnicjerk.ai> */
 /* SPDX-License-Identifier: GPL-3.0 */
 
-use crate::{grammar_indexing::*, parsing::*};
+use crate::{
+  allocation::HandoffAllocable, grammar_indexing as gi,
+  lowering_to_indices::graph_coordinates as gc, parsing as p, types::Vec,
+};
 
-use typename::TypeName;
+use core::alloc::Allocator;
 
-use std::collections::VecDeque;
-
-#[derive(Debug, Clone, PartialEq, Eq, Hash, TypeName)]
-pub struct ReconstructionError(String);
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub enum ReconstructionError {}
 
 ///
 /// TODO: why is this the appropriate representation for an intermediate
 /// reconstruction?
-#[derive(Debug, Clone, PartialEq, Eq, Hash, TypeName)]
-pub struct IntermediateReconstruction {
-  pub prod_case: ProdCaseRef,
-  pub args: Vec<CompleteSubReconstruction>,
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub struct IntermediateReconstruction<Arena>
+where Arena: Allocator
+{
+  pub prod_case: gc::ProdCaseRef,
+  pub args: Vec<CompleteSubReconstruction<Arena>, Arena>,
 }
 
-impl IntermediateReconstruction {
-  pub fn empty_for_case(prod_case: ProdCaseRef) -> Self {
+impl<Arena> IntermediateReconstruction<Arena>
+where Arena: Allocator
+{
+  pub fn empty_for_case(prod_case: gc::ProdCaseRef, arena: Arena) -> Self {
     IntermediateReconstruction {
       prod_case,
-      args: vec![],
+      args: Vec::new_in(arena),
     }
   }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Hash, TypeName)]
-pub enum DirectionalIntermediateReconstruction {
-  Rightwards(IntermediateReconstruction),
-  Leftwards(IntermediateReconstruction),
+impl<Arena> HandoffAllocable for IntermediateReconstruction<Arena>
+where Arena: Allocator+Clone
+{
+  type Arena = Arena;
+
+  fn allocator_handoff(&self) -> Arena { self.args.allocator().clone() }
 }
 
-impl DirectionalIntermediateReconstruction {
-  pub fn add_completed(self, sub: CompleteSubReconstruction) -> Self {
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub enum DirectionalIntermediateReconstruction<Arena>
+where Arena: Allocator
+{
+  Rightwards(IntermediateReconstruction<Arena>),
+  Leftwards(IntermediateReconstruction<Arena>),
+}
+
+impl<Arena> HandoffAllocable for DirectionalIntermediateReconstruction<Arena>
+where Arena: Allocator+Clone
+{
+  type Arena = Arena;
+
+  fn allocator_handoff(&self) -> Arena {
+    match self {
+      Self::Rightwards(x) => x.allocator_handoff(),
+      Self::Leftwards(x) => x.allocator_handoff(),
+    }
+  }
+}
+
+impl<Arena> DirectionalIntermediateReconstruction<Arena>
+where Arena: Allocator+Clone
+{
+  pub fn add_completed(self, sub: CompleteSubReconstruction<Arena>) -> Self {
+    let mut ret: Vec<CompleteSubReconstruction<Arena>, Arena> =
+      Vec::new_in(self.allocator_handoff());
     match self {
       Self::Rightwards(IntermediateReconstruction { prod_case, args }) => {
+        ret.extend(args.into_iter());
+        ret.push(sub);
         Self::Rightwards(IntermediateReconstruction {
           prod_case,
-          args: args.into_iter().chain(vec![sub]).collect(),
+          args: ret,
         })
       },
       Self::Leftwards(IntermediateReconstruction { prod_case, args }) => {
+        ret.push(sub);
+        ret.extend(args.into_iter());
         Self::Leftwards(IntermediateReconstruction {
           prod_case,
-          args: vec![sub].into_iter().chain(args).collect(),
+          args: ret,
         })
       },
     }
   }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Hash, TypeName)]
-pub enum ReconstructionElement {
-  Intermediate(DirectionalIntermediateReconstruction),
-  CompletedSub(CompleteSubReconstruction),
+#[derive(Clone)]
+pub enum ReconstructionElement<Arena>
+where Arena: Allocator
+{
+  Intermediate(DirectionalIntermediateReconstruction<Arena>),
+  CompletedSub(CompleteSubReconstruction<Arena>),
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Hash, TypeName)]
-pub struct InProgressReconstruction {
-  pub elements: Vec<ReconstructionElement>,
+#[derive(Clone)]
+pub struct InProgressReconstruction<Arena>
+where Arena: Allocator
+{
+  pub elements: Vec<ReconstructionElement<Arena>, Arena>,
 }
 
-impl InProgressReconstruction {
-  pub fn empty() -> Self { InProgressReconstruction { elements: vec![] } }
+impl<Arena> HandoffAllocable for InProgressReconstruction<Arena>
+where Arena: Allocator+Clone
+{
+  type Arena = Arena;
 
-  pub fn with_elements(elements: Vec<ReconstructionElement>) -> Self {
-    InProgressReconstruction {
-      elements: elements.into_iter().collect(),
-    }
+  fn allocator_handoff(&self) -> Arena { self.elements.allocator().clone() }
+}
+
+impl<Arena> InProgressReconstruction<Arena>
+where Arena: Allocator+Clone
+{
+  pub fn joined(sub_reconstructions: Vec<Self, Arena>) -> Self {
+    let arena = sub_reconstructions.allocator().clone();
+    sub_reconstructions
+      .into_iter()
+      .fold(InProgressReconstruction::new_in(arena), |acc, next| {
+        acc.join(next)
+      })
   }
 
   pub fn join(self, other: Self) -> Self {
-    dbg!(&self);
-    dbg!(&other);
+    let arena = self.allocator_handoff();
+    /* dbg!(&self); */
+    /* dbg!(&other); */
     let InProgressReconstruction {
       elements: left_initial_elements,
     } = self;
@@ -85,21 +137,24 @@ impl InProgressReconstruction {
 
     /* Initialize two queues, with the left empty, and the right containing the
      * concatenation of both objects. */
-    let mut right_side: VecDeque<_> = left_initial_elements
-      .into_iter()
-      .chain(right_initial_elements.into_iter())
-      .collect();
-    let mut left_side: VecDeque<ReconstructionElement> = VecDeque::new();
+    let mut right_side: Vec<ReconstructionElement<Arena>, Arena> = Vec::with_capacity_in(
+      left_initial_elements.len() + right_initial_elements.len(),
+      arena.clone(),
+    );
+    right_side.extend(left_initial_elements.into_iter());
+    right_side.extend(right_initial_elements.into_iter());
+
+    let mut left_side: Vec<ReconstructionElement<Arena>, Arena> = Vec::new_in(arena.clone());
     /* TODO: document how this zippering works with two queues! */
     while !right_side.is_empty() {
       if left_side.is_empty() {
-        left_side.push_back(right_side.pop_front().unwrap());
+        left_side.push(right_side.remove(0));
         continue;
       }
-      let left_intermediate = left_side.pop_back().unwrap();
-      let right_intermediate = right_side.pop_front().unwrap();
-      dbg!(&left_intermediate);
-      dbg!(&right_intermediate);
+      let left_intermediate = left_side.pop().unwrap();
+      let right_intermediate = right_side.remove(0);
+      /* dbg!(&left_intermediate); */
+      /* dbg!(&right_intermediate); */
       match (left_intermediate, right_intermediate) {
         (
           ReconstructionElement::Intermediate(DirectionalIntermediateReconstruction::Rightwards(
@@ -110,7 +165,7 @@ impl InProgressReconstruction {
           let inner_element = ReconstructionElement::Intermediate(
             DirectionalIntermediateReconstruction::Rightwards(left).add_completed(complete_right),
           );
-          left_side.push_back(inner_element);
+          left_side.push(inner_element);
         },
         (
           ReconstructionElement::CompletedSub(complete_left),
@@ -121,7 +176,7 @@ impl InProgressReconstruction {
           let inner_element = ReconstructionElement::Intermediate(
             DirectionalIntermediateReconstruction::Leftwards(right).add_completed(complete_left),
           );
-          right_side.push_front(inner_element);
+          right_side.insert(0, inner_element);
         },
         (
           ReconstructionElement::Intermediate(DirectionalIntermediateReconstruction::Rightwards(
@@ -140,16 +195,17 @@ impl InProgressReconstruction {
           if left_prod_case == right_prod_case {
             /* Complete the paired group, and push it back onto the left stack. Left was
              * chosen arbitrarily here. */
+            let mut all_args: Vec<_, Arena> =
+              Vec::with_capacity_in(left_args.len() + right_args.len(), arena.clone());
+            all_args.extend(left_args.into_iter());
+            all_args.extend(right_args.into_iter());
             let inner_element = ReconstructionElement::CompletedSub(
               CompleteSubReconstruction::Completed(CompletedCaseReconstruction {
                 prod_case: left_prod_case,
-                args: left_args
-                  .into_iter()
-                  .chain(right_args.into_iter())
-                  .collect(),
+                args: all_args,
               }),
             );
-            left_side.push_back(inner_element);
+            left_side.push(inner_element);
           } else {
             /* TODO: support non-hierarchical input! */
             todo!("non-hierarchical input recovery is not yet supported!");
@@ -162,10 +218,10 @@ impl InProgressReconstruction {
           )),
           x_right,
         ) => {
-          left_side.push_back(ReconstructionElement::Intermediate(
+          left_side.push(ReconstructionElement::Intermediate(
             DirectionalIntermediateReconstruction::Leftwards(pointing_left),
           ));
-          left_side.push_back(x_right);
+          left_side.push(x_right);
         },
         (
           x_left,
@@ -173,8 +229,8 @@ impl InProgressReconstruction {
             pointing_right,
           )),
         ) => {
-          left_side.push_back(x_left);
-          left_side.push_back(ReconstructionElement::Intermediate(
+          left_side.push(x_left);
+          left_side.push(ReconstructionElement::Intermediate(
             DirectionalIntermediateReconstruction::Rightwards(pointing_right),
           ));
         },
@@ -182,58 +238,59 @@ impl InProgressReconstruction {
           ReconstructionElement::CompletedSub(complete_left),
           ReconstructionElement::CompletedSub(complete_right),
         ) => {
-          left_side.push_back(ReconstructionElement::CompletedSub(complete_left));
-          left_side.push_back(ReconstructionElement::CompletedSub(complete_right));
+          left_side.push(ReconstructionElement::CompletedSub(complete_left));
+          left_side.push(ReconstructionElement::CompletedSub(complete_right));
         },
       }
     }
-    dbg!(&left_side);
-    InProgressReconstruction::with_elements(left_side.into_iter().collect())
+    /* dbg!(&left_side); */
+    InProgressReconstruction {
+      elements: left_side,
+    }
   }
+}
 
-  pub fn joined(sub_reconstructions: Vec<Self>) -> Self {
-    sub_reconstructions
-      .into_iter()
-      .fold(InProgressReconstruction::empty(), |acc, next| {
-        acc.join(next)
-      })
-  }
-
-  pub fn new(tree: SpanningSubtreeRef, parse: &Parse) -> Self {
-    let &Parse {
-      grammar: ParseableGrammar {
+impl<Arena> InProgressReconstruction<Arena>
+where Arena: Allocator+Clone
+{
+  pub fn new(tree: p::SpanningSubtreeRef, parse: &p::Parse<Arena>) -> Self {
+    let arena = parse.allocator_handoff();
+    let &p::Parse {
+      grammar: p::ParseableGrammar {
         ref anon_step_mapping,
         ..
       },
       ..
     } = parse;
-    let SpanningSubtree {
+    let p::SpanningSubtree {
       input_span:
-        FlattenedSpanInfo {
-          state_pair: StatePair { left, right },
-          stack_diff: StackDiffSegment(stack_diff),
+        p::FlattenedSpanInfo {
+          state_pair: gi::StatePair { left, right },
+          stack_diff: gi::StackDiffSegment(stack_diff),
           ..
         },
       parents,
       ..
     } = parse
       .get_spanning_subtree(tree)
-      .map(|x| {
-        eprintln!("tree: {:?}", x);
-        x
-      })
       .expect("tree ref should have been in parse");
 
     let (prologue, epilogue) = match parents {
-      None => (
-        InProgressReconstruction::with_elements(vec![ReconstructionElement::CompletedSub(
+      None => {
+        let mut left: Vec<_, Arena> = Vec::with_capacity_in(1, arena.clone());
+        left.push(ReconstructionElement::CompletedSub(
           CompleteSubReconstruction::State(*left),
-        )]),
-        InProgressReconstruction::with_elements(vec![ReconstructionElement::CompletedSub(
+        ));
+        let mut right: Vec<_, Arena> = Vec::with_capacity_in(1, arena.clone());
+        right.push(ReconstructionElement::CompletedSub(
           CompleteSubReconstruction::State(*right),
-        )]),
-      ),
-      Some(ParentInfo {
+        ));
+        (
+          InProgressReconstruction { elements: left },
+          InProgressReconstruction { elements: right },
+        )
+      },
+      Some(p::ParentInfo {
         left_parent,
         right_parent,
       }) => (
@@ -242,100 +299,104 @@ impl InProgressReconstruction {
       ),
     };
 
-    dbg!(&prologue);
-    dbg!(&epilogue);
-    dbg!(&stack_diff);
-    let middle_elements: Vec<InProgressReconstruction> = match parents {
-      /* The `stack_diff` is just a flattened version of the parents' diffs -- we don't add it
-       * twice! */
-      Some(_) => vec![],
+    /* dbg!(&prologue); */
+    /* dbg!(&epilogue); */
+    /* dbg!(&stack_diff); */
+    let mut middle_elements: Vec<InProgressReconstruction<Arena>, Arena> =
+      Vec::new_in(arena.clone());
+    /* The `stack_diff` is just a flattened version of the parents' diffs -- we
+     * don't add it twice! */
+    if parents.is_none() {
       /* Convert the `stack_diff` into its own set of possibly-incomplete
        * sub-reconstructions! */
-      None => stack_diff
-        .iter()
-        .flat_map(|step| match step {
-          /* NB: "named" steps are only relevant for constructing the interval graph with
-           * anonymous steps, which denote the correct `ProdCaseRef` to use, so we
-           * discard them here. */
-          NamedOrAnonStep::Named(_) => None,
-          NamedOrAnonStep::Anon(anon_step) => match anon_step {
-            AnonStep::Positive(anon_sym) => {
-              let maybe_ref: &UnflattenedProdCaseRef = anon_step_mapping
-                .get(anon_sym)
-                .unwrap_or_else(|| unreachable!("no state found for anon sym {:?}", anon_sym));
-              match maybe_ref {
-                &UnflattenedProdCaseRef::PassThrough => None,
-                &UnflattenedProdCaseRef::Case(ref x) => {
-                  Some(InProgressReconstruction::with_elements(vec![
-                    ReconstructionElement::Intermediate(
-                      DirectionalIntermediateReconstruction::Rightwards(
-                        IntermediateReconstruction::empty_for_case(*x),
-                      ),
-                    ),
-                  ]))
-                },
-              }
-            },
-            AnonStep::Negative(anon_sym) => {
-              let maybe_ref: &UnflattenedProdCaseRef = anon_step_mapping
-                .get(anon_sym)
-                .unwrap_or_else(|| unreachable!("no state found for anon sym {:?}", anon_sym));
-              match maybe_ref {
-                &UnflattenedProdCaseRef::PassThrough => None,
-                &UnflattenedProdCaseRef::Case(ref x) => {
-                  Some(InProgressReconstruction::with_elements(vec![
-                    ReconstructionElement::Intermediate(
-                      DirectionalIntermediateReconstruction::Leftwards(
-                        IntermediateReconstruction::empty_for_case(*x),
-                      ),
-                    ),
-                  ]))
-                },
-              }
-            },
+      middle_elements.extend(stack_diff.iter().flat_map(|step| match step {
+        /* NB: "named" steps are only relevant for constructing the interval graph with
+         * anonymous steps, which denote the correct `ProdCaseRef` to use, so we
+         * discard them here. */
+        gi::NamedOrAnonStep::Named(_) => None,
+        gi::NamedOrAnonStep::Anon(anon_step) => match anon_step {
+          gi::AnonStep::Positive(anon_sym) => {
+            let maybe_ref: &gi::UnflattenedProdCaseRef = anon_step_mapping
+              .get(anon_sym)
+              .unwrap_or_else(|| unreachable!("no state found for anon sym {:?}", anon_sym));
+            match maybe_ref {
+              &gi::UnflattenedProdCaseRef::PassThrough => None,
+              &gi::UnflattenedProdCaseRef::Case(ref x) => {
+                let mut elements: Vec<_, Arena> = Vec::with_capacity_in(1, arena.clone());
+                elements.push(ReconstructionElement::Intermediate(
+                  DirectionalIntermediateReconstruction::Rightwards(
+                    IntermediateReconstruction::empty_for_case(*x),
+                  ),
+                ));
+                Some(InProgressReconstruction { elements })
+              },
+            }
           },
-        })
-        .collect(),
+          gi::AnonStep::Negative(anon_sym) => {
+            let maybe_ref: &gi::UnflattenedProdCaseRef = anon_step_mapping
+              .get(anon_sym)
+              .unwrap_or_else(|| unreachable!("no state found for anon sym {:?}", anon_sym));
+            match maybe_ref {
+              &gi::UnflattenedProdCaseRef::PassThrough => None,
+              &gi::UnflattenedProdCaseRef::Case(ref x) => {
+                let mut elements: Vec<_, Arena> = Vec::with_capacity_in(1, arena.clone());
+                elements.push(ReconstructionElement::Intermediate(
+                  DirectionalIntermediateReconstruction::Leftwards(
+                    IntermediateReconstruction::empty_for_case(*x),
+                  ),
+                ));
+                Some(InProgressReconstruction { elements })
+              },
+            }
+          },
+        },
+      }));
     };
-    eprintln!("middle_elements: {:?}", middle_elements);
+    /* eprintln!("middle_elements: {:?}", middle_elements); */
 
-    InProgressReconstruction::joined(
-      vec![prologue]
-        .into_iter()
-        .chain(middle_elements.into_iter())
-        .chain(vec![epilogue])
-        .collect(),
-    )
+    let mut ret: Vec<_, Arena> = Vec::with_capacity_in(middle_elements.len() + 2, arena.clone());
+    ret.push(prologue);
+    ret.extend(middle_elements.into_iter());
+    ret.push(epilogue);
+    InProgressReconstruction::joined(ret)
   }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Hash, TypeName)]
-pub struct CompletedCaseReconstruction {
-  pub prod_case: ProdCaseRef,
-  pub args: Vec<CompleteSubReconstruction>,
+#[derive(Clone)]
+pub struct CompletedCaseReconstruction<Arena>
+where Arena: Allocator
+{
+  pub prod_case: gc::ProdCaseRef,
+  pub args: Vec<CompleteSubReconstruction<Arena>, Arena>,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Hash, TypeName)]
-pub enum CompleteSubReconstruction {
-  State(LoweredState),
-  Completed(CompletedCaseReconstruction),
+#[derive(Clone)]
+pub enum CompleteSubReconstruction<Arena>
+where Arena: Allocator
+{
+  State(gi::LoweredState),
+  Completed(CompletedCaseReconstruction<Arena>),
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Hash, TypeName)]
-pub struct CompletedWholeReconstruction(pub Vec<CompleteSubReconstruction>);
+#[derive(Clone)]
+pub struct CompletedWholeReconstruction<Arena>(pub Vec<CompleteSubReconstruction<Arena>, Arena>)
+where Arena: Allocator;
 
-impl CompletedWholeReconstruction {
-  pub fn new(maybe_completed_constructions: InProgressReconstruction) -> Self {
-    let sub_constructions: Vec<_> = maybe_completed_constructions
-      .elements
-      .into_iter()
-      .map(|el| match el {
+impl<Arena> CompletedWholeReconstruction<Arena>
+where Arena: Allocator+Clone
+{
+  pub fn new(maybe_completed_constructions: InProgressReconstruction<Arena>) -> Self {
+    let arena = maybe_completed_constructions.allocator_handoff();
+    let mut sub_constructions: Vec<_, Arena> =
+      Vec::with_capacity_in(maybe_completed_constructions.elements.len(), arena.clone());
+    sub_constructions.extend(maybe_completed_constructions.elements.into_iter().map(
+      |el| match el {
         ReconstructionElement::Intermediate(_) => {
           unreachable!("expected all sub constructions to be completed!");
         },
         ReconstructionElement::CompletedSub(x) => x,
-      })
-      .collect();
+      },
+    ));
     CompletedWholeReconstruction(sub_constructions)
   }
 }
@@ -344,80 +405,107 @@ impl CompletedWholeReconstruction {
 mod tests {
   use super::*;
   use crate::{
-    lowering_to_indices::mapping_to_tokens::*,
+    grammar_indexing as gi,
+    lowering_to_indices::{grammar_building as gb, graph_coordinates as gc},
+    parsing as p,
     test_framework::{new_token_position, non_cyclic_productions},
+    types::Global,
   };
-  use sp_core::graph_coordinates::*;
 
   #[test]
   fn reconstructs_from_parse() {
     let prods = non_cyclic_productions();
-    let token_grammar = TokenGrammar::new(&prods);
-    let preprocessed_grammar = PreprocessedGrammar::new(&token_grammar);
+    let token_grammar = gb::TokenGrammar::new(prods, Global).unwrap();
+    let preprocessed_grammar = gi::PreprocessedGrammar::new(token_grammar);
     let string_input = "ab";
-    let input = Input(string_input.chars().collect());
-    let parseable_grammar = ParseableGrammar::new::<char>(preprocessed_grammar.clone(), &input);
+    let input = p::Input(string_input.chars().collect());
+    let parseable_grammar = p::ParseableGrammar::new::<char>(preprocessed_grammar.clone(), &input);
 
-    let mut parse = Parse::initialize_with_trees_for_adjacent_pairs(&parseable_grammar);
+    let mut parse = p::Parse::initialize_with_trees_for_adjacent_pairs(&parseable_grammar);
 
     let spanning_subtree_ref = parse.get_next_parse();
     let reconstructed = InProgressReconstruction::new(spanning_subtree_ref, &parse);
     let completely_reconstructed = CompletedWholeReconstruction::new(reconstructed);
     assert_eq!(
       completely_reconstructed,
-      CompletedWholeReconstruction(vec![
-        CompleteSubReconstruction::State(LoweredState::Start),
-        CompleteSubReconstruction::Completed(CompletedCaseReconstruction {
-          prod_case: ProdCaseRef {
-            prod: ProdRef(0),
-            case: CaseRef(0)
-          },
-          args: vec![
-            CompleteSubReconstruction::State(LoweredState::Within(new_token_position(0, 0, 0))),
-            CompleteSubReconstruction::State(LoweredState::Within(new_token_position(0, 0, 1))),
-          ]
-        }),
-        CompleteSubReconstruction::State(LoweredState::End),
-      ])
+      CompletedWholeReconstruction(
+        [
+          CompleteSubReconstruction::State(gi::LoweredState::Start),
+          CompleteSubReconstruction::Completed(CompletedCaseReconstruction {
+            prod_case: gc::ProdCaseRef {
+              prod: gc::ProdRef(0),
+              case: gc::CaseRef(0)
+            },
+            args: [
+              CompleteSubReconstruction::State(gi::LoweredState::Within(new_token_position(
+                0, 0, 0
+              ))),
+              CompleteSubReconstruction::State(gi::LoweredState::Within(new_token_position(
+                0, 0, 1
+              ))),
+            ]
+            .as_ref()
+          }),
+          CompleteSubReconstruction::State(gi::LoweredState::End),
+        ]
+        .as_ref()
+        .to_vec()
+      )
     );
 
     /* Try it again, crossing productions this time. */
     let longer_string_input = "abab";
-    let longer_input = Input(longer_string_input.chars().collect());
+    let longer_input = p::Input(longer_string_input.chars().collect());
     let longer_parseable_grammar =
-      ParseableGrammar::new::<char>(preprocessed_grammar, &longer_input);
+      p::ParseableGrammar::new::<char>(preprocessed_grammar, &longer_input);
     let mut longer_parse =
-      Parse::initialize_with_trees_for_adjacent_pairs(&longer_parseable_grammar);
+      p::Parse::initialize_with_trees_for_adjacent_pairs(&longer_parseable_grammar);
     let first_parsed_longer_string = longer_parse.get_next_parse();
     let longer_reconstructed =
       InProgressReconstruction::new(first_parsed_longer_string, &longer_parse);
     let longer_completely_reconstructed = CompletedWholeReconstruction::new(longer_reconstructed);
     assert_eq!(
       longer_completely_reconstructed,
-      CompletedWholeReconstruction(vec![
-        CompleteSubReconstruction::State(LoweredState::Start),
-        CompleteSubReconstruction::Completed(CompletedCaseReconstruction {
-          prod_case: ProdCaseRef {
-            prod: ProdRef(1),
-            case: CaseRef(0),
-          },
-          args: vec![
-            CompleteSubReconstruction::State(LoweredState::Within(new_token_position(1, 0, 0))),
-            CompleteSubReconstruction::State(LoweredState::Within(new_token_position(1, 0, 1))),
-            CompleteSubReconstruction::Completed(CompletedCaseReconstruction {
-              prod_case: ProdCaseRef {
-                prod: ProdRef(0),
-                case: CaseRef(0),
-              },
-              args: vec![
-                CompleteSubReconstruction::State(LoweredState::Within(new_token_position(0, 0, 0))),
-                CompleteSubReconstruction::State(LoweredState::Within(new_token_position(0, 0, 1))),
-              ],
-            })
-          ],
-        }),
-        CompleteSubReconstruction::State(LoweredState::End),
-      ])
+      CompletedWholeReconstruction(
+        [
+          CompleteSubReconstruction::State(gi::LoweredState::Start),
+          CompleteSubReconstruction::Completed(CompletedCaseReconstruction {
+            prod_case: gc::ProdCaseRef {
+              prod: gc::ProdRef(1),
+              case: gc::CaseRef(0),
+            },
+            args: [
+              CompleteSubReconstruction::State(gi::LoweredState::Within(new_token_position(
+                1, 0, 0
+              ))),
+              CompleteSubReconstruction::State(gi::LoweredState::Within(new_token_position(
+                1, 0, 1
+              ))),
+              CompleteSubReconstruction::Completed(CompletedCaseReconstruction {
+                prod_case: gc::ProdCaseRef {
+                  prod: gc::ProdRef(0),
+                  case: gc::CaseRef(0),
+                },
+                args: [
+                  CompleteSubReconstruction::State(gi::LoweredState::Within(new_token_position(
+                    0, 0, 0
+                  ))),
+                  CompleteSubReconstruction::State(gi::LoweredState::Within(new_token_position(
+                    0, 0, 1
+                  ))),
+                ]
+                .as_ref()
+                .to_vec(),
+              })
+            ]
+            .as_ref()
+            .to_vec(),
+          }),
+          CompleteSubReconstruction::State(gi::LoweredState::End),
+        ]
+        .as_ref()
+        .to_vec()
+      )
     );
   }
 }

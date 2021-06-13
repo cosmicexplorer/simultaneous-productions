@@ -5,7 +5,7 @@
 
 use crate::{
   allocation::HandoffAllocable,
-  execution as exe, grammar_indexing as gi,
+  grammar_indexing as gi,
   lowering_to_indices::{grammar_building as gb, graph_coordinates as gc},
   types::{DefaultHasher, Vec},
 };
