@@ -426,7 +426,7 @@ pub mod grammar_building {
           for (prod_ref, prod) in sp.into_iter() {
             let intern_token = all_prods.intern_always_new_increasing(prod);
             let id: PR::ID = prod_ref.into();
-            if let Some(_) = id_prod_mapping.insert(id.clone(), intern_token) {
+            if id_prod_mapping.insert(id.clone(), intern_token).is_some() {
               return Err(GrammarConstructionError::DuplicateProductionId(id));
             }
           }

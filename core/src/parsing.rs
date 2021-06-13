@@ -241,7 +241,7 @@ where Arena: Allocator+Clone
     let arena = self.allocator_handoff();
     match self.parents {
       None => {
-        let mut states: Vec<_, Arena> = Vec::with_capacity_in(2, arena.clone());
+        let mut states: Vec<_, Arena> = Vec::with_capacity_in(2, arena);
         states.extend_from_slice(&[
           self.input_span.state_pair.left,
           self.input_span.state_pair.right,
@@ -281,7 +281,7 @@ where Arena: Allocator+Clone
         assert_eq!(left_states.last(), right_states.first());
         let right = &right_states[1..];
         let mut linked_states: Vec<gi::LoweredState, Arena> =
-          Vec::with_capacity_in(left_states.len() + right.len(), arena.clone());
+          Vec::with_capacity_in(left_states.len() + right.len(), arena);
         linked_states.extend_from_slice(&left_states);
         linked_states.extend_from_slice(right);
         CompletelyFlattenedSubtree {
@@ -363,7 +363,7 @@ where Arena: Allocator+Clone
       Vec<gi::StackDiffSegment<Arena>, Arena>,
       Arena,
       DefaultHasher,
-    > = IndexMap::new_in(arena.clone());
+    > = IndexMap::new_in(arena);
 
     for single_transition in transitions.iter() {
       let gi::CompletedStatePairWithVertices {
@@ -409,7 +409,7 @@ where Arena: Allocator+Clone
         .ok_or_else(|| ParsingInputFailure::UnknownToken(tok.clone()))?;
       let tok_positions = mapping
         .get(tok_ref)
-        .ok_or_else(|| ParsingInputFailure::UnknownTokRef(tok_ref))?;
+        .ok_or(ParsingInputFailure::UnknownTokRef(tok_ref))?;
       let mut states: Vec<_, Arena> = Vec::with_capacity_in(tok_positions.len(), arena.clone());
       states.extend(
         tok_positions
@@ -419,7 +419,7 @@ where Arena: Allocator+Clone
       ps.push(PossibleStates(states));
     }
 
-    let mut end: Vec<_, Arena> = Vec::with_capacity_in(1, arena.clone());
+    let mut end: Vec<_, Arena> = Vec::with_capacity_in(1, arena);
     end.push(gi::LoweredState::End);
     ps.push(PossibleStates(end));
 
@@ -530,7 +530,7 @@ where Arena: Allocator+Clone
       grammar: grammar.clone(),
       finishes_at_left: IndexMap::new_in(arena.clone()),
       finishes_at_right: IndexMap::new_in(arena.clone()),
-      spanning_subtree_table: Vec::new_in(arena.clone()),
+      spanning_subtree_table: Vec::new_in(arena),
     }
   }
 
@@ -683,8 +683,8 @@ where Arena: Allocator+Clone
       (
         i,
         /* FIXME: wtf is this "for" with a .map()? */
-        cmp_left.get(i).unwrap().clone(),
-        cmp_right.get(i).unwrap().clone(),
+        *cmp_left.get(i).unwrap(),
+        *cmp_right.get(i).unwrap(),
       )
     }) {
       match left_step.sequence(right_step) {
@@ -708,7 +708,7 @@ where Arena: Allocator+Clone
      * stack steps! */
     let mut all_steps: Vec<gi::NamedOrAnonStep, Arena> = Vec::with_capacity_in(
       leftover_left.len() + connected.len() + leftover_right.len(),
-      arena.clone(),
+      arena,
     );
     all_steps.extend(
       leftover_left

@@ -357,7 +357,7 @@ where Arena: Allocator+Clone
     };
     /* eprintln!("middle_elements: {:?}", middle_elements); */
 
-    let mut ret: Vec<_, Arena> = Vec::with_capacity_in(middle_elements.len() + 2, arena.clone());
+    let mut ret: Vec<_, Arena> = Vec::with_capacity_in(middle_elements.len() + 2, arena);
     ret.push(prologue);
     ret.extend(middle_elements.into_iter());
     ret.push(epilogue);
@@ -415,7 +415,7 @@ where Arena: Allocator+Clone
   pub fn new(maybe_completed_constructions: InProgressReconstruction<Arena>) -> Self {
     let arena = maybe_completed_constructions.allocator_handoff();
     let mut sub_constructions: Vec<_, Arena> =
-      Vec::with_capacity_in(maybe_completed_constructions.elements.len(), arena.clone());
+      Vec::with_capacity_in(maybe_completed_constructions.elements.len(), arena);
     sub_constructions.extend(maybe_completed_constructions.elements.into_iter().map(
       |el| match el {
         ReconstructionElement::Intermediate(_) => {

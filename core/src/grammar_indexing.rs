@@ -289,7 +289,7 @@ where Arena: Allocator+Clone
     StackTrieNode {
       stack_diff: StackDiffSegment(diff),
       next_nodes: IndexSet::new_in(arena.clone()),
-      prev_nodes: IndexSet::new_in(arena.clone()),
+      prev_nodes: IndexSet::new_in(arena),
     }
   }
 }
@@ -518,7 +518,7 @@ where Arena: Allocator+Clone
     }
 
     let merged_stack_cycles: EpsilonNodeStateSubgraph<Arena> = {
-      let mut ret = EpsilonNodeStateSubgraph::new_in(arena.clone());
+      let mut ret = EpsilonNodeStateSubgraph::new_in(arena);
       for cycle in all_stack_cycles.into_iter() {
         let SingleStackCycle(vertices) = cycle;
         for (cur_vtx_index, vtx) in vertices.iter().enumerate() {
@@ -586,7 +586,7 @@ where Arena: Allocator+Clone
   fn new_in(arena: Arena) -> Self {
     StartEndEpsilonIntervals {
       start_epsilons: Vec::new_in(arena.clone()),
-      end_epsilons: Vec::new_in(arena.clone()),
+      end_epsilons: Vec::new_in(arena),
     }
   }
 }
@@ -923,7 +923,7 @@ where Arena: Allocator+Clone
         rest.extend(rest_of_interval.iter().cloned());
 
         let mut single_transition: Vec<IntermediateTokenTransition<Arena>, Arena> =
-          Vec::with_capacity_in(1, arena.clone());
+          Vec::with_capacity_in(1, arena);
         single_transition.push(IntermediateTokenTransition {
           cur_traversal_intermediate_nonterminals: single_nonterminal,
           rest_of_interval: rest,
@@ -945,18 +945,12 @@ where Arena: Allocator+Clone
   ) -> TransitionIterationResult<Arena> {
     let arena = self.allocator_handoff();
 
-    assert!(!self.cur_traversal_intermediate_nonterminals.is_empty());
-    let start = self
-      .cur_traversal_intermediate_nonterminals
-      .iter()
-      .next()
-      .unwrap();
-    assert!(!self.rest_of_interval.is_empty());
+    let start = self.cur_traversal_intermediate_nonterminals[0];
     let next = self.rest_of_interval[0];
 
     let (intermediate_nonterminals_for_next_step, cycles) = self.check_for_cycles(next);
     let (completed, todo) = self.process_next_vertex(
-      start,
+      &start,
       next,
       indexed_intervals,
       intermediate_nonterminals_for_next_step,
@@ -969,7 +963,7 @@ where Arena: Allocator+Clone
        * traversed them! */
       Some(cycle) => {
         known_cycles.push(cycle);
-        Vec::new_in(arena.clone())
+        Vec::new_in(arena)
       },
     };
     TransitionIterationResult {

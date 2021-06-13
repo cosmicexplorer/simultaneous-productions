@@ -1,6 +1,9 @@
 /* Copyright (C) 2021 Danny McClanahan <dmcC2@hypnicjerk.ai> */
 /* SPDX-License-Identifier: GPL-3.0 */
 
+//! TODO: this module should probably just be thrown out completely but may
+//! have some interesting ideas!
+
 use super::{api::*, grammar_indexing::*, reconstruction::*};
 use sp_core::{graph_coordinates::*, token::Token};
 
@@ -84,7 +87,7 @@ impl<Tok: Token> ProvidesProduction<Tok> for TypedProduction<Tok> {
 pub struct TypedSimultaneousProductions<
   Tok: Token,
   /* Members: HList, */
-  > {
+> {
   /* FIXME: remove 'static! */
   pub underlying: SimultaneousProductions<'static, Tok>,
   #[allow(clippy::redundant_allocation)]
