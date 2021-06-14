@@ -335,6 +335,7 @@ mod state {
     P: gs::Production<C=C>+IntoIterator<Item=C>,
     SP: gs::SimultaneousProductions<P=P>+IntoIterator<Item=(PR, P)>,
   {
+    #[allow(dead_code)]
     pub fn try_index_with_allocator<Arena>(
       self,
       arena: Arena,
@@ -353,6 +354,7 @@ mod state {
   impl<Tok, Arena> Detokenized<Tok, Arena>
   where Arena: Allocator+Clone
   {
+    #[allow(dead_code)]
     pub fn index(self) -> Indexed<Tok, Arena> { Indexed(gi::PreprocessedGrammar::new(self.0)) }
   }
 
@@ -365,6 +367,7 @@ mod state {
     Tok: Hash+Eq+fmt::Debug+Clone,
     Arena: Allocator+Clone,
   {
+    #[allow(dead_code)]
     /* FIXME: should be crate::execution::Input!! */
     pub fn attach_input(
       self,
@@ -381,6 +384,7 @@ mod state {
   impl<Arena> Ready<Arena>
   where Arena: Allocator+Clone
   {
+    #[allow(dead_code)]
     pub fn initialize_parse(self) -> InProgress<Arena> {
       InProgress(p::Parse::initialize_with_trees_for_adjacent_pairs(self.0))
     }

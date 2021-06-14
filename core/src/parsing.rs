@@ -886,9 +886,7 @@ where Arena: Allocator+Clone
 mod tests {
   use super::*;
   use crate::{
-    grammar_indexing as gi,
-    lowering_to_indices::grammar_building as gb,
-    state,
+    grammar_indexing as gi, state,
     test_framework::{new_token_position, non_cyclic_productions},
     types::Global,
   };

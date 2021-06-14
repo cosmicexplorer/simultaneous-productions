@@ -445,7 +445,7 @@ mod tests {
   use super::*;
   use crate::{
     grammar_indexing as gi,
-    lowering_to_indices::{grammar_building as gb, graph_coordinates as gc},
+    lowering_to_indices::graph_coordinates as gc,
     parsing as p, state,
     test_framework::{new_token_position, non_cyclic_productions},
     types::Global,
