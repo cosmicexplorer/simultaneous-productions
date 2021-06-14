@@ -104,7 +104,7 @@ pub mod allocation {
 /// definitions in this module.*
 pub mod grammar_specification {
   #[cfg(doc)]
-  use super::input_stream::Input;
+  use super::execution::Input;
 
   use core::iter::Iterator;
 
@@ -114,7 +114,7 @@ pub mod grammar_specification {
     /// grammar.
     ///
     /// This parameter is *separate from, but may be the same as* the tokens we
-    /// can actually parse with in [Input::Tok].
+    /// can actually parse with [Input::InChunk].
     type Tok;
     /// Override [Iterator::Item] with this trait's parameter.
     ///
@@ -314,85 +314,110 @@ pub mod execution {
   }
 }
 
+/// The various phases that a grammar and/or a parse goes through.
 mod state {
-  use crate::{
-    grammar_indexing as gi, grammar_specification as gs,
-    lowering_to_indices::grammar_building as gb, parsing as p,
-  };
+  #[cfg(doc)]
+  use crate::execution::Input;
+  #[cfg(doc)]
+  use active::{InProgress, Ready};
+  #[cfg(doc)]
+  use preprocessing::{Detokenized, Indexed, Init};
 
-  use core::{alloc::Allocator, fmt, hash::Hash, iter::IntoIterator};
+  /// Phases of interpreting an S.P. grammar into an executable specification.
+  ///
+  /// `[Init] -> [Detokenized] -> [Indexed] (-> [Ready])`
+  pub mod preprocessing {
+    use crate::{
+      grammar_indexing as gi, grammar_specification as gs,
+      lowering_to_indices::grammar_building as gb, parsing as p,
+    };
 
-  #[derive(Debug, Copy, Clone)]
-  pub struct Init<SP>(pub SP);
+    use core::{alloc::Allocator, fmt, hash::Hash, iter::IntoIterator};
 
-  impl<Tok, Lit, ID, PR, C, P, SP> Init<SP>
-  where
-    Tok: Hash+Eq,
-    Lit: gs::Literal<Tok=Tok>+IntoIterator<Item=Tok>,
-    ID: Hash+Eq+Clone,
-    PR: gs::ProductionReference<ID=ID>,
-    C: gs::Case<PR=PR>+IntoIterator<Item=gs::CaseElement<Lit, PR>>,
-    P: gs::Production<C=C>+IntoIterator<Item=C>,
-    SP: gs::SimultaneousProductions<P=P>+IntoIterator<Item=(PR, P)>,
-  {
-    #[allow(dead_code)]
-    pub fn try_index_with_allocator<Arena>(
-      self,
-      arena: Arena,
-    ) -> Result<Detokenized<Tok, Arena>, gb::GrammarConstructionError<ID>>
+    #[derive(Debug, Copy, Clone)]
+    pub struct Init<SP>(pub SP);
+
+    impl<Tok, Lit, ID, PR, C, P, SP> Init<SP>
     where
+      Tok: Hash+Eq,
+      Lit: gs::Literal<Tok=Tok>+IntoIterator<Item=Tok>,
+      ID: Hash+Eq+Clone,
+      PR: gs::ProductionReference<ID=ID>,
+      C: gs::Case<PR=PR>+IntoIterator<Item=gs::CaseElement<Lit, PR>>,
+      P: gs::Production<C=C>+IntoIterator<Item=C>,
+      SP: gs::SimultaneousProductions<P=P>+IntoIterator<Item=(PR, P)>,
+    {
+      #[allow(dead_code)]
+      pub fn try_index_with_allocator<Arena>(
+        self,
+        arena: Arena,
+      ) -> Result<Detokenized<Tok, Arena>, gb::GrammarConstructionError<ID>>
+      where
+        Arena: Allocator+Clone,
+      {
+        Ok(Detokenized(gb::TokenGrammar::new(self.0, arena)?))
+      }
+    }
+
+    #[derive(Debug, Clone)]
+    pub struct Detokenized<Tok, Arena>(pub gb::TokenGrammar<Tok, Arena>)
+    where Arena: Allocator+Clone;
+
+    impl<Tok, Arena> Detokenized<Tok, Arena>
+    where Arena: Allocator+Clone
+    {
+      #[allow(dead_code)]
+      pub fn index(self) -> Indexed<Tok, Arena> { Indexed(gi::PreprocessedGrammar::new(self.0)) }
+    }
+
+    #[derive(Debug, Clone)]
+    pub struct Indexed<Tok, Arena>(pub gi::PreprocessedGrammar<Tok, Arena>)
+    where Arena: Allocator+Clone;
+
+    impl<Tok, Arena> Indexed<Tok, Arena>
+    where
+      Tok: Hash+Eq+fmt::Debug+Clone,
       Arena: Allocator+Clone,
     {
-      Ok(Detokenized(gb::TokenGrammar::new(self.0, arena)?))
+      #[allow(dead_code)]
+      /* FIXME: should be crate::execution::Input!! */
+      pub fn attach_input(
+        self,
+        input: &p::Input<Tok, Arena>,
+      ) -> Result<super::active::Ready<Arena>, p::ParsingInputFailure<Tok>> {
+        Ok(super::active::Ready(p::ParseableGrammar::new(
+          self.0, input,
+        )?))
+      }
     }
   }
 
-  #[derive(Debug, Clone)]
-  pub struct Detokenized<Tok, Arena>(pub gb::TokenGrammar<Tok, Arena>)
-  where Arena: Allocator+Clone;
+  /// Phases of receiving an [Input] and parsing something useful out of it.
+  ///
+  /// `([Indexed] ->) [Ready] -> [InProgress]`
+  pub mod active {
+    use crate::parsing as p;
 
-  impl<Tok, Arena> Detokenized<Tok, Arena>
-  where Arena: Allocator+Clone
-  {
-    #[allow(dead_code)]
-    pub fn index(self) -> Indexed<Tok, Arena> { Indexed(gi::PreprocessedGrammar::new(self.0)) }
-  }
+    use core::alloc::Allocator;
 
-  #[derive(Debug, Clone)]
-  pub struct Indexed<Tok, Arena>(pub gi::PreprocessedGrammar<Tok, Arena>)
-  where Arena: Allocator+Clone;
 
-  impl<Tok, Arena> Indexed<Tok, Arena>
-  where
-    Tok: Hash+Eq+fmt::Debug+Clone,
-    Arena: Allocator+Clone,
-  {
-    #[allow(dead_code)]
-    /* FIXME: should be crate::execution::Input!! */
-    pub fn attach_input(
-      self,
-      input: &p::Input<Tok, Arena>,
-    ) -> Result<Ready<Arena>, p::ParsingInputFailure<Tok>> {
-      Ok(Ready(p::ParseableGrammar::new(self.0, input)?))
+    #[derive(Debug, Clone)]
+    pub struct Ready<Arena>(pub p::ParseableGrammar<Arena>)
+    where Arena: Allocator+Clone;
+
+    impl<Arena> Ready<Arena>
+    where Arena: Allocator+Clone
+    {
+      #[allow(dead_code)]
+      pub fn initialize_parse(self) -> InProgress<Arena> {
+        InProgress(p::Parse::initialize_with_trees_for_adjacent_pairs(self.0))
+      }
     }
+
+    #[derive(Debug, Clone)]
+    pub struct InProgress<Arena>(pub p::Parse<Arena>)
+    where Arena: Allocator+Clone;
   }
-
-  #[derive(Debug, Clone)]
-  pub struct Ready<Arena>(pub p::ParseableGrammar<Arena>)
-  where Arena: Allocator+Clone;
-
-  impl<Arena> Ready<Arena>
-  where Arena: Allocator+Clone
-  {
-    #[allow(dead_code)]
-    pub fn initialize_parse(self) -> InProgress<Arena> {
-      InProgress(p::Parse::initialize_with_trees_for_adjacent_pairs(self.0))
-    }
-  }
-
-  #[derive(Debug, Clone)]
-  pub struct InProgress<Arena>(pub p::Parse<Arena>)
-  where Arena: Allocator+Clone;
 }
 
 /// Helper methods to improve the ergonomics of testing in a [`no_std`]

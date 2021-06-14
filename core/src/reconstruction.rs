@@ -454,13 +454,13 @@ mod tests {
   #[test]
   fn reconstructs_from_parse() {
     let prods = non_cyclic_productions();
-    let detokenized = state::Init(prods).try_index_with_allocator(Global).unwrap();
+    let detokenized = state::preprocessing::Init(prods).try_index_with_allocator(Global).unwrap();
     let indexed = detokenized.index();
     let string_input = "ab";
     let input = p::Input(string_input.chars().collect());
     let ready = indexed.clone().attach_input(&input).unwrap();
 
-    let state::InProgress(mut parse) = ready.initialize_parse();
+    let state::active::InProgress(mut parse) = ready.initialize_parse();
 
     let spanning_subtree_ref = parse.get_next_parse();
     let reconstructed = InProgressReconstruction::new(spanning_subtree_ref, &parse);
@@ -497,7 +497,7 @@ mod tests {
     let longer_string_input = "abab";
     let longer_input = p::Input(longer_string_input.chars().collect());
     let longer_ready = indexed.attach_input(&longer_input).unwrap();
-    let state::InProgress(mut longer_parse) = longer_ready.initialize_parse();
+    let state::active::InProgress(mut longer_parse) = longer_ready.initialize_parse();
     let first_parsed_longer_string = longer_parse.get_next_parse();
     let longer_reconstructed =
       InProgressReconstruction::new(first_parsed_longer_string, &longer_parse);

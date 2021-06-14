@@ -31,9 +31,12 @@ use grammar_building::TokenGrammar;
 /// We adopt the convention of abbreviated names for things used in
 /// algorithms.
 pub mod graph_coordinates {
-  /// Points to a particular Production within a sequence of [Production].
+  #[cfg(doc)]
+  use crate::grammar_specification as gs;
+
+  /// Points to a particular Production within a sequence of [gs::Production]s.
   ///
-  /// A version of [ProductionReference] which uses a [usize] for speed.
+  /// A version of [gs::ProductionReference] which uses a [usize] for speed.
   #[derive(Debug, Copy, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
   pub struct ProdRef(pub usize);
 
@@ -546,7 +549,9 @@ mod tests {
       .as_ref(),
     );
 
-    let state::Detokenized(grammar) = state::Init(prods).try_index_with_allocator(Global).unwrap();
+    let state::preprocessing::Detokenized(grammar) = state::preprocessing::Init(prods)
+      .try_index_with_allocator(Global)
+      .unwrap();
     let mut dt = gb::DetokenizedProductions::new_in(Global);
     dt.insert_new_production((
       gc::ProdRef(0),
@@ -582,7 +587,9 @@ mod tests {
   #[test]
   fn token_grammar_construction() {
     let prods = non_cyclic_productions();
-    let state::Detokenized(grammar) = state::Init(prods).try_index_with_allocator(Global).unwrap();
+    let state::preprocessing::Detokenized(grammar) = state::preprocessing::Init(prods)
+      .try_index_with_allocator(Global)
+      .unwrap();
     let mut dt = gb::DetokenizedProductions::new_in(Global);
     dt.insert_new_production((
       gc::ProdRef(0),
@@ -658,9 +665,9 @@ mod tests {
       )]
       .as_ref(),
     );
-    let grammar: Result<gb::TokenGrammar<char, Global>, _> = state::Init(prods)
+    let grammar: Result<gb::TokenGrammar<char, Global>, _> = state::preprocessing::Init(prods)
       .try_index_with_allocator(Global)
-      .map(|state::Detokenized(grammar)| grammar);
+      .map(|state::preprocessing::Detokenized(grammar)| grammar);
     assert_eq!(
       grammar,
       Result::<

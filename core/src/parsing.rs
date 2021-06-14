@@ -895,11 +895,11 @@ mod tests {
   fn dynamic_parse_state() {
     let prods = non_cyclic_productions();
 
-    let detokenized = state::Init(prods).try_index_with_allocator(Global).unwrap();
+    let detokenized = state::preprocessing::Init(prods).try_index_with_allocator(Global).unwrap();
     let indexed = detokenized.index();
     let string_input = "ab";
     let input = Input(string_input.chars().collect());
-    let state::Ready(parseable_grammar) = indexed.attach_input(&input).unwrap();
+    let state::active::Ready(parseable_grammar) = indexed.attach_input(&input).unwrap();
 
     assert_eq!(
       parseable_grammar.input_as_states.clone(),
@@ -1080,7 +1080,7 @@ mod tests {
       .collect::<IndexMap<gi::StatePair, Vec<gi::StackDiffSegment<Global>>>>()
     );
 
-    let state::InProgress(mut parse) = state::Ready(parseable_grammar.clone()).initialize_parse();
+    let state::active::InProgress(mut parse) = state::active::Ready(parseable_grammar.clone()).initialize_parse();
     let Parse {
       spans,
       grammar: new_parseable_grammar,
