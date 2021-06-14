@@ -461,7 +461,7 @@ mod tests {
     let parseable_grammar =
       p::ParseableGrammar::new::<char>(preprocessed_grammar.clone(), &input).unwrap();
 
-    let mut parse = p::Parse::initialize_with_trees_for_adjacent_pairs(&parseable_grammar);
+    let mut parse = p::Parse::initialize_with_trees_for_adjacent_pairs(parseable_grammar);
 
     let spanning_subtree_ref = parse.get_next_parse();
     let reconstructed = InProgressReconstruction::new(spanning_subtree_ref, &parse);
@@ -500,7 +500,7 @@ mod tests {
     let longer_parseable_grammar =
       p::ParseableGrammar::new::<char>(preprocessed_grammar, &longer_input).unwrap();
     let mut longer_parse =
-      p::Parse::initialize_with_trees_for_adjacent_pairs(&longer_parseable_grammar);
+      p::Parse::initialize_with_trees_for_adjacent_pairs(longer_parseable_grammar);
     let first_parsed_longer_string = longer_parse.get_next_parse();
     let longer_reconstructed =
       InProgressReconstruction::new(first_parsed_longer_string, &longer_parse);

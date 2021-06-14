@@ -526,11 +526,11 @@ where Arena: Allocator+Clone
   }
 
   /* NB: Intentionally private! */
-  fn new(grammar: &ParseableGrammar<Arena>) -> Self {
+  fn new(grammar: ParseableGrammar<Arena>) -> Self {
     let arena = grammar.allocator_handoff();
     Parse {
       spans: PriorityQueue::new_in(arena.clone()),
-      grammar: grammar.clone(),
+      grammar,
       finishes_at_left: IndexMap::new_in(arena.clone()),
       finishes_at_right: IndexMap::new_in(arena.clone()),
       spanning_subtree_table: Vec::new_in(arena),
@@ -598,15 +598,16 @@ where Arena: Allocator+Clone
   }
 
   #[allow(dead_code)]
-  pub fn initialize_with_trees_for_adjacent_pairs(grammar: &ParseableGrammar<Arena>) -> Self {
+  pub fn initialize_with_trees_for_adjacent_pairs(grammar: ParseableGrammar<Arena>) -> Self {
     let arena = grammar.allocator_handoff();
+
+    let mut parse = Self::new(grammar.clone());
+
     let ParseableGrammar {
       input_as_states,
       pairwise_state_transition_table,
       ..
     } = grammar;
-
-    let mut parse = Self::new(grammar);
 
     for (i, left_states) in input_as_states.iter().cloned().enumerate() {
       assert!(i <= input_as_states.len());
@@ -694,9 +695,9 @@ where Arena: Allocator+Clone
           /* FIXME: why just break here? */
           break;
         },
-        Err(e) => {
-          unreachable!("when does this happen? {:?}", e);
-          /* return None; */
+        Err(_) => {
+          /* unreachable!("when does this happen? {:?}", e); */
+          return None;
         },
       }
     }
@@ -1079,7 +1080,7 @@ mod tests {
       .collect::<IndexMap<gi::StatePair, Vec<gi::StackDiffSegment<Global>>>>()
     );
 
-    let mut parse = Parse::initialize_with_trees_for_adjacent_pairs(&parseable_grammar);
+    let mut parse = Parse::initialize_with_trees_for_adjacent_pairs(parseable_grammar.clone());
     let Parse {
       spans,
       grammar: new_parseable_grammar,
