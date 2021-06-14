@@ -221,24 +221,23 @@ pub mod execution {
   ///
   /// *Implementation Note: We make this trait an [IntoIterator] so that the
   /// instance is consumed after performing a stream transformation.*
-  pub trait StreamTransformer: Iterator {
+  pub trait StreamTransformer: Iterator+From<Self::I> {
     type I: Input;
     type O: Output;
 
-    type Item = <Self::O as Output>::Item;
-
-    fn create_transformer(i: Self::I) -> Self;
-
-    fn into_generator(self) -> StreamGenerator<Self>
-    where Self: Sized {
-      StreamGenerator(self)
-    }
+    type Item = <Self::O as Iterator>::Item;
   }
 
   pub struct StreamGenerator<ST>(pub ST);
 
+  impl<ST> From<ST> for StreamGenerator<ST>
+  where ST: StreamTransformer
+  {
+    fn from(value: ST) -> Self { Self(value) }
+  }
+
   impl<ST> Generator<()> for StreamGenerator<ST>
-  where ST: StreamTransformer+Unpin
+  where ST: Iterator+Unpin
   {
     type Return = ();
     type Yield = <ST as Iterator>::Item;
