@@ -1,21 +1,22 @@
 /*
- * Description: ???
+ * Description: Implement the Simultaneous Productions general parsing
+ * method.
  *
- * Copyright (C) 2021 Danny McClanahan <dmcC2@hypnicjerk.ai>
- * SPDX-License-Identifier: GPL-3.0
+ * Copyright (C) 2019-2021 Danny McClanahan <dmcC2@hypnicjerk.ai>
+ * SPDX-License-Identifier: AGPL-3.0
  *
  * This program is free software: you can redistribute it and/or modify
- * it under the terms of the GNU General Public License as published by
- * the Free Software Foundation, either version 3 of the License, or
+ * it under the terms of the GNU Affero General Public License as published
+ * by the Free Software Foundation, either version 3 of the License, or
  * (at your option) any later version.
  *
  * This program is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
+ * GNU Affero General Public License for more details.
  *
- * You should have received a copy of the GNU General Public License
- * along with this program.  If not, see <http://www.gnu.org/licenses/>.
+ * You should have received a copy of the GNU Affero General Public License
+ * along with this program.  If not, see <https://www.gnu.org/licenses/>.
  */
 #![no_std]
 #![allow(incomplete_features)]
@@ -61,14 +62,13 @@
 /* Arc<Mutex> can be more clear than needing to grok Orderings. */
 #![allow(clippy::mutex_atomic)]
 
-/* TODO: make these all pub(crate) and fix the dead code warnings! */
 mod grammar_indexing;
 mod interns;
 mod lowering_to_indices;
 mod parsing;
 mod reconstruction;
 
-pub(crate) mod types {
+mod types {
   pub use indexmap::{vec::Vec, Global};
   use twox_hash::XxHash64;
 
@@ -341,9 +341,14 @@ pub mod test_framework {
     }
   }
 
+  /* #[derive(Delegate)] */
   #[derive(Debug, Clone)]
-  pub struct Lit(<Vec<char> as IntoIterator>::IntoIter);
+  pub struct Lit(
+    /* #[trait(Iterator)] */
+    <Vec<char> as IntoIterator>::IntoIter,
+  );
 
+  /* derive_from_method![Lit::as_new_vec, Hash, PartialEq, Eq] */
   impl Lit {
     fn as_new_vec(&self) -> Vec<char> { self.0.clone().collect() }
   }

@@ -182,4 +182,4 @@ A Scala parser combinator library efficiently implementing "simultaneous product
  - [ ] parse C and C++
 
 * LICENSE
-[[file:./LICENSE][GPL 3.0+]]
+[[file:./LICENSE][AGPL 3.0+]]

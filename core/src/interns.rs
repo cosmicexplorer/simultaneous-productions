@@ -1,5 +1,5 @@
 /* Copyright (C) 2021 Danny McClanahan <dmcC2@hypnicjerk.ai> */
-/* SPDX-License-Identifier: GPL-3.0 */
+/* SPDX-License-Identifier: AGPL-3.0 */
 
 use crate::{allocation::HandoffAllocable, types::Vec};
 
