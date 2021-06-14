@@ -40,7 +40,7 @@ checksum = "ab5ef0d4909ef3724cc8cce6ccc8572c5c817592e9285f5464f8e86f8bd3726e"
 [[package]]
 name = "indexmap"
 version = "1.6.2"
-source = "git+https://github.com/cosmicexplorer/indexmap?rev=739d553180167f49d5316b57f618b350a4d245af#739d553180167f49d5316b57f618b350a4d245af"
+source = "git+https://github.com/cosmicexplorer/indexmap?rev=afe48b586baa6a310bc069ec448ebc4b0fdc6210#afe48b586baa6a310bc069ec448ebc4b0fdc6210"
 dependencies = [
  "autocfg",
  "hashbrown",
@@ -61,7 +61,7 @@ checksum = "ac74c624d6b2d21f425f752262f42188365d7b8ff1aff74c82e45136510a4857"
 [[package]]
 name = "priority-queue"
 version = "1.1.1"
-source = "git+https://github.com/cosmicexplorer/priority-queue?rev=1e442346b34765f21ad5ed9413a628946802ef73#1e442346b34765f21ad5ed9413a628946802ef73"
+source = "git+https://github.com/cosmicexplorer/priority-queue?rev=dcb45d94e0295fc4a9c279cc130494375bb092f8#dcb45d94e0295fc4a9c279cc130494375bb092f8"
 dependencies = [
  "autocfg",
  "indexmap",
