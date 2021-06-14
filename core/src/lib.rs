@@ -101,10 +101,7 @@ pub mod grammar_specification {
   #[cfg(doc)]
   use super::input_stream::Input;
 
-  use core::{
-    convert::Into,
-    iter::{IntoIterator, Iterator},
-  };
+  use core::iter::IntoIterator;
 
   /// A contiguous sequence of tokens.
   pub trait Literal: IntoIterator {

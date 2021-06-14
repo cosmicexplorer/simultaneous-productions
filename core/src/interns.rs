@@ -87,10 +87,9 @@ where
 impl<T, R, Arena> From<Vec<T, Arena>> for InternArena<T, R, Arena>
 where
   R: From<usize>,
-  Arena: Allocator+Clone,
+  Arena: Allocator
 {
   fn from(value: Vec<T, Arena>) -> Self {
-    let arena = value.allocator().clone();
     Self {
       obarray: value,
       _x: PhantomData,
