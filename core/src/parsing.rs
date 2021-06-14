@@ -683,26 +683,20 @@ where Arena: Allocator+Clone
     assert!(leftover_left.is_empty() || leftover_right.is_empty());
 
     let mut connected: Vec<gi::NamedOrAnonStep, Arena> = Vec::new_in(arena.clone());
-    for (i, left_step, right_step) in (0..min_length).map(|i| {
-      (
-        i,
-        /* FIXME: wtf is this "for" with a .map()? */
-        *cmp_left.get(i).unwrap(),
-        *cmp_right.get(i).unwrap(),
-      )
-    }) {
-      match left_step.sequence(right_step) {
+    for i in 0..min_length {
+      match cmp_left[i].sequence(cmp_right[i]) {
         Ok(None) => (),
-        Ok(Some((step_a, step_b))) => {
+        Ok(Some((left_step, right_step))) => {
           connected.extend(cmp_left[(i + 1)..min_length].iter().cloned().rev());
-          connected.push(step_a);
-          connected.push(step_b);
+          connected.push(left_step);
+          connected.push(right_step);
           connected.extend(cmp_right[(i + 1)..min_length].iter().cloned());
           /* FIXME: why just break here? */
           break;
         },
         Err(e) => {
           unreachable!("when does this happen? {:?}", e);
+          /* return None; */
         },
       }
     }

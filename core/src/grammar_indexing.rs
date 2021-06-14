@@ -1170,7 +1170,7 @@ where Arena: Allocator+Clone
 mod tests {
   use super::*;
   use crate::{
-    test_framework::{basic_productions, new_token_position, non_cyclic_productions, Lit},
+    test_framework::{basic_productions, new_token_position, non_cyclic_productions},
     types::{DefaultHasher, Global},
   };
 

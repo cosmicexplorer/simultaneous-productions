@@ -510,8 +510,6 @@ mod tests {
     types::{Global, Vec},
   };
 
-  use core::marker::PhantomData;
-
   #[test]
   fn token_grammar_unsorted_alphabet() {
     let prods = SP::from(

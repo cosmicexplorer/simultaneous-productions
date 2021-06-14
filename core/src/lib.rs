@@ -324,7 +324,6 @@ pub mod test_framework {
   use crate::{lowering_to_indices::graph_coordinates as gc, types::Vec};
 
   use core::{
-    fmt,
     hash::{Hash, Hasher},
     iter::{IntoIterator, Iterator},
     str,
