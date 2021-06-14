@@ -22,7 +22,9 @@
 #![feature(allocator_api)]
 #![feature(associated_type_defaults)]
 #![feature(inherent_associated_types)]
+#![feature(generic_associated_types)]
 #![feature(generators, generator_trait)]
+#![feature(async_stream)]
 /* These clippy lint descriptions are purely non-functional and do not affect the functionality
  * or correctness of the code.
  * TODO: rustfmt breaks multiline comments when used one on top of another! (each with its own
@@ -58,6 +60,7 @@
 /* Arc<Mutex> can be more clear than needing to grok Orderings. */
 #![allow(clippy::mutex_atomic)]
 
+/* TODO: make these all pub(crate) and fix the dead code warnings! */
 pub(crate) mod grammar_indexing;
 pub(crate) mod interns;
 pub(crate) mod lowering_to_indices;
@@ -125,6 +128,10 @@ pub mod grammar_specification {
   }
 
   /// Each individual element that can be matched against some input in a case.
+  ///
+  /// TODO: make `displaydoc::Display` smart enough to only try to impl Display
+  /// if all cases of an enum can impl display! Maybe with a nice error
+  /// message???
   #[derive(Debug, Copy, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
   pub enum CaseElement<Lit, PR> {
     Lit(Lit),
@@ -155,98 +162,152 @@ pub mod grammar_specification {
   }
 }
 
-pub(crate) mod impls {
-  use super::grammar_specification as gs;
+/// The basic traits which define the *input*, *actions*, and *output* of a
+/// parse.
+///
+/// See the node.js [transform stream API docs] as inspiration!
+///
+/// [transform stream API docs]: https://nodejs.org/api/stream.html#stream_implementing_a_transform_stream
+pub mod execution {
+  pub trait Input {
+    type InChunk;
+  }
 
-  use core::fmt;
+  pub trait Output {
+    type OutChunk;
+  }
 
-  impl<Lit, PR> gs::CaseElement<Lit, PR>
-  where
-    Lit: fmt::Display,
-    PR: fmt::Display,
-  {
-    fn descriptor(&self, f: &mut fmt::Formatter) -> fmt::Result {
-      match self {
-        Self::Lit(lit) => write!(f, "literal: {}", lit),
-        Self::Prod(pr) => write!(f, "production reference: {}", pr),
+  pub trait Transformer {
+    type I: Input;
+    type O: Output;
+    type R;
+    fn transform(&mut self, input: <Self::I as Input>::InChunk) -> Self::R;
+  }
+
+  pub mod iterator_api {
+    use super::*;
+
+    #[derive(Debug, Default, Copy, Clone)]
+    pub struct STIterator<ST, I> {
+      state: ST,
+      iter: I,
+    }
+
+    impl<ST, I> STIterator<ST, I> {
+      pub fn new(state: ST, iter: I) -> Self { Self { state, iter } }
+    }
+
+    impl<ST, I> From<I> for STIterator<ST, I>
+    where ST: Default
+    {
+      fn from(value: I) -> Self {
+        Self {
+          state: ST::default(),
+          iter: value,
+        }
+      }
+    }
+
+    impl<ST, I, II, O, OO, R> Iterator for STIterator<ST, I>
+    where
+      I: Input<InChunk=II>+Iterator<Item=II>,
+      O: Output<OutChunk=OO>+Iterator<Item=OO>,
+      R: Into<Option<OO>>,
+      ST: Transformer<I=I, O=O, R=R>,
+    {
+      type Item = OO;
+
+      fn next(&mut self) -> Option<Self::Item> {
+        self
+          .iter
+          .next()
+          .and_then(|input| self.state.transform(input).into())
       }
     }
   }
 
-  impl<Lit, PR> fmt::Display for gs::CaseElement<Lit, PR>
-  where
-    Lit: fmt::Display,
-    PR: fmt::Display,
-  {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-      /* FIXME: writing nested expressions like parentheses should be factored out
-       * elsewhere! */
-      write!(f, "(CaseElement: ")
-        .and_then(|()| self.descriptor(f))
-        .and_then(|()| write!(f, ")"))
+  pub mod generator_api {
+    use super::*;
+
+    use core::{
+      marker::{PhantomData, Unpin},
+      ops::{Generator, GeneratorState},
+      pin::Pin,
+    };
+
+    #[derive(Debug, Default, Copy, Clone)]
+    pub struct STGenerator<ST, Ret>(ST, PhantomData<Ret>);
+
+    impl<ST, Ret> From<ST> for STGenerator<ST, Ret> {
+      fn from(value: ST) -> Self { Self(value, PhantomData) }
+    }
+
+    impl<ST, R, Ret> Generator<<ST::I as Input>::InChunk> for STGenerator<ST, Ret>
+    where
+      Ret: Unpin,
+      R: Into<GeneratorState<<ST::O as Output>::OutChunk, Ret>>,
+      ST: Transformer<R=R>+Unpin,
+    {
+      type Return = Ret;
+      type Yield = <ST::O as Output>::OutChunk;
+
+      fn resume(
+        self: Pin<&mut Self>,
+        arg: <ST::I as Input>::InChunk,
+      ) -> GeneratorState<Self::Yield, Self::Return> {
+        let Self(state, _) = self.get_mut();
+        state.transform(arg).into()
+      }
     }
   }
-}
 
-/// The basic traits which define the *input*, *actions*, and *output* of a
-/// parse.
-pub mod execution {
-  use core::{
-    convert::AsRef,
-    iter::Iterator,
-    marker::Unpin,
-    ops::{Generator, GeneratorState},
-    pin::Pin,
-  };
+  pub mod stream_api {
+    use super::*;
 
-  pub trait InputChunk: AsRef<[Self::Tok]> {
-    type Tok;
-  }
+    use core::{
+      marker::Unpin,
+      pin::Pin,
+      stream::Stream,
+      task::{Context, Poll},
+    };
 
-  pub trait Input: Iterator {
-    type Chunk: InputChunk;
-    type Item = Self::Chunk;
-  }
+    #[derive(Debug, Default, Copy, Clone)]
+    pub struct STStream<ST, I> {
+      state: ST,
+      stream: I,
+    }
 
-  pub trait OutputChunk: AsRef<[Self::Out]> {
-    type Out;
-  }
+    impl<ST, I> STStream<ST, I> {
+      pub fn new(state: ST, stream: I) -> Self { Self { state, stream } }
+    }
 
-  pub trait Output: Iterator {
-    type Out: OutputChunk;
-    type Item = Self::Out;
-  }
+    impl<ST, I> From<I> for STStream<ST, I>
+    where ST: Default
+    {
+      fn from(value: I) -> Self {
+        Self {
+          state: ST::default(),
+          stream: value,
+        }
+      }
+    }
 
-  /// ???
-  ///
-  /// *Implementation Note: We make this trait an [IntoIterator] so that the
-  /// instance is consumed after performing a stream transformation.*
-  pub trait StreamTransformer: Iterator+From<Self::I> {
-    type I: Input;
-    type O: Output;
+    impl<ST, I, II, O, OO, R> Stream for STStream<ST, I>
+    where
+      I: Input<InChunk=II>+Stream<Item=II>+Unpin,
+      O: Output<OutChunk=OO>+Stream<Item=OO>,
+      R: Into<Poll<Option<OO>>>,
+      ST: Transformer<I=I, O=O, R=R>+Unpin,
+    {
+      type Item = OO;
 
-    type Item = <Self::O as Iterator>::Item;
-  }
-
-  pub struct StreamGenerator<ST>(pub ST);
-
-  impl<ST> From<ST> for StreamGenerator<ST>
-  where ST: StreamTransformer
-  {
-    fn from(value: ST) -> Self { Self(value) }
-  }
-
-  impl<ST> Generator<()> for StreamGenerator<ST>
-  where ST: Iterator+Unpin
-  {
-    type Return = ();
-    type Yield = <ST as Iterator>::Item;
-
-    fn resume(self: Pin<&mut Self>, _arg: ()) -> GeneratorState<Self::Yield, Self::Return> {
-      let s: &mut Self = self.get_mut();
-      match s.0.next() {
-        None => GeneratorState::Complete(()),
-        Some(item) => GeneratorState::Yielded(item),
+      fn poll_next(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
+        let Self { state, stream } = self.get_mut();
+        match Pin::new(stream).poll_next(cx) {
+          Poll::Pending => Poll::Pending,
+          Poll::Ready(None) => Poll::Ready(None),
+          Poll::Ready(Some(x)) => state.transform(x).into(),
+        }
       }
     }
   }
