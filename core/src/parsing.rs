@@ -578,23 +578,24 @@ where Arena: Allocator+Clone
     left_index: InputTokenIndex,
     right_index: InputTokenIndex,
     diffs: Vec<gi::StackDiffSegment<Arena>, Arena>,
-  ) -> IndexSet<SpanningSubtreeToCreate<Arena>> {
+  ) -> IndexSet<SpanningSubtreeToCreate<Arena>, Arena, DefaultHasher> {
+    let arena = diffs.allocator().clone();
     let gi::StatePair { left, right } = pair;
-    diffs
-      .into_iter()
-      .map(|stack_diff| SpanningSubtreeToCreate {
-        input_span: FlattenedSpanInfo {
-          state_pair: gi::StatePair {
-            left: *left,
-            right: *right,
-          },
-          input_range: InputRange::new(left_index, right_index),
-          /* TODO: lexicographically sort these??? */
-          stack_diff,
+    let mut ret: IndexSet<SpanningSubtreeToCreate<Arena>, Arena, DefaultHasher> =
+      IndexSet::with_capacity_in(diffs.len(), arena);
+    ret.extend(diffs.into_iter().map(|stack_diff| SpanningSubtreeToCreate {
+      input_span: FlattenedSpanInfo {
+        state_pair: gi::StatePair {
+          left: *left,
+          right: *right,
         },
-        parents: None,
-      })
-      .collect()
+        input_range: InputRange::new(left_index, right_index),
+        /* TODO: lexicographically sort these??? */
+        stack_diff,
+      },
+      parents: None,
+    }));
+    ret
   }
 
   #[allow(dead_code)]
