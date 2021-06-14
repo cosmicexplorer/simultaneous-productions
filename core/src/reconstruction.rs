@@ -446,7 +446,7 @@ mod tests {
   use crate::{
     grammar_indexing as gi,
     lowering_to_indices::{grammar_building as gb, graph_coordinates as gc},
-    parsing as p,
+    parsing as p, state,
     test_framework::{new_token_position, non_cyclic_productions},
     types::Global,
   };
@@ -454,14 +454,13 @@ mod tests {
   #[test]
   fn reconstructs_from_parse() {
     let prods = non_cyclic_productions();
-    let token_grammar = gb::TokenGrammar::new(prods, Global).unwrap();
-    let preprocessed_grammar = gi::PreprocessedGrammar::new(token_grammar);
+    let detokenized = state::Init(prods).try_index_with_allocator(Global).unwrap();
+    let indexed = detokenized.index();
     let string_input = "ab";
     let input = p::Input(string_input.chars().collect());
-    let parseable_grammar =
-      p::ParseableGrammar::new::<char>(preprocessed_grammar.clone(), &input).unwrap();
+    let ready = indexed.clone().attach_input(&input).unwrap();
 
-    let mut parse = p::Parse::initialize_with_trees_for_adjacent_pairs(parseable_grammar);
+    let state::InProgress(mut parse) = ready.initialize_parse();
 
     let spanning_subtree_ref = parse.get_next_parse();
     let reconstructed = InProgressReconstruction::new(spanning_subtree_ref, &parse);
@@ -497,10 +496,8 @@ mod tests {
     /* Try it again, crossing productions this time. */
     let longer_string_input = "abab";
     let longer_input = p::Input(longer_string_input.chars().collect());
-    let longer_parseable_grammar =
-      p::ParseableGrammar::new::<char>(preprocessed_grammar, &longer_input).unwrap();
-    let mut longer_parse =
-      p::Parse::initialize_with_trees_for_adjacent_pairs(longer_parseable_grammar);
+    let longer_ready = indexed.attach_input(&longer_input).unwrap();
+    let state::InProgress(mut longer_parse) = longer_ready.initialize_parse();
     let first_parsed_longer_string = longer_parse.get_next_parse();
     let longer_reconstructed =
       InProgressReconstruction::new(first_parsed_longer_string, &longer_parse);

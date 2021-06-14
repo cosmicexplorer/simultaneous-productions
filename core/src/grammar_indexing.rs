@@ -1170,6 +1170,7 @@ where Arena: Allocator+Clone
 mod tests {
   use super::*;
   use crate::{
+    state,
     test_framework::{basic_productions, new_token_position, non_cyclic_productions},
     types::{DefaultHasher, Global},
   };
@@ -1177,7 +1178,8 @@ mod tests {
   #[test]
   fn token_grammar_state_indexing() {
     let prods = non_cyclic_productions();
-    let grammar: gb::TokenGrammar<char, Global> = gb::TokenGrammar::new(prods, Global).unwrap();
+    let state::Detokenized::<char, _>(grammar) =
+      state::Init(prods).try_index_with_allocator(Global).unwrap();
     assert_eq!(
       grammar
         .token_states
@@ -1212,8 +1214,9 @@ mod tests {
   #[test]
   fn terminals_interval_graph() {
     let noncyclic_prods = non_cyclic_productions();
-    let noncyclic_grammar: gb::TokenGrammar<char, Global> =
-      gb::TokenGrammar::new(noncyclic_prods, Global).unwrap();
+    let state::Detokenized::<char, _>(noncyclic_grammar) = state::Init(noncyclic_prods)
+      .try_index_with_allocator(Global)
+      .unwrap();
 
     let (noncyclic_interval_graph, _, _) =
       PreprocessedGrammar::produce_terminals_interval_graph(noncyclic_grammar);
@@ -1545,7 +1548,8 @@ mod tests {
     /* TODO: test `.find_start_end_indices()` and `.connect_all_vertices()` here
      * too! */
     let prods = basic_productions();
-    let grammar: gb::TokenGrammar<char, Global> = gb::TokenGrammar::new(prods, Global).unwrap();
+    let state::Detokenized::<char, _>(grammar) =
+      state::Init(prods).try_index_with_allocator(Global).unwrap();
     let (interval_graph, _, _) = PreprocessedGrammar::produce_terminals_interval_graph(grammar);
     assert_eq!(&interval_graph, &EpsilonIntervalGraph {
       all_intervals: [
@@ -1744,8 +1748,9 @@ mod tests {
   #[test]
   fn noncyclic_transition_graph() {
     let prods = non_cyclic_productions();
-    let grammar: gb::TokenGrammar<char, Global> = gb::TokenGrammar::new(prods, Global).unwrap();
-    let preprocessed_grammar = PreprocessedGrammar::new(grammar);
+    let detokenized = state::Init(prods).try_index_with_allocator(Global).unwrap();
+    let state::Indexed(preprocessed_grammar) = detokenized.index();
+
     let first_a = new_token_position(0, 0, 0);
     let first_b = new_token_position(0, 0, 1);
     let second_a = new_token_position(1, 0, 0);
@@ -1983,8 +1988,8 @@ mod tests {
   #[test]
   fn cyclic_transition_graph() {
     let prods = basic_productions();
-    let grammar: gb::TokenGrammar<char, Global> = gb::TokenGrammar::new(prods, Global).unwrap();
-    let preprocessed_grammar = PreprocessedGrammar::new(grammar);
+    let detokenized = state::Init(prods).try_index_with_allocator(Global).unwrap();
+    let state::Indexed(preprocessed_grammar) = detokenized.index();
 
     let first_a = new_token_position(0, 0, 0);
     let second_a = new_token_position(0, 1, 0);

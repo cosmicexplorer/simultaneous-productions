@@ -296,14 +296,25 @@ pub mod grammar_building {
 
     use core::{
       alloc::Allocator,
+      cmp::{Ord, Ordering, PartialOrd},
       fmt,
       hash::Hash,
       iter::{IntoIterator, Iterator},
     };
 
+    #[derive(Copy, Clone)]
     pub enum GrammarConstructionError<ID> {
       DuplicateProductionId(ID),
       UnrecognizedProdRefId(ID),
+    }
+
+    impl<ID> GrammarConstructionError<ID> {
+      pub fn get_id(&self) -> &ID {
+        match self {
+          Self::DuplicateProductionId(id) => id,
+          Self::UnrecognizedProdRefId(id) => id,
+        }
+      }
     }
 
     impl<ID> fmt::Debug for GrammarConstructionError<ID>
@@ -346,6 +357,20 @@ pub mod grammar_building {
     }
 
     impl<ID> Eq for GrammarConstructionError<ID> where ID: Eq {}
+
+    impl<ID> PartialOrd for GrammarConstructionError<ID>
+    where ID: PartialOrd+Eq
+    {
+      fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+        self.get_id().partial_cmp(other.get_id())
+      }
+    }
+
+    impl<ID> Ord for GrammarConstructionError<ID>
+    where ID: Ord
+    {
+      fn cmp(&self, other: &Self) -> Ordering { self.get_id().cmp(other.get_id()) }
+    }
 
     #[derive(Debug)]
     pub struct TokenGrammar<Tok, Arena>
@@ -506,6 +531,7 @@ mod tests {
   use super::{grammar_building as gb, graph_coordinates as gc};
   use crate::{
     interns::InternArena,
+    state,
     test_framework::*,
     types::{Global, Vec},
   };
@@ -519,7 +545,8 @@ mod tests {
       )]
       .as_ref(),
     );
-    let grammar = gb::TokenGrammar::new(prods, Global).unwrap();
+
+    let state::Detokenized(grammar) = state::Init(prods).try_index_with_allocator(Global).unwrap();
     let mut dt = gb::DetokenizedProductions::new_in(Global);
     dt.insert_new_production((
       gc::ProdRef(0),
@@ -555,7 +582,7 @@ mod tests {
   #[test]
   fn token_grammar_construction() {
     let prods = non_cyclic_productions();
-    let grammar = gb::TokenGrammar::new(prods, Global).unwrap();
+    let state::Detokenized(grammar) = state::Init(prods).try_index_with_allocator(Global).unwrap();
     let mut dt = gb::DetokenizedProductions::new_in(Global);
     dt.insert_new_production((
       gc::ProdRef(0),
@@ -631,10 +658,15 @@ mod tests {
       )]
       .as_ref(),
     );
-    let grammar: Result<gb::TokenGrammar<char, Global>, _> = gb::TokenGrammar::new(prods, Global);
+    let grammar: Result<gb::TokenGrammar<char, Global>, _> = state::Init(prods)
+      .try_index_with_allocator(Global)
+      .map(|state::Detokenized(grammar)| grammar);
     assert_eq!(
       grammar,
-      Err(gb::GrammarConstructionError::UnrecognizedProdRefId(
+      Result::<
+        gb::TokenGrammar::<char, Global>,
+        gb::GrammarConstructionError<ProductionReference>,
+      >::Err(gb::GrammarConstructionError::UnrecognizedProdRefId(
         ProductionReference::from("c")
       ))
     );

@@ -888,6 +888,7 @@ mod tests {
   use crate::{
     grammar_indexing as gi,
     lowering_to_indices::grammar_building as gb,
+    state,
     test_framework::{new_token_position, non_cyclic_productions},
     types::Global,
   };
@@ -896,11 +897,11 @@ mod tests {
   fn dynamic_parse_state() {
     let prods = non_cyclic_productions();
 
-    let token_grammar = gb::TokenGrammar::new(prods, Global).unwrap();
-    let preprocessed_grammar = gi::PreprocessedGrammar::new(token_grammar);
+    let detokenized = state::Init(prods).try_index_with_allocator(Global).unwrap();
+    let indexed = detokenized.index();
     let string_input = "ab";
     let input = Input(string_input.chars().collect());
-    let parseable_grammar = ParseableGrammar::new::<char>(preprocessed_grammar, &input).unwrap();
+    let state::Ready(parseable_grammar) = indexed.attach_input(&input).unwrap();
 
     assert_eq!(
       parseable_grammar.input_as_states.clone(),
@@ -1081,7 +1082,7 @@ mod tests {
       .collect::<IndexMap<gi::StatePair, Vec<gi::StackDiffSegment<Global>>>>()
     );
 
-    let mut parse = Parse::initialize_with_trees_for_adjacent_pairs(parseable_grammar.clone());
+    let state::InProgress(mut parse) = state::Ready(parseable_grammar.clone()).initialize_parse();
     let Parse {
       spans,
       grammar: new_parseable_grammar,
