@@ -21,6 +21,7 @@
 #![feature(trait_alias)]
 #![feature(allocator_api)]
 #![feature(associated_type_defaults)]
+#![feature(inherent_associated_types)]
 #![feature(generators, generator_trait)]
 /* These clippy lint descriptions are purely non-functional and do not affect the functionality
  * or correctness of the code.
@@ -101,17 +102,17 @@ pub mod grammar_specification {
   #[cfg(doc)]
   use super::input_stream::Input;
 
-  use core::iter::IntoIterator;
+  use core::iter::Iterator;
 
   /// A contiguous sequence of tokens.
-  pub trait Literal: IntoIterator {
+  pub trait Literal: Iterator {
     /// Specifies the type of "token" to iterate over when constructing a
     /// grammar.
     ///
     /// This parameter is *separate from, but may be the same as* the tokens we
     /// can actually parse with in [Input::Tok].
     type Tok;
-    /// Override [IntoIterator::Item] with this trait's parameter.
+    /// Override [Iterator::Item] with this trait's parameter.
     ///
     /// *Implementation Note: We could just leave this trait empty, but that
     /// would make it unclear there is an `Item` type that needs to be
@@ -132,20 +133,20 @@ pub mod grammar_specification {
 
   /// A sequence of *elements* which, if successfully matched against some
   /// *input*, represents some *production*.
-  pub trait Case: IntoIterator {
+  pub trait Case: Iterator {
     type Lit: Literal;
     type PR: ProductionReference;
     type Item = CaseElement<Self::Lit, Self::PR>;
   }
 
   /// A disjunction of cases.
-  pub trait Production: IntoIterator {
+  pub trait Production: Iterator {
     type C: Case;
     type Item = Self::C;
   }
 
   /// A conjunction of productions.
-  pub trait SimultaneousProductions: IntoIterator {
+  pub trait SimultaneousProductions: Iterator {
     type P: Production;
     type Item = (
       <<<Self as SimultaneousProductions>::P as Production>::C as Case>::PR,
@@ -190,16 +191,65 @@ pub(crate) mod impls {
 /// The basic traits which define the *input*, *actions*, and *output* of a
 /// parse.
 pub mod execution {
-  use core::iter::{IntoIterator, Iterator};
+  use core::{
+    convert::AsRef,
+    iter::Iterator,
+    marker::Unpin,
+    ops::{Generator, GeneratorState},
+    pin::Pin,
+  };
 
-  pub trait Input: Iterator {
+  pub trait InputChunk: AsRef<[Self::Tok]> {
     type Tok;
-    type Item = Self::Tok;
   }
 
-  pub trait Output: IntoIterator {
+  pub trait Input: Iterator {
+    type Chunk: InputChunk;
+    type Item = Self::Chunk;
+  }
+
+  pub trait OutputChunk: AsRef<[Self::Out]> {
     type Out;
+  }
+
+  pub trait Output: Iterator {
+    type Out: OutputChunk;
     type Item = Self::Out;
+  }
+
+  /// ???
+  ///
+  /// *Implementation Note: We make this trait an [IntoIterator] so that the
+  /// instance is consumed after performing a stream transformation.*
+  pub trait StreamTransformer: Iterator {
+    type I: Input;
+    type O: Output;
+
+    type Item = <Self::O as Output>::Item;
+
+    fn create_transformer(i: Self::I) -> Self;
+
+    fn into_generator(self) -> StreamGenerator<Self>
+    where Self: Sized {
+      StreamGenerator(self)
+    }
+  }
+
+  pub struct StreamGenerator<ST>(pub ST);
+
+  impl<ST> Generator<()> for StreamGenerator<ST>
+  where ST: StreamTransformer+Unpin
+  {
+    type Return = ();
+    type Yield = <ST as Iterator>::Item;
+
+    fn resume(self: Pin<&mut Self>, _arg: ()) -> GeneratorState<Self::Yield, Self::Return> {
+      let s: &mut Self = self.get_mut();
+      match s.0.next() {
+        None => GeneratorState::Complete(()),
+        Some(item) => GeneratorState::Yielded(item),
+      }
+    }
   }
 }
 
@@ -215,7 +265,7 @@ pub mod test_framework {
   use core::{
     fmt,
     hash::{Hash, Hasher},
-    iter::IntoIterator,
+    iter::{IntoIterator, Iterator},
     str,
   };
 
@@ -231,27 +281,21 @@ pub mod test_framework {
     }
   }
 
-  #[derive(Clone)]
-  pub struct Lit(Vec<u8>);
+  #[derive(Debug, Clone)]
+  pub struct Lit(<Vec<char> as IntoIterator>::IntoIter);
+
+  impl Lit {
+    fn as_new_vec(&self) -> Vec<char> { self.0.clone().collect() }
+  }
 
   impl From<&str> for Lit {
-    fn from(value: &str) -> Self { Self(value.as_bytes().to_vec()) }
+    fn from(value: &str) -> Self { Self(value.chars().collect::<Vec<_>>().into_iter()) }
   }
 
-  impl fmt::Debug for Lit {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-      write!(f, "Lit({:?})", str::from_utf8(&self.0).unwrap())
-    }
-  }
-
-  impl IntoIterator for Lit {
-    type IntoIter = <Vec<char> as IntoIterator>::IntoIter;
+  impl Iterator for Lit {
     type Item = char;
 
-    fn into_iter(self) -> Self::IntoIter {
-      let char_vec: Vec<char> = str::from_utf8(&self.0).unwrap().chars().collect();
-      char_vec.into_iter()
-    }
+    fn next(&mut self) -> Option<Self::Item> { self.0.next() }
   }
 
   impl gs::Literal for Lit {
@@ -259,31 +303,41 @@ pub mod test_framework {
   }
 
   impl Hash for Lit {
-    fn hash<H: Hasher>(&self, state: &mut H) { self.0.hash(state); }
+    fn hash<H: Hasher>(&self, state: &mut H) { self.as_new_vec().hash(state); }
   }
 
   impl PartialEq for Lit {
-    fn eq(&self, other: &Self) -> bool { self.0 == other.0 }
+    fn eq(&self, other: &Self) -> bool { self.as_new_vec() == other.as_new_vec() }
   }
 
   impl Eq for Lit {}
 
-  #[derive(Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
-  pub struct ProductionReference(Vec<u8>);
+  #[derive(Debug, Clone)]
+  pub struct ProductionReference(<Vec<char> as IntoIterator>::IntoIter);
+
+  impl ProductionReference {
+    fn as_new_vec(&self) -> Vec<char> { self.0.clone().collect() }
+  }
 
   impl From<&str> for ProductionReference {
-    fn from(value: &str) -> Self { Self(value.as_bytes().to_vec()) }
+    fn from(value: &str) -> Self { Self(value.chars().collect::<Vec<_>>().into_iter()) }
   }
 
-  impl fmt::Debug for ProductionReference {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-      write!(
-        f,
-        "ProductionReference({:?})",
-        str::from_utf8(&self.0).unwrap()
-      )
-    }
+  impl Iterator for ProductionReference {
+    type Item = char;
+
+    fn next(&mut self) -> Option<Self::Item> { self.0.next() }
   }
+
+  impl Hash for ProductionReference {
+    fn hash<H: Hasher>(&self, state: &mut H) { self.as_new_vec().hash(state); }
+  }
+
+  impl PartialEq for ProductionReference {
+    fn eq(&self, other: &Self) -> bool { self.as_new_vec() == other.as_new_vec() }
+  }
+
+  impl Eq for ProductionReference {}
 
   impl gs::ProductionReference for ProductionReference {
     type ID = Self;
@@ -291,18 +345,17 @@ pub mod test_framework {
 
   pub type CE = gs::CaseElement<Lit, ProductionReference>;
 
-  #[derive(Clone)]
-  pub struct Case(Vec<CE>);
+  #[derive(Debug, Clone)]
+  pub struct Case(<Vec<CE> as IntoIterator>::IntoIter);
 
   impl From<&[CE]> for Case {
-    fn from(value: &[CE]) -> Self { Self(value.to_vec()) }
+    fn from(value: &[CE]) -> Self { Self(value.to_vec().into_iter()) }
   }
 
-  impl IntoIterator for Case {
-    type IntoIter = <Vec<CE> as IntoIterator>::IntoIter;
+  impl Iterator for Case {
     type Item = CE;
 
-    fn into_iter(self) -> Self::IntoIter { self.0.into_iter() }
+    fn next(&mut self) -> Option<Self::Item> { self.0.next() }
   }
 
   impl gs::Case for Case {
@@ -310,35 +363,36 @@ pub mod test_framework {
     type PR = ProductionReference;
   }
 
-  #[derive(Clone)]
-  pub struct Production(Vec<Case>);
+  #[derive(Debug, Clone)]
+  pub struct Production(<Vec<Case> as IntoIterator>::IntoIter);
 
   impl From<&[Case]> for Production {
-    fn from(value: &[Case]) -> Self { Self(value.to_vec()) }
+    fn from(value: &[Case]) -> Self { Self(value.to_vec().into_iter()) }
   }
 
-  impl IntoIterator for Production {
-    type IntoIter = <Vec<Case> as IntoIterator>::IntoIter;
+  impl Iterator for Production {
     type Item = Case;
 
-    fn into_iter(self) -> Self::IntoIter { self.0.into_iter() }
+    fn next(&mut self) -> Option<Self::Item> { self.0.next() }
   }
 
   impl gs::Production for Production {
     type C = Case;
   }
 
-  pub struct SP(Vec<(ProductionReference, Production)>);
+  #[derive(Debug, Clone)]
+  pub struct SP(<Vec<(ProductionReference, Production)> as IntoIterator>::IntoIter);
 
   impl From<&[(ProductionReference, Production)]> for SP {
-    fn from(value: &[(ProductionReference, Production)]) -> Self { Self(value.to_vec()) }
+    fn from(value: &[(ProductionReference, Production)]) -> Self {
+      Self(value.to_vec().into_iter())
+    }
   }
 
-  impl IntoIterator for SP {
-    type IntoIter = <Vec<(ProductionReference, Production)> as IntoIterator>::IntoIter;
+  impl Iterator for SP {
     type Item = (ProductionReference, Production);
 
-    fn into_iter(self) -> Self::IntoIter { self.0.into_iter() }
+    fn next(&mut self) -> Option<Self::Item> { self.0.next() }
   }
 
   impl gs::SimultaneousProductions for SP {
