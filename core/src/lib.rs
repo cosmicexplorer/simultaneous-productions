@@ -108,8 +108,8 @@ pub mod grammar_specification {
     /// Specifies the type of "token" to iterate over when constructing a
     /// grammar.
     ///
-    /// This parameter is separate from the tokens we can actually parse with in
-    /// [Input::Tok];
+    /// This parameter is *separate from, but may be the same as* the tokens we
+    /// can actually parse with in [Input::Tok].
     type Tok;
     /// Override [IntoIterator::Item] with this trait's parameter.
     ///
@@ -125,11 +125,7 @@ pub mod grammar_specification {
 
   /// Each individual element that can be matched against some input in a case.
   #[derive(Debug, Copy, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
-  pub enum CaseElement<Lit, PR>
-  where
-    Lit: Literal,
-    PR: ProductionReference,
-  {
+  pub enum CaseElement<Lit, PR> {
     Lit(Lit),
     Prod(PR),
   }
@@ -158,6 +154,39 @@ pub mod grammar_specification {
   }
 }
 
+pub(crate) mod impls {
+  use super::grammar_specification as gs;
+
+  use core::fmt;
+
+  impl<Lit, PR> gs::CaseElement<Lit, PR>
+  where
+    Lit: fmt::Display,
+    PR: fmt::Display,
+  {
+    fn descriptor(&self, f: &mut fmt::Formatter) -> fmt::Result {
+      match self {
+        Self::Lit(lit) => write!(f, "literal: {}", lit),
+        Self::Prod(pr) => write!(f, "production reference: {}", pr),
+      }
+    }
+  }
+
+  impl<Lit, PR> fmt::Display for gs::CaseElement<Lit, PR>
+  where
+    Lit: fmt::Display,
+    PR: fmt::Display,
+  {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+      /* FIXME: writing nested expressions like parentheses should be factored out
+       * elsewhere! */
+      write!(f, "(CaseElement: ")
+        .and_then(|()| self.descriptor(f))
+        .and_then(|()| write!(f, ")"))
+    }
+  }
+}
+
 /// The basic traits which define the *input*, *actions*, and *output* of a
 /// parse.
 pub mod execution {
@@ -181,16 +210,12 @@ pub mod execution {
 #[cfg(test)]
 pub mod test_framework {
   use super::grammar_specification as gs;
-  use crate::{
-    lowering_to_indices::graph_coordinates as gc,
-    types::{Global, Vec},
-  };
+  use crate::{lowering_to_indices::graph_coordinates as gc, types::Vec};
 
   use core::{
     fmt,
     hash::{Hash, Hasher},
     iter::IntoIterator,
-    marker::PhantomData,
     str,
   };
 
