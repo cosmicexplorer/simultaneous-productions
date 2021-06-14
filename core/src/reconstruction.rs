@@ -254,6 +254,7 @@ where Arena: Allocator+Clone
 impl<Arena> InProgressReconstruction<Arena>
 where Arena: Allocator+Clone
 {
+  #[allow(dead_code)]
   pub fn new(tree: p::SpanningSubtreeRef, parse: &p::Parse<Arena>) -> Self {
     let arena = parse.allocator_handoff();
     let &p::Parse {
@@ -387,7 +388,9 @@ impl<Arena> Eq for CompletedCaseReconstruction<Arena> where Arena: Allocator {}
 pub enum CompleteSubReconstruction<Arena>
 where Arena: Allocator
 {
+  #[allow(dead_code)]
   State(gi::LoweredState),
+  #[allow(dead_code)]
   Completed(CompletedCaseReconstruction<Arena>),
 }
 
@@ -412,6 +415,7 @@ where Arena: Allocator;
 impl<Arena> CompletedWholeReconstruction<Arena>
 where Arena: Allocator+Clone
 {
+  #[allow(dead_code)]
   pub fn new(maybe_completed_constructions: InProgressReconstruction<Arena>) -> Self {
     let arena = maybe_completed_constructions.allocator_handoff();
     let mut sub_constructions: Vec<_, Arena> =

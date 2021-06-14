@@ -18,6 +18,7 @@
  * along with this program.  If not, see <http://www.gnu.org/licenses/>.
  */
 #![no_std]
+#![allow(incomplete_features)]
 #![feature(trait_alias)]
 #![feature(allocator_api)]
 #![feature(associated_type_defaults)]
@@ -61,11 +62,11 @@
 #![allow(clippy::mutex_atomic)]
 
 /* TODO: make these all pub(crate) and fix the dead code warnings! */
-pub(crate) mod grammar_indexing;
-pub(crate) mod interns;
-pub(crate) mod lowering_to_indices;
-pub(crate) mod parsing;
-pub(crate) mod reconstruction;
+mod grammar_indexing;
+mod interns;
+mod lowering_to_indices;
+mod parsing;
+mod reconstruction;
 
 pub(crate) mod types {
   pub use indexmap::{vec::Vec, Global};

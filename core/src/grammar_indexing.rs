@@ -296,6 +296,7 @@ where Arena: Allocator+Clone
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq, Hash)]
 pub enum StackTrieNextEntry {
+  #[allow(dead_code)]
   Completed(LoweredState),
   Incomplete(TrieNodeRef),
 }
@@ -1151,6 +1152,7 @@ where Arena: Allocator+Clone
     )
   }
 
+  #[allow(dead_code)]
   pub fn new(grammar: gb::TokenGrammar<Tok, Arena>) -> Self {
     let (terminals_interval_graph, alphabet, token_states) =
       Self::produce_terminals_interval_graph(grammar);

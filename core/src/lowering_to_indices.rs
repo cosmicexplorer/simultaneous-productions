@@ -189,6 +189,7 @@ pub mod grammar_building {
         }
       }
 
+      #[allow(dead_code)]
       pub fn into_index_map(
         self,
       ) -> IndexMap<gc::ProdRef, Production<Arena>, Arena, DefaultHasher> {
@@ -268,6 +269,7 @@ pub mod grammar_building {
         self.0.get(&tok_ref).map(|ps| ps.as_ref())
       }
 
+      #[allow(dead_code)]
       pub fn into_index_map(
         self,
       ) -> IndexMap<gc::TokRef, Vec<gc::TokenPosition, Arena>, Arena, DefaultHasher> {
@@ -407,6 +409,7 @@ pub mod grammar_building {
       /// of all    the [locations][TokenPosition] each token is located
       /// at. 2. Match up [ProductionReference]s to [ProdRef]s, or error
       /// out.
+      #[allow(dead_code)]
       pub fn new<ID, PR, C, P, SP, Lit>(
         sp: SP,
         arena: Arena,

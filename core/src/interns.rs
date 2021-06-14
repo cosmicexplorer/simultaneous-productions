@@ -102,6 +102,7 @@ where
   R: Into<usize>,
   Arena: Allocator,
 {
+  #[allow(dead_code)]
   pub fn retrieve(&self, key: R) -> &T {
     self
       .obarray
