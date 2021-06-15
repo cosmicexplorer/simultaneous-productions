@@ -382,11 +382,11 @@ mod state {
       #[allow(dead_code)]
       /* FIXME: should be crate::execution::Input!! */
       pub fn attach_input(
-        self,
+        &self,
         input: &p::Input<Tok, Arena>,
-      ) -> Result<super::active::Ready<Arena>, p::ParsingInputFailure<Tok>> {
-        Ok(super::active::Ready(p::ParseableGrammar::new(
-          self.0, input,
+      ) -> Result<super::active::Ready<'_, Arena>, p::ParsingInputFailure<Tok>> {
+        Ok(super::active::Ready::new(p::ParseableGrammar::new(
+          self.0.clone(), input,
         )?))
       }
     }
@@ -398,25 +398,32 @@ mod state {
   pub mod active {
     use crate::parsing as p;
 
-    use core::alloc::Allocator;
-
+    use core::{alloc::Allocator, marker::PhantomData};
 
     #[derive(Debug, Clone)]
-    pub struct Ready<Arena>(pub p::ParseableGrammar<Arena>)
+    pub struct Ready<'a, Arena>(pub p::ParseableGrammar<Arena>, PhantomData<&'a u8>)
     where Arena: Allocator+Clone;
 
-    impl<Arena> Ready<Arena>
+    impl<'a, Arena> Ready<'a, Arena>
     where Arena: Allocator+Clone
     {
+      pub fn new(grammar: p::ParseableGrammar<Arena>) -> Self { Self(grammar, PhantomData) }
+
       #[allow(dead_code)]
-      pub fn initialize_parse(self) -> InProgress<Arena> {
-        InProgress(p::Parse::initialize_with_trees_for_adjacent_pairs(self.0))
+      pub fn initialize_parse(self) -> InProgress<'a, Arena> {
+        InProgress::new(p::Parse::initialize_with_trees_for_adjacent_pairs(self.0))
       }
     }
 
     #[derive(Debug, Clone)]
-    pub struct InProgress<Arena>(pub p::Parse<Arena>)
+    pub struct InProgress<'a, Arena>(pub p::Parse<Arena>, PhantomData<&'a u8>)
     where Arena: Allocator+Clone;
+
+    impl<'a, Arena> InProgress<'a, Arena>
+    where Arena: Allocator+Clone
+    {
+      pub fn new(parse: p::Parse<Arena>) -> Self { Self(parse, PhantomData) }
+    }
   }
 }
 

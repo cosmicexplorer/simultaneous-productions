@@ -610,11 +610,9 @@ where Arena: Allocator+Clone
       ..
     } = grammar;
 
-    for (i, left_states) in input_as_states.iter().cloned().enumerate() {
-      assert!(i <= input_as_states.len());
-      if i >= input_as_states.len() - 1 {
-        break;
-      }
+
+    let states_to_take_len: usize = input_as_states.len() - 1;
+    for (i, left_states) in input_as_states.iter().take(states_to_take_len).enumerate() {
       let right_states = input_as_states.get(i + 1).unwrap();
       for left in left_states.0.iter() {
         for right in right_states.0.iter() {
@@ -895,11 +893,13 @@ mod tests {
   fn dynamic_parse_state() {
     let prods = non_cyclic_productions();
 
-    let detokenized = state::preprocessing::Init(prods).try_index_with_allocator(Global).unwrap();
+    let detokenized = state::preprocessing::Init(prods)
+      .try_index_with_allocator(Global)
+      .unwrap();
     let indexed = detokenized.index();
     let string_input = "ab";
     let input = Input(string_input.chars().collect());
-    let state::active::Ready(parseable_grammar) = indexed.attach_input(&input).unwrap();
+    let parseable_grammar: ParseableGrammar<Global> = indexed.attach_input(&input).unwrap().0;
 
     assert_eq!(
       parseable_grammar.input_as_states.clone(),
@@ -1080,7 +1080,9 @@ mod tests {
       .collect::<IndexMap<gi::StatePair, Vec<gi::StackDiffSegment<Global>>>>()
     );
 
-    let state::active::InProgress(mut parse) = state::active::Ready(parseable_grammar.clone()).initialize_parse();
+    let mut parse = state::active::Ready::new(parseable_grammar.clone())
+      .initialize_parse()
+      .0;
     let Parse {
       spans,
       grammar: new_parseable_grammar,
