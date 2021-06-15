@@ -434,9 +434,10 @@ pub mod grammar_building {
       ///
       /// This method does two things:
       /// 1. Flatten out [Literal]s into individual tokens, and store a mapping
-      /// of all    the [locations][TokenPosition] each token is located
-      /// at. 2. Match up [ProductionReference]s to [ProdRef]s, or error
-      /// out.
+      ///    of all the [locations][TokenPosition] each token is located
+      ///    at.
+      /// 2. Match up [ProductionReference]s to [ProdRef]s, or error
+      ///    out.
       #[allow(dead_code)]
       pub fn new<ID, PR, C, P, SP, Lit>(
         sp: SP,

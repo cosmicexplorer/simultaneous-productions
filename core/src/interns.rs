@@ -9,6 +9,7 @@ pub struct InternArena<T, R, Arena>
 where Arena: Allocator
 {
   obarray: Vec<T, Arena>,
+  #[doc(hidden)]
   _x: PhantomData<R>,
 }
 
