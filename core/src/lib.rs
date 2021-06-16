@@ -106,17 +106,19 @@ pub mod grammar_specification {
   #[cfg(doc)]
   use super::execution::Input;
 
-  use core::iter::Iterator;
+  use displaydoc::Display;
+
+  use core::iter::IntoIterator;
 
   /// A contiguous sequence of tokens.
-  pub trait Literal: Iterator {
+  pub trait Literal: IntoIterator {
     /// Specifies the type of "token" to iterate over when constructing a
     /// grammar.
     ///
     /// This parameter is *separate from, but may be the same as* the tokens we
     /// can actually parse with [Input::InChunk].
     type Tok;
-    /// Override [Iterator::Item] with this trait's parameter.
+    /// Override [IntoIterator::Item] with this trait's parameter.
     ///
     /// *Implementation Note: We could just leave this trait empty, but that
     /// would make it unclear there is an `Item` type that needs to be
@@ -129,13 +131,11 @@ pub mod grammar_specification {
   }
 
   /// Each individual element that can be matched against some input in a case.
-  ///
-  /// TODO: make `displaydoc::Display` smart enough to only try to impl Display
-  /// if all cases of an enum can impl display! Maybe with a nice error
-  /// message???
-  #[derive(Debug, Copy, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
+  #[derive(Debug, Display, Copy, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
   pub enum CaseElement<Lit, PR> {
+    /// literal value {0}
     Lit(Lit),
+    /// production reference {0}
     Prod(PR),
   }
 

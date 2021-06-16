@@ -6,7 +6,7 @@ edition = "2018"
 
 [dependencies]
 # heapless = "0.7.1"
-# displaydoc = "0.2.1"
+displaydoc = { git = "https://github.com/cosmicexplorer/displaydoc", rev = "efa8f4dfcf290883f1b2f84803eb21917526154e" }
 indexmap = { git = "https://github.com/cosmicexplorer/indexmap", rev = "afe48b586baa6a310bc069ec448ebc4b0fdc6210" }
 priority-queue = { git = "https://github.com/cosmicexplorer/priority-queue", rev = "dcb45d94e0295fc4a9c279cc130494375bb092f8" }
 twox-hash = "1.6.0"
