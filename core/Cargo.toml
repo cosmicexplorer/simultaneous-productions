@@ -10,3 +10,8 @@ edition = "2018"
 indexmap = { git = "https://github.com/cosmicexplorer/indexmap", rev = "afe48b586baa6a310bc069ec448ebc4b0fdc6210" }
 priority-queue = { git = "https://github.com/cosmicexplorer/priority-queue", rev = "dcb45d94e0295fc4a9c279cc130494375bb092f8" }
 twox-hash = "1.6.0"
+
+[features]
+default = ["generator-api", "stream-api"]
+generator-api = []
+stream-api = []

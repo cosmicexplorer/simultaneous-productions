@@ -222,6 +222,7 @@ pub mod execution {
     }
   }
 
+  #[cfg(feature = "generator-api")]
   pub mod generator_api {
     use super::*;
 
@@ -257,6 +258,7 @@ pub mod execution {
     }
   }
 
+  #[cfg(feature = "stream-api")]
   pub mod stream_api {
     use super::*;
 
