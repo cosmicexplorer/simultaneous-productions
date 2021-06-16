@@ -201,12 +201,7 @@ pub mod execution {
     impl<ST, I> From<I> for STIterator<ST, I>
     where ST: Default
     {
-      fn from(value: I) -> Self {
-        Self {
-          state: ST::default(),
-          iter: value,
-        }
-      }
+      fn from(value: I) -> Self { Self::new(ST::default(), value) }
     }
 
     impl<ST, I, II, O, OO, R> Iterator for STIterator<ST, I>
@@ -386,7 +381,8 @@ mod state {
         input: &p::Input<Tok, Arena>,
       ) -> Result<super::active::Ready<'_, Arena>, p::ParsingInputFailure<Tok>> {
         Ok(super::active::Ready::new(p::ParseableGrammar::new(
-          self.0.clone(), input,
+          self.0.clone(),
+          input,
         )?))
       }
     }
