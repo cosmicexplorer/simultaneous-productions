@@ -20,11 +20,7 @@
  */
 #![no_std]
 #![allow(incomplete_features)]
-#![feature(trait_alias)]
 #![feature(allocator_api)]
-#![feature(associated_type_defaults)]
-#![feature(inherent_associated_types)]
-#![feature(generic_associated_types)]
 #![feature(generators, generator_trait)]
 #![feature(async_stream)]
 /* These clippy lint descriptions are purely non-functional and do not affect the functionality
@@ -85,7 +81,8 @@ pub mod token {
   };
 
   /// The constraints required for any token stream parsed by this crate.
-  pub trait Token = Debug+Display+PartialEq+Eq+Hash+Copy+Clone;
+  pub trait Token: Debug+Display+PartialEq+Eq+Hash+Copy+Clone {}
+  impl<Tok> Token for Tok where Tok: Debug+Display+PartialEq+Eq+Hash+Copy+Clone {}
 }
 
 pub mod allocation {
@@ -123,7 +120,7 @@ pub mod grammar_specification {
     /// *Implementation Note: We could just leave this trait empty, but that
     /// would make it unclear there is an `Item` type that needs to be
     /// set elsewhere.*
-    type Item = Self::Tok;
+    type Item: Into<Self::Tok>;
   }
 
   pub trait ProductionReference: Into<Self::ID> {
@@ -144,22 +141,22 @@ pub mod grammar_specification {
   pub trait Case: Iterator {
     type Lit: Literal;
     type PR: ProductionReference;
-    type Item = CaseElement<Self::Lit, Self::PR>;
+    type Item: Into<CaseElement<Self::Lit, Self::PR>>;
   }
 
   /// A disjunction of cases.
   pub trait Production: Iterator {
     type C: Case;
-    type Item = Self::C;
+    type Item: Into<Self::C>;
   }
 
   /// A conjunction of productions.
   pub trait SimultaneousProductions: Iterator {
     type P: Production;
-    type Item = (
+    type Item: Into<(
       <<<Self as SimultaneousProductions>::P as Production>::C as Case>::PR,
       Self::P,
-    );
+    )>;
   }
 }
 
@@ -475,6 +472,7 @@ pub mod test_framework {
   }
 
   impl gs::Literal for Lit {
+    type Item = char;
     type Tok = char;
   }
 
@@ -535,6 +533,7 @@ pub mod test_framework {
   }
 
   impl gs::Case for Case {
+    type Item = CE;
     type Lit = Lit;
     type PR = ProductionReference;
   }
@@ -554,6 +553,7 @@ pub mod test_framework {
 
   impl gs::Production for Production {
     type C = Case;
+    type Item = Case;
   }
 
   #[derive(Debug, Clone)]
@@ -572,7 +572,7 @@ pub mod test_framework {
   }
 
   impl gs::SimultaneousProductions for SP {
-    /* type Item = Box<(ProductionReference, Self::P), Global>; */
+    type Item = (ProductionReference, Self::P);
     type P = Production;
   }
 
