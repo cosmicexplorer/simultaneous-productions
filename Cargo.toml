@@ -7,9 +7,18 @@ edition = "2018"
 [dependencies]
 # frunk = "0.1.9"
 # gensym = "0.1.0"
-displaydoc = "0.2"
-indexmap = "1.0.2"
-priority-queue = "0.6.0"
-sp-core = { path = "core/" }
-thiserror = "1"
-typename = "0.1.1"
+sp-core = { path = "./core/" }
+# typename = "0.1.1"
+
+[dependencies.sp-generator-api]
+path = "./generator-api/"
+optional = true
+
+[dependencies.sp-stream-api]
+path = "./stream-api"
+optional = true
+
+[features]
+nightly = ["sp-core/nightly", "sp-generator-api/nightly", "sp-stream-api/nightly"]
+generator-api = ["sp-generator-api"]
+stream-api = ["sp-stream-api"]

@@ -57,9 +57,9 @@ dependencies = [
 
 [[package]]
 name = "libc"
-version = "0.2.96"
+version = "0.2.97"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "5600b4e6efc5421841a2138a6b082e07fe12f9aaa12783d50e5d13325b26b4fc"
+checksum = "12b8adadd720df158f4d70dfe7ccc6adb0472d7c55ca83445f6a5ab3e36f8fb6"
 
 [[package]]
 name = "ppv-lite86"
@@ -136,15 +136,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "simultaneous-productions"
-version = "0.0.0"
-dependencies = [
- "sp-core",
- "sp-generator-api",
- "sp-stream-api",
-]
-
-[[package]]
 name = "sp-core"
 version = "0.0.0"
 dependencies = [
@@ -156,13 +147,6 @@ dependencies = [
 
 [[package]]
 name = "sp-generator-api"
-version = "0.0.0"
-dependencies = [
- "sp-core",
-]
-
-[[package]]
-name = "sp-stream-api"
 version = "0.0.0"
 dependencies = [
  "sp-core",

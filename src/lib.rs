@@ -1,5 +1,6 @@
 /*
- * Description: ???
+ * Description: Wrap the Simultaneous Productions general parsing method from
+ *              the "sp_core" crate.
  *
  * Copyright (C) 2019-2021 Danny McClanahan <dmcC2@hypnicjerk.ai>
  * SPDX-License-Identifier: AGPL-3.0
@@ -17,6 +18,19 @@
  * You should have received a copy of the GNU Affero General Public License
  * along with this program.  If not, see <https://www.gnu.org/licenses/>.
  */
+
+//! Wrap the Simultaneous Productions general parsing method from [`sp_core`].
+//!
+//! This crate relies on the rust standard library and does not support
+//! `no_std` environments. Please see the [`sp_core`] crate, which is written
+//! for `no_std` environments.
+//!
+//! ### Unstable Features
+//! Currently, this crate does not support being built on stable rust, due to
+//! the use of the following unstable features:
+//! 1. [ ] `#![feature(generators, generator_trait)]`: see [`sp_generator_api`].
+//! 2. [ ] `#![feature(async_stream)]`: see [`sp_stream_api`].
+
 #![feature(fn_traits)]
 #![feature(trace_macros)]
 #![feature(trait_alias)]
@@ -55,8 +69,13 @@
 /* Arc<Mutex> can be more clear than needing to grok Orderings. */
 #![allow(clippy::mutex_atomic)]
 
-#[macro_use]
-pub mod binding;
+/* #[macro_use] */
+/* pub mod binding; */
+
+#[cfg(feature = "generator-api")]
+pub use sp_generator_api as generator_api;
+#[cfg(feature = "stream-api")]
+pub use sp_stream_api as stream_api;
 
 /// The basic structs which define an input grammar.
 ///

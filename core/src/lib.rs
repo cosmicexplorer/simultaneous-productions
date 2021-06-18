@@ -25,15 +25,10 @@
 //! Currently, this crate does not support being built on stable rust, due to
 //! the use of the following unstable features:
 //! 1. [ ] `#![feature(allocator_api)]`: see [`allocation`].
-//! 2. [ ] `#![feature(generators, generator_trait)]`: see
-//!    [`execution::generator_api`].
-//! 3. [ ] `#![feature(async_stream)]`: see [`execution::stream_api`].
 
 #![no_std]
 #![allow(incomplete_features)]
 #![feature(allocator_api)]
-#![feature(generators, generator_trait)]
-#![feature(async_stream)]
 /* These clippy lint descriptions are purely non-functional and do not affect the functionality
  * or correctness of the code.
  * TODO: rustfmt breaks multiline comments when used one on top of another! (each with its own
@@ -195,10 +190,8 @@ pub mod grammar_specification {
 /// The basic trait [`execution::Transformer`] allows constructing pipelines of
 /// multiple separate monadic interfaces:
 /// 1. **Iterators:** see [`execution::iterator_api`].
-/// 2. **Generators:** see [`execution::generator_api`] (requires the
-///    `"generator-api"` crate feature).
-/// 3. **Streams:** see [`execution::stream_api`] (requires the `"stream-api"`
-///    crate feature).
+/// 2. **Generators:** see the `sp_generator_api` crate.
+/// 3. **Streams:** see the `sp_stream_api` crate..
 pub mod execution {
   /// A "stream-like" type.
   ///
@@ -278,114 +271,6 @@ pub mod execution {
           .iter
           .next()
           .and_then(|input| self.state.transform(input).into())
-      }
-    }
-  }
-
-  /// A [`Generator`][core::ops::Generator]-based API to a [`Transformer`].
-  ///
-  /// Requires the crate feature `"generator-api"`.
-  #[cfg(feature = "generator-api")]
-  pub mod generator_api {
-    use super::*;
-
-    use core::{
-      marker::{PhantomData, Unpin},
-      ops::{Generator, GeneratorState},
-      pin::Pin,
-    };
-
-    /// A wrapper struct which consumes a transformer `ST`.
-    ///
-    /// Implements [`Generator`] such that [`Generator::Yield`] is equal to
-    /// [`Transformer::O`] when `ST` implements [`Transformer`].
-    ///
-    /// *Note that the generator api here requires injecting no external state,
-    /// unlike for [`iterator_api`][super::iterator_api] and
-    /// [`stream_api`][super::stream_api]!*
-    #[derive(Debug, Default, Copy, Clone)]
-    pub struct STGenerator<ST, Ret>(ST, PhantomData<Ret>);
-
-    impl<ST, Ret> From<ST> for STGenerator<ST, Ret> {
-      fn from(value: ST) -> Self { Self(value, PhantomData) }
-    }
-
-    impl<ST, R, Ret> Generator<<ST::I as Input>::InChunk> for STGenerator<ST, Ret>
-    where
-      Ret: Unpin,
-      R: Into<GeneratorState<<ST::O as Output>::OutChunk, Ret>>,
-      ST: Transformer<R=R>+Unpin,
-    {
-      type Return = Ret;
-      type Yield = <ST::O as Output>::OutChunk;
-
-      fn resume(
-        self: Pin<&mut Self>,
-        arg: <ST::I as Input>::InChunk,
-      ) -> GeneratorState<Self::Yield, Self::Return> {
-        let Self(state, _) = self.get_mut();
-        state.transform(arg).into()
-      }
-    }
-  }
-
-  /// A [`Stream`][core::stream::Stream]-based API to a [`Transformer`].
-  ///
-  /// Requires the crate feature `"stream-api"`.
-  #[cfg(feature = "stream-api")]
-  pub mod stream_api {
-    use super::*;
-
-    use core::{
-      marker::Unpin,
-      pin::Pin,
-      stream::Stream,
-      task::{Context, Poll},
-    };
-
-    /// A wrapper struct which consumes a transformer `ST` and a stream `I`.
-    ///
-    /// Implements [`Stream`] such that [`Stream::Item`] is equal to
-    /// [`Transformer::O`] when `ST` implements [`Transformer`].
-    #[derive(Debug, Default, Copy, Clone)]
-    pub struct STStream<ST, I> {
-      state: ST,
-      stream: I,
-    }
-
-    impl<ST, I> STStream<ST, I> {
-      /// Create a new instance given a [Transformer] instance and an input
-      /// stream.
-      pub fn new(state: ST, stream: I) -> Self { Self { state, stream } }
-    }
-
-    impl<ST, I> From<I> for STStream<ST, I>
-    where ST: Default
-    {
-      fn from(value: I) -> Self {
-        Self {
-          state: ST::default(),
-          stream: value,
-        }
-      }
-    }
-
-    impl<ST, I, II, O, OO, R> Stream for STStream<ST, I>
-    where
-      I: Input<InChunk=II>+Stream<Item=II>+Unpin,
-      O: Output<OutChunk=OO>+Stream<Item=OO>,
-      R: Into<Poll<Option<OO>>>,
-      ST: Transformer<I=I, O=O, R=R>+Unpin,
-    {
-      type Item = OO;
-
-      fn poll_next(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
-        let Self { state, stream } = self.get_mut();
-        match Pin::new(stream).poll_next(cx) {
-          Poll::Pending => Poll::Pending,
-          Poll::Ready(None) => Poll::Ready(None),
-          Poll::Ready(Some(x)) => state.transform(x).into(),
-        }
       }
     }
   }
