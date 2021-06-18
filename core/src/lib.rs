@@ -18,6 +18,17 @@
  * You should have received a copy of the GNU Affero General Public License
  * along with this program.  If not, see <https://www.gnu.org/licenses/>.
  */
+
+//! Implement the Simultaneous Productions general parsing method.
+//!
+//! ### Unstable Features
+//! Currently, this crate does not support being built on stable rust, due to
+//! the use of the following unstable features:
+//! 1. [ ] `#![feature(allocator_api)]`: see [`allocation`].
+//! 2. [ ] `#![feature(generators, generator_trait)]`: see
+//!    [`execution::generator_api`].
+//! 3. [ ] `#![feature(async_stream)]`: see [`execution::stream_api`].
+
 #![no_std]
 #![allow(incomplete_features)]
 #![feature(allocator_api)]
@@ -28,7 +39,7 @@
  * TODO: rustfmt breaks multiline comments when used one on top of another! (each with its own
  * pair of delimiters)
  * Note: run clippy with: rustup run nightly cargo-clippy! */
-#![allow(missing_docs)]
+#![warn(missing_docs)]
 /* Ensure any doctest warnings fails the doctest! */
 #![doc(test(attr(deny(warnings))))]
 /* Enable all clippy lints except for many of the pedantic ones. It's a shame this needs to be
@@ -65,7 +76,7 @@ mod parsing;
 mod reconstruction;
 
 mod types {
-  pub use indexmap::alloc_inner::{Global, Vec};
+  pub use indexmap::alloc_inner::{Allocator, Global, Vec};
   use twox_hash::XxHash64;
 
   use core::hash::BuildHasherDefault;
@@ -73,23 +84,36 @@ mod types {
   pub type DefaultHasher = BuildHasherDefault<XxHash64>;
 }
 
-/// Definition of the trait used to parameterize an atomic input component.
-pub mod token {
-  use core::{
-    fmt::{Debug, Display},
-    hash::Hash,
-  };
-
-  /// The constraints required for any token stream parsed by this crate.
-  pub trait Token: Debug+Display+PartialEq+Eq+Hash+Copy+Clone {}
-  impl<Tok> Token for Tok where Tok: Debug+Display+PartialEq+Eq+Hash+Copy+Clone {}
-}
-
+/// Bridge to the unstable [`allocator_api` module].
+///
+/// ### TODO
+/// Currently, this crate does not support being built on stable rust, due to
+/// the use of the unstable `#![feature(allocator_api)]`.
+/// - [ ] Use the (old, but maybe ok?) [`allocator_api` crate] to enable this?
+///
+/// [`allocator_api` module]: https://doc.rust-lang.org/unstable-book/library-features/allocator-api.html
+/// [`allocator_api` crate]: https://docs.rs/allocator_api/0.6.0/allocator_api/
 pub mod allocation {
-  use core::alloc::Allocator;
+  use super::types::Allocator;
 
+  /// Allows an [Allocator]-based collection to generate a reference to its
+  /// allocator.
+  ///
+  /// Implementing this trait allows a [prototypal] mechanism of copying
+  /// references to the allocator used for some some originally-allocated
+  /// collection. It is used in this crate to re-use a parameterized allocator
+  /// for the whole of the `preprocessing` regime **(TODO: cite!)**.
+  ///
+  /// [prototypal]: https://en.wikipedia.org/wiki/Prototype_pattern
   pub trait HandoffAllocable {
+    /// The type of allocator to use, for both the original collection and the
+    /// one being "handed off" to.
     type Arena: Allocator;
+    /// Produce a new instance of an [Allocator].
+    ///
+    /// **Note:** Implementing this trait typically requires using the
+    /// `impl<..., Arena> ... where Arena: Allocator+[Clone]` trait bound in
+    /// order to produce a new instance from a reference `&self`.
     fn allocator_handoff(&self) -> Self::Arena;
   }
 }
@@ -100,9 +124,6 @@ pub mod allocation {
 /// declaring a grammar, their stability guarantees can be much lower than the
 /// definitions in this module.*
 pub mod grammar_specification {
-  #[cfg(doc)]
-  use super::execution::Input;
-
   use displaydoc::Display;
 
   use core::iter::IntoIterator;
@@ -113,7 +134,7 @@ pub mod grammar_specification {
     /// grammar.
     ///
     /// This parameter is *separate from, but may be the same as* the tokens we
-    /// can actually parse with [Input::InChunk].
+    /// can actually parse with [Input::InChunk][super::execution::Input].
     type Tok;
     /// Override [IntoIterator::Item] with this trait's parameter.
     ///
@@ -123,7 +144,11 @@ pub mod grammar_specification {
     type Item: Into<Self::Tok>;
   }
 
+  /// A type representing a [Production] that the grammar should satisfy at that
+  /// position.
   pub trait ProductionReference: Into<Self::ID> {
+    /// Parameterized type to reference the identity of some particular
+    /// [Production].
     type ID;
   }
 
@@ -139,20 +164,27 @@ pub mod grammar_specification {
   /// A sequence of *elements* which, if successfully matched against some
   /// *input*, represents some *production*.
   pub trait Case: Iterator {
+    /// Literal tokens used. in this case.
     type Lit: Literal;
+    /// References to productions used in this case.
     type PR: ProductionReference;
+    /// Override of [Iterator::Item].
     type Item: Into<CaseElement<Self::Lit, Self::PR>>;
   }
 
   /// A disjunction of cases.
   pub trait Production: Iterator {
+    /// Cases used in this production.
     type C: Case;
+    /// Override of [Iterator::Item].
     type Item: Into<Self::C>;
   }
 
-  /// A conjunction of productions.
+  /// A conjunction of productions (a grammar!).
   pub trait SimultaneousProductions: Iterator {
+    /// Productions used in this grammar.
     type P: Production;
+    /// Override of [Iterator::Item].
     type Item: Into<(<<Self::P as Production>::C as Case>::PR, Self::P)>;
   }
 }
@@ -160,28 +192,60 @@ pub mod grammar_specification {
 /// The basic traits which define the *input*, *actions*, and *output* of a
 /// parse.
 ///
-/// See the node.js [transform stream API docs] as inspiration!
-///
-/// [transform stream API docs]: https://nodejs.org/api/stream.html#stream_implementing_a_transform_stream
+/// The basic trait [`execution::Transformer`] allows constructing pipelines of
+/// multiple separate monadic interfaces:
+/// 1. **Iterators:** see [`execution::iterator_api`].
+/// 2. **Generators:** see [`execution::generator_api`] (requires the
+///    `"generator-api"` crate feature).
+/// 3. **Streams:** see [`execution::stream_api`] (requires the `"stream-api"`
+///    crate feature).
 pub mod execution {
+  /// A "stream-like" type.
+  ///
+  /// A "stream-like" type has a method that returns one instance of
+  /// [Self::InChunk] at a time, possibly in a blocking fashion.
   pub trait Input {
+    /// Type of object to iterate over.
     type InChunk;
   }
 
+  /// Another stream-like type.
   pub trait Output {
+    /// Type of object to iterate over.
     type OutChunk;
   }
 
+  /// A stream-like type which transforms [Self::I] into [Self::O].
+  ///
+  /// See the node.js [transform stream API docs] as inspiration!
+  ///
+  /// [transform stream API docs]: https://nodejs.org/api/stream.html#stream_implementing_a_transform_stream
   pub trait Transformer {
+    /// Input stream for this transformer to consume.
     type I: Input;
+    /// Output stream for this transformer to produce.
     type O: Output;
+    /// The return value of [Self::transform].
+    ///
+    /// This type is intentionally not constrained at all in order to conform to
+    /// multiple monadic APIs in a [prototypal] way. *See [iterator_api].*
+    ///
+    /// [prototypal]: https://en.wikipedia.org/wiki/Prototype_pattern
     type R;
+    /// Consume a single block of `input`, modify any internal state, and
+    /// produce a result.
     fn transform(&mut self, input: <Self::I as Input>::InChunk) -> Self::R;
   }
 
+  /// An [`Iterator`][core::iter::Iterator]-based API to a [`Transformer`].
   pub mod iterator_api {
     use super::*;
 
+    /// A wrapper struct which consumes a transformer `ST` and an input iterable
+    /// `I`.
+    ///
+    /// Implements [`Iterator`] such that [`Iterator::Item`] is equal to
+    /// [`Transformer::O`] when `ST` implements [`Transformer`].
     #[derive(Debug, Default, Copy, Clone)]
     pub struct STIterator<ST, I> {
       state: ST,
@@ -189,6 +253,8 @@ pub mod execution {
     }
 
     impl<ST, I> STIterator<ST, I> {
+      /// Create a new instance from a [`Transformer`] `ST` and an [`Iterator`]
+      /// `I`.
       pub fn new(state: ST, iter: I) -> Self { Self { state, iter } }
     }
 
@@ -216,6 +282,9 @@ pub mod execution {
     }
   }
 
+  /// A [`Generator`][core::ops::Generator]-based API to a [`Transformer`].
+  ///
+  /// Requires the crate feature `"generator-api"`.
   #[cfg(feature = "generator-api")]
   pub mod generator_api {
     use super::*;
@@ -226,6 +295,14 @@ pub mod execution {
       pin::Pin,
     };
 
+    /// A wrapper struct which consumes a transformer `ST`.
+    ///
+    /// Implements [`Generator`] such that [`Generator::Yield`] is equal to
+    /// [`Transformer::O`] when `ST` implements [`Transformer`].
+    ///
+    /// *Note that the generator api here requires injecting no external state,
+    /// unlike for [`iterator_api`][super::iterator_api] and
+    /// [`stream_api`][super::stream_api]!*
     #[derive(Debug, Default, Copy, Clone)]
     pub struct STGenerator<ST, Ret>(ST, PhantomData<Ret>);
 
@@ -252,6 +329,9 @@ pub mod execution {
     }
   }
 
+  /// A [`Stream`][core::stream::Stream]-based API to a [`Transformer`].
+  ///
+  /// Requires the crate feature `"stream-api"`.
   #[cfg(feature = "stream-api")]
   pub mod stream_api {
     use super::*;
@@ -263,6 +343,10 @@ pub mod execution {
       task::{Context, Poll},
     };
 
+    /// A wrapper struct which consumes a transformer `ST` and a stream `I`.
+    ///
+    /// Implements [`Stream`] such that [`Stream::Item`] is equal to
+    /// [`Transformer::O`] when `ST` implements [`Transformer`].
     #[derive(Debug, Default, Copy, Clone)]
     pub struct STStream<ST, I> {
       state: ST,
@@ -270,6 +354,8 @@ pub mod execution {
     }
 
     impl<ST, I> STStream<ST, I> {
+      /// Create a new instance given a [Transformer] instance and an input
+      /// stream.
       pub fn new(state: ST, stream: I) -> Self { Self { state, stream } }
     }
 

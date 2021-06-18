@@ -1,7 +1,7 @@
 /* Copyright (C) 2021 Danny McClanahan <dmcC2@hypnicjerk.ai> */
 /* SPDX-License-Identifier: AGPL-3.0 */
 
-//! Map locations of [Token]s and [ProductionReference]s.
+//! Map locations of [tok][Literal::Tok]ens and [ProductionReference]s.
 //!
 //! This phase mainly consists of calling [TokenGrammar::new].
 //!
@@ -18,7 +18,7 @@
 //! ]
 
 #[cfg(doc)]
-use crate::{grammar_specification::ProductionReference, token::Token};
+use crate::grammar_specification::{Literal, ProductionReference};
 #[cfg(doc)]
 use grammar_building::TokenGrammar;
 
