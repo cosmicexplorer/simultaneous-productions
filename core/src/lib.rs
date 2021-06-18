@@ -276,8 +276,9 @@ pub mod execution {
   }
 }
 
-/// The various phases that a grammar and/or a parse goes through.
-mod state {
+/// The various phases that a grammar (in [preprocessing][state::preprocessing]) and then a parse
+/// (in [active][state::active]) goes through.
+pub mod state {
   #[cfg(doc)]
   use crate::execution::Input;
   #[cfg(doc)]
@@ -296,6 +297,7 @@ mod state {
 
     use core::{alloc::Allocator, fmt, hash::Hash, iter::IntoIterator};
 
+    /// Container for an implementor of [gs::SimultaneousProductions].
     #[derive(Debug, Copy, Clone)]
     pub struct Init<SP>(pub SP);
 
@@ -323,6 +325,7 @@ mod state {
       }
     }
 
+    /// Container after converting the tokens into [gc::TokenPosition]s.
     #[derive(Debug, Clone)]
     pub struct Detokenized<Tok, Arena>(pub gb::TokenGrammar<Tok, Arena>)
     where Arena: Allocator+Clone;
@@ -336,6 +339,7 @@ mod state {
       pub fn index(self) -> Indexed<Tok, Arena> { Indexed(gi::PreprocessedGrammar::new(self.0)) }
     }
 
+    /// Container for an immediately executable grammar.
     #[derive(Debug, Clone)]
     pub struct Indexed<Tok, Arena>(pub gi::PreprocessedGrammar<Tok, Arena>)
     where Arena: Allocator+Clone;
@@ -369,6 +373,7 @@ mod state {
 
     use core::{alloc::Allocator, marker::PhantomData};
 
+    /// Container for a parseable grammar that propagates the lifetime of an input.
     #[derive(Debug, Clone)]
     pub struct Ready<'a, Arena>(pub p::ParseableGrammar<Arena>, PhantomData<&'a u8>)
     where Arena: Allocator+Clone;
@@ -376,6 +381,7 @@ mod state {
     impl<'a, Arena> Ready<'a, Arena>
     where Arena: Allocator+Clone
     {
+      #[allow(missing_docs)]
       pub fn new(grammar: p::ParseableGrammar<Arena>) -> Self { Self(grammar, PhantomData) }
 
       /// "Detokenize" *(TODO: cite!)* the input and produce a [`p::Parse`]
@@ -394,6 +400,7 @@ mod state {
     impl<'a, Arena> InProgress<'a, Arena>
     where Arena: Allocator+Clone
     {
+      #[allow(missing_docs)]
       pub fn new(parse: p::Parse<Arena>) -> Self { Self(parse, PhantomData) }
     }
   }
