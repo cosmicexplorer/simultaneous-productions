@@ -49,7 +49,7 @@
 \section{Motivation for a New Grammar Specification}
 \label{sec:motivation}
 
-This paper is the first of several on a parsing method we will refer to as ``Simultaneous Productions'' (or ``S.P.'' for short).zThis name was chosen to emphasize two goals of this method:
+This paper is the first of several on a parsing method we will refer to as ``Simultaneous Productions'' (or ``S.P.'' for short). This name was chosen to emphasize two goals of this method:
 \begin{enumerate}
   \item An S.P. \textit{grammar} is composed of a set of \textit{productions}, very similar to most existing concepts of formal grammars \todocite{chomsky formal grammars}. However, unlike many common parsing algorithms \todocite{common parsing algorithms -- frequency and power? maybe cite history of parsing page?}, an S.P. grammar can represent a recursively enumerable language \todocite{what is RecEnum?}.
   \item When parsing a string, these productions can be independently evaluated over separate parts of the input string, and adjacent successful matches can then be merged to form a successful parse. Unlike many common parsing algorithms \todocite{might need to expand on this more? need to think about what ``common'' means}, this feature avoids any intrinsic serial dependencies that require parsing the beginning of the string first, hence allowing for \textit{parallelism} during the parsing process.
@@ -100,7 +100,7 @@ We first define the \textit{S.P. grammar-grammar}, as a kind of meta-grammar whi
   \label{eq:sp}
   SP = (\Sigma, \scr{P}).
 \end{equation}
-An \textit{S.P. grammar} $SP$ is a 2-tuple with an arbitrary finite set $\Sigma$ and a finite set of productions $\scr{P}$ defined in \expliciteqnref{eq:p}. We refer to $\Sigma$ as the \textit{alphabet}.
+An \textit{S.P. grammar} $SP$ is a 2-tuple with an arbitrary finite \footnote{The finiteness of $\Sigma$ and $\scr{P}$ is an entirely arbitrary limitation we apply for the purposes of this paper.} set $\Sigma$ and a finite set of productions $\scr{P}$ defined in \expliciteqnref{eq:p}. We refer to $\Sigma$ as the \textit{alphabet}.
 
 \begin{equation}
   \label{eq:p}
