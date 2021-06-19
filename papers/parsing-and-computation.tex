@@ -2,14 +2,19 @@
 
 \usepackage{mcclanahan}
 
-\title{Simultaneous Productions: \\ A Method of Accumulating Non-hierarchical Forms}
+\newcommand{\todocite}[1]{\footnote{cite: #1}}
+\newcommand{\todo}[1]{\textbf{?} \footnote{TODO: #1}}
+
+\title{Efficiently Inferring Non-hierarchical Structure in Parsing and Computation}
 \date{2021-06-19}
 \author{Danny McClanahan}
 
 \begin{document}
 \maketitle
 
-\textit{TODO: abstract!}
+\textit{Abstract:} This paper proposes to revise the general definition of a ``grammar''\todocite{grammar defn} as well as ``parsing''\todocite{parsing defn}. A meta-language named ``Simultaneous Productions'' (or ``S.P'') is proposed for specifying a parseable grammar (similar in intent to EBNF\todocite{EBNF}). This meta-language is shown to be equivalent to a Turing Machine\todocite{T.M. defn}, and several favorable properties of this meta-language across various use cases are discussed.
+
+An actual ``evaluation method'' (or ``parsing algorithm'') is then introduced for the proposed S.P. grammar model, which shares some similarities with the CYK algorithm \todocite{CYK algorithm!}. This method is shown to terminate in \todo{parsing runtime?} time across \todo{parsing inputs?} inputs. This method is then demonstrated to have the peculiar property of parameterizing context-sensitivity \todocite{context-sensitivity defn} \todo{is this peculiar?}. The practical and theoretical ramifications of this result are discussed and speculated on.
 
 \tableofcontents
 
