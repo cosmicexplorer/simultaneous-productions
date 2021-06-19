@@ -49,7 +49,7 @@
 \section{Motivation for a New Grammar Specification}
 \label{sec:motivation}
 
-This paper is the first of several on a parsing method we will refer to as ``Simultaneous Productions'' (or ``S.P.'' for short). This name was chosen to emphasize two goals of this method:
+This paper is the first of several on a parsing method we will refer to as ``Simultaneous Productions'' (or ``S.P.'' for short).zThis name was chosen to emphasize two goals of this method:
 \begin{enumerate}
   \item An S.P. \textit{grammar} is composed of a set of \textit{productions}, very similar to most existing concepts of formal grammars \todocite{chomsky formal grammars}. However, unlike many common parsing algorithms \todocite{common parsing algorithms -- frequency and power? maybe cite history of parsing page?}, an S.P. grammar can represent a recursively enumerable language \todocite{what is RecEnum?}.
   \item When parsing a string, these productions can be independently evaluated over separate parts of the input string, and adjacent successful matches can then be merged to form a successful parse. Unlike many common parsing algorithms \todocite{might need to expand on this more? need to think about what ``common'' means}, this feature avoids any intrinsic serial dependencies that require parsing the beginning of the string first, hence allowing for \textit{parallelism} during the parsing process.
@@ -57,7 +57,11 @@ This paper is the first of several on a parsing method we will refer to as ``Sim
 
 \subsection{Goals}
 \label{sec:goals}
-We have noted that the above two features are not shared by many commonly-used parsing algorithms \todocite{the history of parsing webpage}. In this paper, we will describe the S.P. \textit{grammar-grammar}, i.e. the specification which defines any S.P. grammar. We hope to show that:
+We have noted that the above features are not shared by many commonly-used parsing algorithms \todocite{the history of parsing webpage}. In this paper, we will describe the S.P. \textit{grammar-grammar}, i.e. the specification which defines any S.P. grammar.
+
+The S.P. model was created to make grammar definitions significantly more composable by \textbf{separating the entry point for parsing/string matching from the rest of the grammar's definition}. The hope is that this can allow for \textbf{global agreement upon a safe reliable subset of ``primitive'' parsers (e.g. integer and float parsers) across codebases}, while end users are still able to add custom logic on top seamlessly.
+
+We hope to show that:
 \begin{enumerate}
   \item The S.P. grammar-grammar should be proven equivalent to Chomsky's canonical specification of an formal language \todocite{chomsky formal grammars again, maybe just turing machine?}.
   \item The S.P. grammar input format should be able to represent all rungs of the Chomsky hierarchy distinctly to the \textit{grammar-writer}, who may then pick and choose the kind of complexity they want instead of getting surprised. For example: \begin{itemize}
@@ -66,6 +70,7 @@ We have noted that the above two features are not shared by many commonly-used p
       \item regex with backrefs (recursively enumerable?) \todocite{backrefs are RecEnum?}.
     \end{itemize}
   \item Furthermore, representing a grammar with S.P. \textbf{should follow strongly a ``pay for what you use'' policy}, i.e. having more complex features should not create needless complexity for users who only use the simpler features. \textbf{This requires creating a hierarchical-ish concept of feature complexity.}
+  \item Separate the output of a parse from the algorithm that produces it: see \explicitsecref{sec:no-parsing-allowed}. We hope that \textbf{standardizing parser output} into the fully general \footnote{is this true?} PoP format as well as \textbf{sharing high-quality grammars in a modular way} can reduce what we see as a frustrating amount of mental overhead and duplicated work for everyone who wants to write any sort of compiler or interpreter. We believe this situation can be improved.
 \end{enumerate}
 
 \subsection{No Parsing Allowed}
@@ -73,12 +78,6 @@ We have noted that the above two features are not shared by many commonly-used p
 \textbf{We will not rely on the details of any specific parsing algorithm.} Indeed, we will avoid introducing any iterative algorithms at all in this paper. Further paper(s) will describe an efficient parsing algorithm to evaluate an S.P. grammar over a specific input string.
 
 The intention of this separation is to allow the S.P. grammar-grammar to be reviewed and criticized separately from the evaluation method. This is done because the author believes that the S.P. grammar-grammar has merit in itself, as a ``lingua franca'' for \textit{executable formal grammars}, that is, grammars which can be efficiently parsed by computer.
-
-\subsection{Background: Composable Grammars}
-\label{sec:background-composable-grammars}
-The S.P. model was partially created to make grammar definitions significantly more composable by \textbf{separating the entry point for parsing/string matching from the rest of the grammar's definition}. The hope is that this can allow for \textbf{global agreement upon a safe reliable subset of ``primitive'' parsers (e.g. integer and float parsers) across codebases}, while end users are still able to add custom logic on top seamlessly.
-
-Similarly, we describe our goal to separate the output of a parse from the algorithm that produces it in \explicitsecref{sec:no-parsing-allowed}. We hope that \textbf{standardizing parser output} into the fully general \footnote{is this true?} PoP format as well as \textbf{sharing high-quality grammars in a modular way} can reduce what we see as a frustrating amount of mental overhead and duplicated work for everyone who wants to write any sort of compiler or interpreter. We believe this situation can be improved.
 
 \subsection{Notation}
 \label{sec:notation}
