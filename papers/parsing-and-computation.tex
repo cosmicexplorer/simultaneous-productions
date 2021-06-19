@@ -12,9 +12,11 @@
 \begin{document}
 \maketitle
 
-\textit{Abstract:} This paper proposes to revise the general definition of a ``grammar''\todocite{grammar defn} as well as ``parsing''\todocite{parsing defn}. A meta-language named ``Simultaneous Productions'' (or ``S.P'') is proposed for specifying a parseable grammar (similar in intent to EBNF\todocite{EBNF}). This meta-language is shown to be equivalent to a Turing Machine\todocite{T.M. defn}, and several favorable properties of this meta-language across various use cases are discussed.
+\textit{Abstract:} This paper proposes to revise the general definition of a ``grammar''\todocite{grammar defn} as well as ``parsing''\todocite{parsing defn}. A meta-language named ``Simultaneous Productions'' (or ``S.P'') is proposed for specifying a parseable grammar (similar in intent to EBNF\todocite{EBNF}). This meta-language is shown to be able to represent recursively enumerable languages\todocite{RecEnum defn}, and several favorable properties of this meta-language across various parsing use cases are discussed.
 
-An actual ``evaluation method'' (or ``parsing algorithm'') is then introduced for the proposed S.P. grammar model, which shares some similarities with the CYK algorithm \todocite{CYK algorithm!}. This method is shown to terminate in \todo{parsing runtime?} time across \todo{parsing inputs?} inputs. This method is then demonstrated to have the peculiar property of parameterizing context-sensitivity \todocite{context-sensitivity defn} \todo{is this peculiar?}. The practical and theoretical ramifications of this result are discussed and speculated on.
+An actual ``evaluation method'' (or ``parsing algorithm'') is then introduced for the proposed S.P. grammar model, which shares some similarities with the CYK algorithm \todocite{CYK algorithm!}.This method is shown to terminate in \todo{parsing runtime?} time across \todo{parsing inputs?} inputs. This method is then demonstrated to have the peculiar property of directly parameterizing context-sensitivity \todocite{context-sensitivity defn} \todo{is this peculiar?}. The practical and theoretical ramifications of this result are discussed and speculated on.
+
+\textit{This paper will frequently refer to free software provided at \url{https://github.com/cosmicexplorer/simultaneous-productions} which implements all of the theoretical mechanisms discussed.}
 
 \tableofcontents
 
