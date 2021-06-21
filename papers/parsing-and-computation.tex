@@ -39,11 +39,18 @@ An actual ``evaluation method'' (or ``parsing algorithm'') is then introduced fo
 
 \textit{TODO:}
 \begin{itemize}
-\item describe the hierarchy as being better described by derivatives (?) of a function corresponding to stack depth (!!!) and link it to approximation difficulty!\todocite{approximation difficulty/the PCP theorem}
+\item \phantomsection \label{todo:chomsky-hierarchy-derivatives} describe the hierarchy as being better described by derivatives (?) of a function corresponding to stack depth (!!!) and link it to approximation difficulty!\todocite{approximation difficulty/the PCP theorem}
+
 \begin{itemize}
-\item \textit{the important link here is between the \# of derivatives required to approximate the function and the taylor series!}
+\item \phantomsection \label{todo:derivatives-taylor-series} link between the \# of derivatives required to approximate the function and the taylor series (???)
+\item \phantomsection \label{todo:reduction-initial-state-assignment} the content of the turing tape is the S.P. initial state assignment!
+\item \phantomsection \label{todo:reduction-evaluation-order} the action of the turing machine on the tape is one particular evaluation/priority ordering of ``adjacency resolution''!\todo{describe ``adjacency resolution'' in \secref{sec:fully-general-parse-method}}
 \end{itemize}
-\item make S.P. support multiple parallel stacks\todo{stacks with a discrete finite set of ``colors''}, then reduce \secref{sec:meta-language-for-grammar-specification} to a $k$-stack automaton (equivalent to a T.M.!)\todocite{$k$-stack automaton definition, equivalence to 2-stack automaton, equivalence to T.M.}
+\item \phantomsection \label{todo:sp-parallel-stacks} make S.P. support multiple parallel stacks\todo{stacks with a discrete finite set of ``colors''}
+\begin{itemize}
+\item \textit{then reduce \secref{sec:meta-language-for-grammar-specification} to a $k$-stack automaton (???) (equivalent to a T.M.!)}\todocite{$k$-stack automaton definition, equivalence to 2-stack automaton, equivalence to T.M.}
+\item the above may not be necessary if we can realize the direct reduction from T.M. in \ref{todo:reduction-evaluation-order}!
+\end{itemize}
 \end{itemize}
 
 \newpage
