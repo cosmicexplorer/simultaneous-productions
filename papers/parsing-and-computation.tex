@@ -2,13 +2,7 @@
 
 \usepackage{mcclanahan}
 
-\usepackage[
-backend=biber,
-url=true,
-doi=true,
-natbib=true,
-eprint=true,
-]{biblatex}
+\usepackage[backend=biber]{biblatex}
 \addbibresource{parsing-and-computation.bib}
 
 \newcommand{\todocite}[1]{\footnote{cite: #1}}
@@ -27,13 +21,23 @@ An actual ``evaluation method'' (or ``parsing algorithm'') is then introduced fo
 
 \textit{This paper will frequently refer to free software provided at \cite{repo-sp} which implements all of the theoretical mechanisms discussed.}
 
+\newpage
 \tableofcontents
+\newpage
 
-\section{Background}
-\label{sec:background}
+\section{Motivation}
+\label{sec:motivation}
 
-asdf
+\section{Meta-Language for Grammar Specification}
+\label{sec:meta-language-for-grammar-specification}
+
+\section{Fully General Parse Method}
+\label{sec:fully-general-parse-method}
+
+\section{Re-parameterization of the Chomsky Hierarchy}
+\label{sec:re-parameterization-of-the-chomsky-hierarchy}
+
+\textit{TODO: describe the hierarchy as being better described by derivatives (?) of a function corresponding to stack depth (!!!) and link it to approximation difficulty!}\todocite{approximation difficulty}
 
 \printbibliography
-
 \end{document}

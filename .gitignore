@@ -1,7 +1,9 @@
 target/
 **/*.rs.bk
 saveplace
-# Table of contents from latex.
+# Outputs from latex.
+*.aux
+*.out
 *.toc
 # Bibliography outputs from biber.
 *.bbl
