@@ -1,3 +1,10 @@
 target/
 **/*.rs.bk
 saveplace
+# Table of contents from latex.
+*.toc
+# Bibliography outputs from biber.
+*.bbl
+*.blg
+*.bcf
+*.run.xml

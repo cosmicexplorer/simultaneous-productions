@@ -2,11 +2,20 @@
 
 \usepackage{mcclanahan}
 
+\usepackage[
+backend=biber,
+url=true,
+doi=true,
+natbib=true,
+eprint=true,
+]{biblatex}
+\addbibresource{parsing-and-computation.bib}
+
 \newcommand{\todocite}[1]{\footnote{cite: #1}}
 \newcommand{\todo}[1]{\textbf{?} \footnote{TODO: #1}}
 
 \title{Efficiently Inferring Non-hierarchical Structure in Parsing and Computation}
-\date{2021-06-19}
+\date{\today}
 \author{Danny McClanahan}
 
 \begin{document}
@@ -16,7 +25,7 @@
 
 An actual ``evaluation method'' (or ``parsing algorithm'') is then introduced for the proposed S.P. grammar model, which shares some similarities with the CYK algorithm \todocite{CYK algorithm!}.This method is shown to terminate in \todo{parsing runtime?} time across \todo{parsing inputs?} inputs. This method is then demonstrated to have the peculiar property of directly parameterizing context-sensitivity \todocite{context-sensitivity defn} \todo{is this peculiar?}. The practical and theoretical ramifications of this result are discussed and speculated on.
 
-\textit{This paper will frequently refer to free software provided at \url{https://github.com/cosmicexplorer/simultaneous-productions} which implements all of the theoretical mechanisms discussed.}
+\textit{This paper will frequently refer to free software provided at \cite{repo-sp} which implements all of the theoretical mechanisms discussed.}
 
 \tableofcontents
 
@@ -24,5 +33,7 @@ An actual ``evaluation method'' (or ``parsing algorithm'') is then introduced fo
 \label{sec:background}
 
 asdf
+
+\printbibliography
 
 \end{document}
