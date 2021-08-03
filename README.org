@@ -140,7 +140,20 @@ A Scala parser combinator library efficiently implementing "simultaneous product
 ** Ideal Code
 
  #+BEGIN_SRC rust
-
+let expr = sp![
+  E = ( e: E ) => e;
+  E = (base:E "^" exp:E) => Pow(base, exp);
+  /* \.E = { \.base[.E] "^" \.exp[.E] } => $Pow(.base, .exp); */
+  /* \.E = { \.[.E] "^" \.[.E] } ~=> $Pow; */
+  E = (E "^" E) => Pow(_.1, _.2);
+  E = (E "^" E) => Pow;
+  E = E "*" E;
+  E = E "/" E;
+  E = E "+" E;
+  E = E "-" E;
+  E = IntegerLiteral => IntLit(_);
+  E = FloatingPointLiteral => FPLit(_);
+];
  #+END_SRC
 
  #+BEGIN_SRC scala
