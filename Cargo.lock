@@ -22,8 +22,8 @@ checksum = "baf1de4339761588bc0619e3cbc0120ee582ebb74b53b4efbf79117bd2da40fd"
 
 [[package]]
 name = "displaydoc"
-version = "0.2.1"
-source = "git+https://github.com/cosmicexplorer/displaydoc?rev=efa8f4dfcf290883f1b2f84803eb21917526154e#efa8f4dfcf290883f1b2f84803eb21917526154e"
+version = "0.2.3"
+source = "git+https://github.com/yaahc/displaydoc?rev=7159bb5c9d41ca3c7ccf04ae86ae3acb0ea12a27#7159bb5c9d41ca3c7ccf04ae86ae3acb0ea12a27"
 dependencies = [
  "proc-macro2",
  "quote",
