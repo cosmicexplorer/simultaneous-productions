@@ -43,13 +43,13 @@ dependencies = [
 
 [[package]]
 name = "hashbrown"
-version = "0.11.2"
-source = "git+https://github.com/cosmicexplorer/hashbrown?rev=dc7480cd460c46a33343bb3ac96199ce804de715#dc7480cd460c46a33343bb3ac96199ce804de715"
+version = "0.12.0"
+source = "git+https://github.com/cosmicexplorer/hashbrown?rev=e9a870c9f5a578c4e8ceff0f5f91f19a90e01c55#e9a870c9f5a578c4e8ceff0f5f91f19a90e01c55"
 
 [[package]]
 name = "indexmap"
-version = "1.6.2"
-source = "git+https://github.com/cosmicexplorer/indexmap?rev=4809721f7f302dfaf17b95bf68fd76c35e26d620#4809721f7f302dfaf17b95bf68fd76c35e26d620"
+version = "1.8.0"
+source = "git+https://github.com/cosmicexplorer/indexmap?rev=231e4358ddb850a22d3c2e90e58328f9dbb8a092#231e4358ddb850a22d3c2e90e58328f9dbb8a092"
 dependencies = [
  "autocfg",
  "hashbrown",
@@ -69,8 +69,8 @@ checksum = "ac74c624d6b2d21f425f752262f42188365d7b8ff1aff74c82e45136510a4857"
 
 [[package]]
 name = "priority-queue"
-version = "1.1.1"
-source = "git+https://github.com/cosmicexplorer/priority-queue?rev=7caf739d9fd6de5cbf767cc2a8b32fb1d1a4d76f#7caf739d9fd6de5cbf767cc2a8b32fb1d1a4d76f"
+version = "1.2.1"
+source = "git+https://github.com/cosmicexplorer/priority-queue?rev=a052fee32fa3da7eaeb26888163936459681bd28#a052fee32fa3da7eaeb26888163936459681bd28"
 dependencies = [
  "autocfg",
  "indexmap",
