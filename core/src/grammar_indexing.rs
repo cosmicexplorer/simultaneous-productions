@@ -1,5 +1,22 @@
-/* Copyright (C) 2021 Danny McClanahan <dmcC2@hypnicjerk.ai> */
-/* SPDX-License-Identifier: AGPL-3.0 */
+/*
+ * Description: Implementation for getting a PreprocessedGrammar.
+ *
+ * Copyright (C) 2021-2022 Danny McClanahan <dmcC2@hypnicjerk.ai>
+ * SPDX-License-Identifier: AGPL-3.0
+ *
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU Affero General Public License as published
+ * by the Free Software Foundation, either version 3 of the License, or
+ * (at your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU Affero General Public License for more details.
+ *
+ * You should have received a copy of the GNU Affero General Public License
+ * along with this program.  If not, see <https://www.gnu.org/licenses/>.
+ */
 
 //! Implementation for getting a [PreprocessedGrammar].
 //!
@@ -1178,8 +1195,9 @@ mod tests {
   #[test]
   fn token_grammar_state_indexing() {
     let prods = non_cyclic_productions();
-    let state::preprocessing::Detokenized::<char, _>(grammar) =
-      state::preprocessing::Init(prods).try_index_with_allocator(Global).unwrap();
+    let state::preprocessing::Detokenized::<char, _>(grammar) = state::preprocessing::Init(prods)
+      .try_index_with_allocator(Global)
+      .unwrap();
     assert_eq!(
       grammar
         .token_states
@@ -1214,9 +1232,10 @@ mod tests {
   #[test]
   fn terminals_interval_graph() {
     let noncyclic_prods = non_cyclic_productions();
-    let state::preprocessing::Detokenized::<char, _>(noncyclic_grammar) = state::preprocessing::Init(noncyclic_prods)
-      .try_index_with_allocator(Global)
-      .unwrap();
+    let state::preprocessing::Detokenized::<char, _>(noncyclic_grammar) =
+      state::preprocessing::Init(noncyclic_prods)
+        .try_index_with_allocator(Global)
+        .unwrap();
 
     let (noncyclic_interval_graph, _, _) =
       PreprocessedGrammar::produce_terminals_interval_graph(noncyclic_grammar);
@@ -1548,8 +1567,9 @@ mod tests {
     /* TODO: test `.find_start_end_indices()` and `.connect_all_vertices()` here
      * too! */
     let prods = basic_productions();
-    let state::preprocessing::Detokenized::<char, _>(grammar) =
-      state::preprocessing::Init(prods).try_index_with_allocator(Global).unwrap();
+    let state::preprocessing::Detokenized::<char, _>(grammar) = state::preprocessing::Init(prods)
+      .try_index_with_allocator(Global)
+      .unwrap();
     let (interval_graph, _, _) = PreprocessedGrammar::produce_terminals_interval_graph(grammar);
     assert_eq!(&interval_graph, &EpsilonIntervalGraph {
       all_intervals: [
@@ -1748,7 +1768,9 @@ mod tests {
   #[test]
   fn noncyclic_transition_graph() {
     let prods = non_cyclic_productions();
-    let detokenized = state::preprocessing::Init(prods).try_index_with_allocator(Global).unwrap();
+    let detokenized = state::preprocessing::Init(prods)
+      .try_index_with_allocator(Global)
+      .unwrap();
     let state::preprocessing::Indexed(preprocessed_grammar) = detokenized.index();
 
     let first_a = new_token_position(0, 0, 0);
@@ -1988,7 +2010,9 @@ mod tests {
   #[test]
   fn cyclic_transition_graph() {
     let prods = basic_productions();
-    let detokenized = state::preprocessing::Init(prods).try_index_with_allocator(Global).unwrap();
+    let detokenized = state::preprocessing::Init(prods)
+      .try_index_with_allocator(Global)
+      .unwrap();
     let state::preprocessing::Indexed(preprocessed_grammar) = detokenized.index();
 
     let first_a = new_token_position(0, 0, 0);

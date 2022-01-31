@@ -2,7 +2,7 @@
  * Description: Implement the Simultaneous Productions general parsing
  * method.
  *
- * Copyright (C) 2019-2021 Danny McClanahan <dmcC2@hypnicjerk.ai>
+ * Copyright (C) 2019-2022 Danny McClanahan <dmcC2@hypnicjerk.ai>
  * SPDX-License-Identifier: AGPL-3.0
  *
  * This program is free software: you can redistribute it and/or modify
@@ -35,6 +35,8 @@
  * pair of delimiters)
  * Note: run clippy with: rustup run nightly cargo-clippy! */
 #![warn(missing_docs)]
+/* There should be no need to use unsafe code here! */
+#![deny(unsafe_code)]
 /* Ensure any doctest warnings fails the doctest! */
 #![doc(test(attr(deny(warnings))))]
 /* Enable all clippy lints except for many of the pedantic ones. It's a shame this needs to be
@@ -276,8 +278,8 @@ pub mod execution {
   }
 }
 
-/// The various phases that a grammar (in [preprocessing][state::preprocessing]) and then a parse
-/// (in [active][state::active]) goes through.
+/// The various phases that a grammar (in [preprocessing][state::preprocessing])
+/// and then a parse (in [active][state::active]) goes through.
 pub mod state {
   #[cfg(doc)]
   use crate::execution::Input;
@@ -373,7 +375,8 @@ pub mod state {
 
     use core::{alloc::Allocator, marker::PhantomData};
 
-    /// Container for a parseable grammar that propagates the lifetime of an input.
+    /// Container for a parseable grammar that propagates the lifetime of an
+    /// input.
     #[derive(Debug, Clone)]
     pub struct Ready<'a, Arena>(pub p::ParseableGrammar<Arena>, PhantomData<&'a u8>)
     where Arena: Allocator+Clone;

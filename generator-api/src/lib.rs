@@ -22,7 +22,8 @@
 //! A [`Generator`][core::ops::Generator]-based API to an
 //! [`sp_core::execution::Transformer`].
 //!
-//! Requires nightly rust with the crate feature `#![feature(generators, generator_trait)]`.
+//! Requires nightly rust with the crate feature `#![feature(generators,
+//! generator_trait)]`.
 
 #![no_std]
 #![allow(incomplete_features)]
