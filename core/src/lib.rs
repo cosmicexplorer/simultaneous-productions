@@ -315,7 +315,6 @@ pub mod state {
     {
       /// Create a [`gb::TokenGrammar`] and convert it to [`Detokenized`] for
       /// further preprocessing.
-      #[allow(dead_code)]
       pub fn try_index_with_allocator<Arena>(
         self,
         arena: Arena,
@@ -337,7 +336,6 @@ pub mod state {
     {
       /// Create a [`gi::PreprocessedGrammar`] and convert it to [`Indexed`] for
       /// further preprocessing.
-      #[allow(dead_code)]
       pub fn index(self) -> Indexed<Tok, Arena> { Indexed(gi::PreprocessedGrammar::new(self.0)) }
     }
 
@@ -354,7 +352,6 @@ pub mod state {
       /// Create a [`p::ParseableGrammar`] and convert to a parseable state.
       ///
       /// **FIXME: `input` should be a [crate::execution::Input]!!**
-      #[allow(dead_code)]
       pub fn attach_input(
         &self,
         input: &p::Input<Tok, Arena>,
@@ -389,7 +386,6 @@ pub mod state {
 
       /// "Detokenize" *(TODO: cite!)* the input and produce a [`p::Parse`]
       /// instance!
-      #[allow(dead_code)]
       pub fn initialize_parse(self) -> InProgress<'a, Arena> {
         InProgress::new(p::Parse::initialize_with_trees_for_adjacent_pairs(self.0))
       }

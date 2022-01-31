@@ -443,7 +443,6 @@ where Arena: Allocator+Clone
     Ok(ps)
   }
 
-  #[allow(dead_code)]
   pub fn new<Tok>(
     grammar: gi::PreprocessedGrammar<Tok, Arena>,
     input: &Input<Tok, Arena>,
@@ -485,9 +484,7 @@ pub enum ParseResult {
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq, Hash)]
 pub enum ParsingInputFailure<Tok> {
-  #[allow(dead_code)]
   UnknownToken(Tok),
-  #[allow(dead_code)]
   UnknownTokRef(gc::TokRef),
 }
 
@@ -615,7 +612,6 @@ where Arena: Allocator+Clone
     ret
   }
 
-  #[allow(dead_code)]
   pub fn initialize_with_trees_for_adjacent_pairs(grammar: ParseableGrammar<Arena>) -> Self {
     let arena = grammar.allocator_handoff();
 
@@ -741,7 +737,6 @@ where Arena: Allocator+Clone
     self.spanning_subtree_table.get(span_ref.0)
   }
 
-  #[allow(dead_code)]
   pub fn advance(&mut self) -> Result<ParseResult, ParsingFailure> {
     /* dbg!(&self.spans); */
     /* dbg!(&self.finishes_at_left); */

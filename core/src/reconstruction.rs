@@ -406,9 +406,7 @@ impl<Arena> Eq for CompletedCaseReconstruction<Arena> where Arena: Allocator {}
 pub enum CompleteSubReconstruction<Arena>
 where Arena: Allocator
 {
-  #[allow(dead_code)]
   State(gi::LoweredState),
-  #[allow(dead_code)]
   Completed(CompletedCaseReconstruction<Arena>),
 }
 
