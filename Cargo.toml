@@ -22,3 +22,14 @@ optional = true
 nightly = ["sp-core/nightly", "sp-generator-api/nightly", "sp-stream-api/nightly"]
 generator-api = ["sp-generator-api"]
 stream-api = ["sp-stream-api"]
+
+[workspace]
+members = [
+    # ".", (not compilable yet)
+    "core",
+    "generator-api",
+    "stream-api",
+]
+default-members = [
+    "core",
+]
