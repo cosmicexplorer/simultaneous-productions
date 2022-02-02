@@ -123,7 +123,7 @@ pub mod allocation {
 pub mod grammar_specification {
   use displaydoc::Display;
 
-  use core::iter::IntoIterator;
+  use core::{convert::AsRef, iter::IntoIterator};
 
   /// A contiguous sequence of tokens.
   pub trait Literal: IntoIterator {
@@ -134,10 +134,6 @@ pub mod grammar_specification {
     /// can actually parse with [Input::InChunk][super::execution::Input].
     type Tok;
     /// Override [IntoIterator::Item] with this trait's parameter.
-    ///
-    /// *Implementation Note: We could just leave this trait empty, but that
-    /// would make it unclear there is an `Item` type that needs to be
-    /// set elsewhere.*
     type Item: Into<Self::Tok>;
   }
 
@@ -149,13 +145,54 @@ pub mod grammar_specification {
     type ID;
   }
 
+  /// A type representing a symbol which can be pushed onto or popped from a
+  /// [NamedStack].
+  pub trait StackSym: Into<Self::S> {
+    /// A set of stack symbols which is shared for some stack across the whole grammar.
+    type S;
+  }
+
+  /// A name for a [NamedStack].
+  pub trait StackName: Into<Self::N> {
+    /// An identifier used for this stack across the grammar.
+    type N;
+  }
+
+  /// A stack which the user can explicitly manipulate in a context-sensitive
+  /// grammar.
+  pub trait NamedStack: AsRef<Self::Name> {
+    /// The name of this stack.
+    type Name: StackName;
+    /// The set of symbols allowed for this stack.
+    type Sym: StackSym;
+  }
+
+  /// The types of operations that can be performed on a [NamedStack].
+  #[derive(Debug, Display, Copy, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
+  pub enum StackStep<NS> {
+    /// Push a symbol onto the stack.
+    Positive(NS),
+    /// Pop a symbol off of the stack.
+    Negative(NS),
+  }
+
+  /// A list of [StackStep]s to apply when traversing between tokens in a context-sensitive grammar.
+  pub trait StackManipulation: AsRef<<Self::NS as NamedStack>::Name>+IntoIterator {
+    /// The stack being manipulated.
+    type NS: NamedStack;
+    /// [IntoIterator::Item] is a single stack step.
+    type Item: Into<StackStep<Self::NS>>;
+  }
+
   /// Each individual element that can be matched against some input in a case.
   #[derive(Debug, Display, Copy, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
-  pub enum CaseElement<Lit, PR> {
+  pub enum CaseElement<Lit, PR, SM> {
     /// literal value {0}
     Lit(Lit),
     /// production reference {0}
     Prod(PR),
+    /// explicit stack manipulation {0}
+    Stack(SM),
   }
 
   /// A sequence of *elements* which, if successfully matched against some
