@@ -125,101 +125,160 @@ pub mod grammar_specification {
 
   use core::{convert::AsRef, iter::IntoIterator};
 
-  /// A contiguous sequence of tokens.
-  pub trait Literal: IntoIterator {
-    /// Specifies the type of "token" to iterate over when constructing a
+  /// Grammar components which expand into exactly one specific token.
+  pub mod direct {
+    /// A contiguous sequence of tokens.
+    pub trait Literal: IntoIterator {
+      /// Specifies the type of "token" to iterate over when constructing a
+      /// grammar.
+      ///
+      /// This parameter is *separate from, but may be the same as* the tokens
+      /// we can actually parse with
+      /// [Input::InChunk][super::execution::Input].
+      type Tok;
+      /// Override [IntoIterator::Item] with this trait's parameter.
+      type Item: Into<Self::Tok>;
+    }
+  }
+
+  /// Grammar components which expand into the content of another production
+  /// within the grammar.
+  pub mod indirect {
+    /// A type representing a [Production] that the grammar should satisfy at
+    /// that position.
+    pub trait ProductionReference: Into<Self::ID> {
+      /// Parameterized type to reference the identity of some particular
+      /// [Production].
+      type ID;
+    }
+  }
+
+  /// Grammar components which explicitly manipulate a named stack.
+  pub mod explicit {
+    /// A type representing a symbol which can be pushed onto or popped from a
+    /// [NamedStack].
+    pub trait StackSym: Into<Self::S> {
+      /// A set of stack symbols which is shared for some stack across the whole
+      /// grammar.
+      type S;
+    }
+
+    /// A name for a [NamedStack].
+    pub trait StackName: Into<Self::N> {
+      /// An identifier used for this stack across the grammar.
+      type N;
+    }
+
+    /// A stack which the user can explicitly manipulate in a context-sensitive
     /// grammar.
-    ///
-    /// This parameter is *separate from, but may be the same as* the tokens we
-    /// can actually parse with [Input::InChunk][super::execution::Input].
-    type Tok;
-    /// Override [IntoIterator::Item] with this trait's parameter.
-    type Item: Into<Self::Tok>;
+    pub trait NamedStack: AsRef<Self::Name> {
+      /// The name of this stack.
+      type Name: StackName;
+      /// The set of symbols allowed for this stack.
+      type Sym: StackSym;
+    }
+
+    /// The types of operations that can be performed on a [NamedStack].
+    #[derive(Debug, Display, Copy, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
+    pub enum StackStep<NS> {
+      /// Push a symbol onto the stack.
+      Positive(NS),
+      /// Pop a symbol off of the stack.
+      Negative(NS),
+    }
+
+    /// A list of [StackStep]s to apply when traversing between tokens in a
+    /// context-sensitive grammar.
+    pub trait StackManipulation: AsRef<<Self::NS as NamedStack>::Name>+IntoIterator {
+      /// The stack being manipulated.
+      type NS: NamedStack;
+      /// [IntoIterator::Item] is a single stack step.
+      type Item: Into<StackStep<Self::NS>>;
+    }
   }
 
-  /// A type representing a [Production] that the grammar should satisfy at that
-  /// position.
-  pub trait ProductionReference: Into<Self::ID> {
-    /// Parameterized type to reference the identity of some particular
-    /// [Production].
-    type ID;
+  /// Grammar components which iteratively attempt to match up two adjacent
+  /// parse trees.
+  pub mod undecidable {
+    use super::explicit::StackManipulation;
+
+    /// adjacent parse trees to be matched: left={0}, right={1}
+    #[derive(Debug, Display, Copy, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
+    pub struct ZipperInput<SM> {
+      /// The left parse tree to be matched.
+      pub left: SM,
+      /// The right parse tree to be matched.
+      pub right: SM,
+    }
+
+    /// The result of calling [ZipperCondition::iterate].
+    #[derive(Debug, Display, Copy, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
+    pub enum ZipperResult<SM> {
+      /// zipper needs further iteration: {0}
+      Incomplete(ZipperInput<SM>),
+      /// zipper has been satisfied: {0}
+      Complete(SM),
+    }
+
+    /// A description of how two adjacent parse trees should be joined together.
+    pub trait ZipperCondition {
+      /// Parameterized type to represent the modification to the stack that
+      /// [Self::iterate] should perform.
+      type SM: StackManipulation;
+      /// Process `input` to determine whether the zipper condition is
+      /// satisfied.
+      fn iterate(&mut self, input: ZipperInput<SM>) -> ZipperResult<Self::SM>;
+    }
   }
 
-  /// A type representing a symbol which can be pushed onto or popped from a
-  /// [NamedStack].
-  pub trait StackSym: Into<Self::S> {
-    /// A set of stack symbols which is shared for some stack across the whole grammar.
-    type S;
-  }
+  pub mod all_complexities {
+    use super::{direct::*, explicit::*, indirect::*};
 
-  /// A name for a [NamedStack].
-  pub trait StackName: Into<Self::N> {
-    /// An identifier used for this stack across the grammar.
-    type N;
-  }
+    /// Each individual element that can be matched against some input in a
+    /// case.
+    #[derive(Debug, Display, Copy, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
+    pub enum CaseElement<Lit, PR, SM, ZC> {
+      /// literal value {0}
+      Lit(Lit),
+      /// production reference {0}
+      Prod(PR),
+      /// explicit stack manipulation {0}
+      Stack(SM),
+      /// zipper condition {0}
+      Zipper(ZC),
+    }
 
-  /// A stack which the user can explicitly manipulate in a context-sensitive
-  /// grammar.
-  pub trait NamedStack: AsRef<Self::Name> {
-    /// The name of this stack.
-    type Name: StackName;
-    /// The set of symbols allowed for this stack.
-    type Sym: StackSym;
-  }
+    /// A sequence of *elements* which, if successfully matched against some
+    /// *input*, represents some *production*.
+    pub trait Case: Iterator {
+      /// Literal tokens used. in this case.
+      type Lit: Literal;
+      /// References to productions used in this case.
+      type PR: ProductionReference;
+      /// Explicit stack manipulations to perform upon transitioning between
+      /// tokens.
+      type SM: StackManipulation;
+      /// Logic to "zip" together adjacent parse tree stack diffs.
+      type ZC: ZipperCondition;
+      /// Override of [Iterator::Item].
+      type Item: Into<CaseElement<Self::Lit, Self::PR, Self::SM, Self::ZC>>;
+    }
 
-  /// The types of operations that can be performed on a [NamedStack].
-  #[derive(Debug, Display, Copy, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
-  pub enum StackStep<NS> {
-    /// Push a symbol onto the stack.
-    Positive(NS),
-    /// Pop a symbol off of the stack.
-    Negative(NS),
-  }
+    /// A disjunction of cases.
+    pub trait Production: Iterator {
+      /// Cases used in this production.
+      type C: Case;
+      /// Override of [Iterator::Item].
+      type Item: Into<Self::C>;
+    }
 
-  /// A list of [StackStep]s to apply when traversing between tokens in a context-sensitive grammar.
-  pub trait StackManipulation: AsRef<<Self::NS as NamedStack>::Name>+IntoIterator {
-    /// The stack being manipulated.
-    type NS: NamedStack;
-    /// [IntoIterator::Item] is a single stack step.
-    type Item: Into<StackStep<Self::NS>>;
-  }
-
-  /// Each individual element that can be matched against some input in a case.
-  #[derive(Debug, Display, Copy, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
-  pub enum CaseElement<Lit, PR, SM> {
-    /// literal value {0}
-    Lit(Lit),
-    /// production reference {0}
-    Prod(PR),
-    /// explicit stack manipulation {0}
-    Stack(SM),
-  }
-
-  /// A sequence of *elements* which, if successfully matched against some
-  /// *input*, represents some *production*.
-  pub trait Case: Iterator {
-    /// Literal tokens used. in this case.
-    type Lit: Literal;
-    /// References to productions used in this case.
-    type PR: ProductionReference;
-    /// Override of [Iterator::Item].
-    type Item: Into<CaseElement<Self::Lit, Self::PR>>;
-  }
-
-  /// A disjunction of cases.
-  pub trait Production: Iterator {
-    /// Cases used in this production.
-    type C: Case;
-    /// Override of [Iterator::Item].
-    type Item: Into<Self::C>;
-  }
-
-  /// A conjunction of productions (a grammar!).
-  pub trait SimultaneousProductions: Iterator {
-    /// Productions used in this grammar.
-    type P: Production;
-    /// Override of [Iterator::Item].
-    type Item: Into<(<<Self::P as Production>::C as Case>::PR, Self::P)>;
+    /// A conjunction of productions (a grammar!).
+    pub trait SimultaneousProductions: Iterator {
+      /// Productions used in this grammar.
+      type P: Production;
+      /// Override of [Iterator::Item].
+      type Item: Into<(<<Self::P as Production>::C as Case>::PR, Self::P)>;
+    }
   }
 }
 
