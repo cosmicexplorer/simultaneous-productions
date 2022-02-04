@@ -51,9 +51,11 @@ pub mod graph_coordinates {
   #[cfg(doc)]
   use crate::grammar_specification as gs;
 
-  /// Points to a particular Production within a sequence of [gs::Production]s.
+  /// Points to a particular Production within a sequence of
+  /// [gs::synthesis::Production]s.
   ///
-  /// A version of [gs::ProductionReference] which uses a [usize] for speed.
+  /// A version of [gs::synthesis::ProductionReference] which uses a [usize] for
+  /// speed.
   #[derive(Debug, Copy, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
   pub struct ProdRef(pub usize);
 
@@ -453,17 +455,26 @@ pub mod grammar_building {
       ///    at.
       /// 2. Match up [ProductionReference]s to [ProdRef]s, or error
       ///    out.
-      pub fn new<ID, PR, C, P, SP, Lit>(
+      pub fn new<Lit, ID, PR, S, Sym, SymSet, N, Name, NS, SM, ZC, C, P, SP>(
         sp: SP,
         arena: Arena,
       ) -> Result<Self, GrammarConstructionError<ID>>
       where
-        Lit: gs::Literal<Tok=Tok>+IntoIterator<Item=Tok>,
+        Lit: gs::direct::Literal<Tok=Tok>+IntoIterator<Item=Tok>,
         ID: Hash+Eq+Clone,
-        PR: gs::ProductionReference<ID=ID>,
-        C: gs::Case<PR=PR>+IntoIterator<Item=gs::CaseElement<Lit, PR>>,
-        P: gs::Production<C=C>+IntoIterator<Item=C>,
-        SP: gs::SimultaneousProductions<P=P>+IntoIterator<Item=(PR, P)>,
+        PR: gs::indirect::ProductionReference<ID=ID>,
+        S: Hash+Eq,
+        Sym: gs::explicit::StackSym<S=S>,
+        SymSet: gs::explicit::SymbolSet<Sym=Sym>+IntoIterator<Item=Sym>,
+        N: Hash+Eq,
+        Name: gs::explicit::StackName<N=N>,
+        NS: gs::explicit::NamedStack<Name=Name, SymSet=SymSet>,
+        SM: gs::explicit::StackManipulation<NS=NS>+IntoIterator<Item=gs::explicit::StackStep<NS>>,
+        ZC: gs::undecidable::ZipperCondition<SM=SM>,
+        C:
+          gs::synthesis::Case<PR=PR>+IntoIterator<Item=gs::synthesis::CaseElement<Lit, PR, SM, ZC>>,
+        P: gs::synthesis::Production<C=C>+IntoIterator<Item=C>,
+        SP: gs::synthesis::SimultaneousProductions<P=P>+IntoIterator<Item=(PR, P)>,
       {
         let (all_prods, id_prod_mapping) = {
           let mut all_prods: InternArena<P, gc::ProdRef, Arena> = InternArena::new(arena.clone());
@@ -497,7 +508,7 @@ pub mod grammar_building {
             let mut case_el_ind: usize = 0;
             for el in case.into_iter() {
               match el {
-                gs::CaseElement::Lit(lit) => {
+                gs::synthesis::CaseElement::Lit(lit) => {
                   for tok in lit.into_iter() {
                     let tok_ref = alphabet.intern_exclusive(tok);
 
@@ -514,7 +525,7 @@ pub mod grammar_building {
                     case_el_ind += 1;
                   }
                 },
-                gs::CaseElement::Prod(prod_ref) => {
+                gs::synthesis::CaseElement::Prod(prod_ref) => {
                   let id: ID = prod_ref.into();
                   let pr: gc::ProdRef = match id_prod_mapping.get(&id) {
                     Some(pr) => *pr,
@@ -526,6 +537,12 @@ pub mod grammar_building {
                   ret_els.push(gc::CaseEl::Prod(pr));
 
                   case_el_ind += 1;
+                },
+                gs::synthesis::CaseElement::Stack(_) => {
+                  todo!("can't handle stack manipulations yet")
+                },
+                gs::synthesis::CaseElement::Zipper(_) => {
+                  todo!("can't handle zipper conditions yet")
                 },
               }
             }

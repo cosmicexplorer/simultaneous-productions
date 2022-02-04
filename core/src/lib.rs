@@ -121,12 +121,10 @@ pub mod allocation {
 /// declaring a grammar, their stability guarantees can be much lower than the
 /// definitions in this module.*
 pub mod grammar_specification {
-  use displaydoc::Display;
-
-  use core::{convert::AsRef, iter::IntoIterator};
-
   /// Grammar components which expand into exactly one specific token.
   pub mod direct {
+    use core::iter::IntoIterator;
+
     /// A contiguous sequence of tokens.
     pub trait Literal: IntoIterator {
       /// Specifies the type of "token" to iterate over when constructing a
@@ -155,12 +153,25 @@ pub mod grammar_specification {
 
   /// Grammar components which explicitly manipulate a named stack.
   pub mod explicit {
+    use core::convert::AsRef;
+
+    use displaydoc::Display;
+
     /// A type representing a symbol which can be pushed onto or popped from a
     /// [NamedStack].
     pub trait StackSym: Into<Self::S> {
-      /// A set of stack symbols which is shared for some stack across the whole
-      /// grammar.
+      /// The type of stack symbols which are shared for some stack across the
+      /// whole grammar.
       type S;
+    }
+
+    /// A set of stack symbols which is shared for some stack across the whole
+    /// grammar.
+    pub trait SymbolSet: IntoIterator {
+      /// The type of stack symbols in this set.
+      type Sym: StackSym;
+      /// [IntoIterator::Item] is each allowing stack symbol in this set.
+      type Item: Into<<Self::Sym as StackSym>::S>;
     }
 
     /// A name for a [NamedStack].
@@ -171,11 +182,11 @@ pub mod grammar_specification {
 
     /// A stack which the user can explicitly manipulate in a context-sensitive
     /// grammar.
-    pub trait NamedStack: AsRef<Self::Name> {
+    pub trait NamedStack: AsRef<Self::Name>+AsRef<Self::SymSet> {
       /// The name of this stack.
       type Name: StackName;
       /// The set of symbols allowed for this stack.
-      type Sym: StackSym;
+      type SymSet: SymbolSet;
     }
 
     /// The types of operations that can be performed on a [NamedStack].
@@ -189,7 +200,7 @@ pub mod grammar_specification {
 
     /// A list of [StackStep]s to apply when traversing between tokens in a
     /// context-sensitive grammar.
-    pub trait StackManipulation: AsRef<<Self::NS as NamedStack>::Name>+IntoIterator {
+    pub trait StackManipulation: AsRef<Self::NS>+IntoIterator {
       /// The stack being manipulated.
       type NS: NamedStack;
       /// [IntoIterator::Item] is a single stack step.
@@ -202,7 +213,9 @@ pub mod grammar_specification {
   pub mod undecidable {
     use super::explicit::StackManipulation;
 
-    /// adjacent parse trees to be matched: left={0}, right={1}
+    use displaydoc::Display;
+
+    /// adjacent parse trees to be matched: left={left}, right={right}
     #[derive(Debug, Display, Copy, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
     pub struct ZipperInput<SM> {
       /// The left parse tree to be matched.
@@ -227,12 +240,18 @@ pub mod grammar_specification {
       type SM: StackManipulation;
       /// Process `input` to determine whether the zipper condition is
       /// satisfied.
-      fn iterate(&mut self, input: ZipperInput<SM>) -> ZipperResult<Self::SM>;
+      fn iterate(&mut self, input: ZipperInput<Self::SM>) -> ZipperResult<Self::SM>;
     }
   }
 
-  pub mod all_complexities {
-    use super::{direct::*, explicit::*, indirect::*};
+  /// Grammar components which synthesize the lower-level elements from
+  /// [direct], [indirect], [explicit], and [undecidable].
+  pub mod synthesis {
+    use super::{direct::*, explicit::*, indirect::*, undecidable::*};
+
+    use core::iter::IntoIterator;
+
+    use displaydoc::Display;
 
     /// Each individual element that can be matched against some input in a
     /// case.
@@ -250,7 +269,7 @@ pub mod grammar_specification {
 
     /// A sequence of *elements* which, if successfully matched against some
     /// *input*, represents some *production*.
-    pub trait Case: Iterator {
+    pub trait Case: IntoIterator {
       /// Literal tokens used. in this case.
       type Lit: Literal;
       /// References to productions used in this case.
@@ -265,7 +284,7 @@ pub mod grammar_specification {
     }
 
     /// A disjunction of cases.
-    pub trait Production: Iterator {
+    pub trait Production: IntoIterator {
       /// Cases used in this production.
       type C: Case;
       /// Override of [Iterator::Item].
@@ -273,7 +292,7 @@ pub mod grammar_specification {
     }
 
     /// A conjunction of productions (a grammar!).
-    pub trait SimultaneousProductions: Iterator {
+    pub trait SimultaneousProductions: IntoIterator {
       /// Productions used in this grammar.
       type P: Production;
       /// Override of [Iterator::Item].
@@ -395,19 +414,28 @@ pub mod state {
 
     use core::{alloc::Allocator, fmt, hash::Hash, iter::IntoIterator};
 
-    /// Container for an implementor of [gs::SimultaneousProductions].
+    /// Container for an implementor of
+    /// [gs::synthesis::SimultaneousProductions].
     #[derive(Debug, Copy, Clone)]
     pub struct Init<SP>(pub SP);
 
-    impl<Tok, Lit, ID, PR, C, P, SP> Init<SP>
+    impl<Tok, Lit, ID, PR, S, Sym, SymSet, N, Name, NS, SM, ZC, C, P, SP> Init<SP>
     where
       Tok: Hash+Eq,
-      Lit: gs::Literal<Tok=Tok>+IntoIterator<Item=Tok>,
+      Lit: gs::direct::Literal<Tok=Tok>+IntoIterator<Item=Tok>,
       ID: Hash+Eq+Clone,
-      PR: gs::ProductionReference<ID=ID>,
-      C: gs::Case<PR=PR>+IntoIterator<Item=gs::CaseElement<Lit, PR>>,
-      P: gs::Production<C=C>+IntoIterator<Item=C>,
-      SP: gs::SimultaneousProductions<P=P>+IntoIterator<Item=(PR, P)>,
+      PR: gs::indirect::ProductionReference<ID=ID>,
+      S: Hash+Eq,
+      Sym: gs::explicit::StackSym<S=S>,
+      SymSet: gs::explicit::SymbolSet<Sym=Sym>+IntoIterator<Item=Sym>,
+      N: Hash+Eq,
+      Name: gs::explicit::StackName<N=N>,
+      NS: gs::explicit::NamedStack<Name=Name, SymSet=SymSet>,
+      SM: gs::explicit::StackManipulation<NS=NS>+IntoIterator<Item=gs::explicit::StackStep<NS>>,
+      ZC: gs::undecidable::ZipperCondition<SM=SM>,
+      C: gs::synthesis::Case<PR=PR>+IntoIterator<Item=gs::synthesis::CaseElement<Lit, PR, SM, ZC>>,
+      P: gs::synthesis::Production<C=C>+IntoIterator<Item=C>,
+      SP: gs::synthesis::SimultaneousProductions<P=P>+IntoIterator<Item=(PR, P)>,
     {
       /// Create a [`gb::TokenGrammar`] and convert it to [`Detokenized`] for
       /// further preprocessing.
@@ -511,6 +539,7 @@ pub mod test_framework {
   use crate::{lowering_to_indices::graph_coordinates as gc, types::Vec};
 
   use core::{
+    convert::AsRef,
     hash::{Hash, Hasher},
     iter::{IntoIterator, Iterator},
     str,
@@ -528,75 +557,150 @@ pub mod test_framework {
     }
   }
 
-  /* #[derive(Delegate)] */
-  #[derive(Debug, Clone)]
-  pub struct Lit(
-    /* #[trait(Iterator)] */
-    <Vec<char> as IntoIterator>::IntoIter,
-  );
+  macro_rules! string_iterator {
+    ($type_name:ident) => {
+      #[derive(Debug, Clone)]
+      pub struct $type_name(<Vec<char> as IntoIterator>::IntoIter);
 
-  /* derive_from_method![Lit::as_new_vec, Hash, PartialEq, Eq] */
-  impl Lit {
-    fn as_new_vec(&self) -> Vec<char> { self.0.clone().collect() }
+      impl $type_name {
+        fn as_new_vec(&self) -> Vec<char> { self.0.clone().collect() }
+      }
+
+      impl From<&str> for $type_name {
+        fn from(value: &str) -> Self { Self(value.chars().collect::<Vec<_>>().into_iter()) }
+      }
+
+      impl Iterator for $type_name {
+        type Item = char;
+
+        fn next(&mut self) -> Option<Self::Item> { self.0.next() }
+      }
+
+      impl Hash for $type_name {
+        fn hash<H: Hasher>(&self, state: &mut H) { self.as_new_vec().hash(state); }
+      }
+
+      impl PartialEq for $type_name {
+        fn eq(&self, other: &Self) -> bool { self.as_new_vec() == other.as_new_vec() }
+      }
+
+      impl Eq for $type_name {}
+    };
   }
 
-  impl From<&str> for Lit {
-    fn from(value: &str) -> Self { Self(value.chars().collect::<Vec<_>>().into_iter()) }
-  }
+  string_iterator![Lit];
 
-  impl Iterator for Lit {
-    type Item = char;
-
-    fn next(&mut self) -> Option<Self::Item> { self.0.next() }
-  }
-
-  impl gs::Literal for Lit {
+  impl gs::direct::Literal for Lit {
     type Item = char;
     type Tok = char;
   }
 
-  impl Hash for Lit {
-    fn hash<H: Hasher>(&self, state: &mut H) { self.as_new_vec().hash(state); }
+  string_iterator![ProductionReference];
+
+  impl gs::indirect::ProductionReference for ProductionReference {
+    type ID = Self;
   }
 
-  impl PartialEq for Lit {
-    fn eq(&self, other: &Self) -> bool { self.as_new_vec() == other.as_new_vec() }
-  }
+  string_iterator![StackSym];
 
-  impl Eq for Lit {}
+  impl gs::explicit::StackSym for StackSym {
+    type S = Self;
+  }
 
   #[derive(Debug, Clone)]
-  pub struct ProductionReference(<Vec<char> as IntoIterator>::IntoIter);
+  pub struct SymbolSet(<Vec<StackSym> as IntoIterator>::IntoIter);
 
-  impl ProductionReference {
-    fn as_new_vec(&self) -> Vec<char> { self.0.clone().collect() }
+  impl From<&[StackSym]> for SymbolSet {
+    fn from(value: &[StackSym]) -> Self { Self(value.to_vec().into_iter()) }
   }
 
-  impl From<&str> for ProductionReference {
-    fn from(value: &str) -> Self { Self(value.chars().collect::<Vec<_>>().into_iter()) }
-  }
-
-  impl Iterator for ProductionReference {
-    type Item = char;
+  impl Iterator for SymbolSet {
+    type Item = StackSym;
 
     fn next(&mut self) -> Option<Self::Item> { self.0.next() }
   }
 
-  impl Hash for ProductionReference {
-    fn hash<H: Hasher>(&self, state: &mut H) { self.as_new_vec().hash(state); }
+  impl gs::explicit::SymbolSet for SymbolSet {
+    type Item = StackSym;
+    type Sym = StackSym;
   }
 
-  impl PartialEq for ProductionReference {
-    fn eq(&self, other: &Self) -> bool { self.as_new_vec() == other.as_new_vec() }
+  string_iterator![StackName];
+
+  impl gs::explicit::StackName for StackName {
+    type N = Self;
   }
 
-  impl Eq for ProductionReference {}
-
-  impl gs::ProductionReference for ProductionReference {
-    type ID = Self;
+  #[derive(Debug, Clone)]
+  pub struct NamedStack {
+    pub name: StackName,
+    pub sym_set: SymbolSet,
   }
 
-  pub type CE = gs::CaseElement<Lit, ProductionReference>;
+  impl AsRef<<NamedStack as gs::explicit::NamedStack>::Name> for NamedStack {
+    fn as_ref(&self) -> &StackName { &self.name }
+  }
+
+  impl AsRef<<NamedStack as gs::explicit::NamedStack>::SymSet> for NamedStack {
+    fn as_ref(&self) -> &SymbolSet { &self.sym_set }
+  }
+
+  impl gs::explicit::NamedStack for NamedStack {
+    type Name = StackName;
+    type SymSet = SymbolSet;
+  }
+
+  pub type NamedStackStep = gs::explicit::StackStep<NamedStack>;
+
+  #[derive(Debug, Clone)]
+  pub struct StackManipulation {
+    named_stack: NamedStack,
+    stack_steps: <Vec<NamedStackStep> as IntoIterator>::IntoIter,
+  }
+
+  impl AsRef<<StackManipulation as gs::explicit::StackManipulation>::NS> for StackManipulation {
+    fn as_ref(&self) -> &NamedStack { &self.named_stack }
+  }
+
+  impl From<(&NamedStack, &[NamedStackStep])> for StackManipulation {
+    fn from(value: (&NamedStack, &[NamedStackStep])) -> Self {
+      let (named_stack, stack_steps) = value;
+      Self {
+        named_stack: named_stack.clone(),
+        stack_steps: stack_steps.to_vec().into_iter(),
+      }
+    }
+  }
+
+  impl Iterator for StackManipulation {
+    type Item = NamedStackStep;
+
+    fn next(&mut self) -> Option<Self::Item> { self.stack_steps.next() }
+  }
+
+  impl gs::explicit::StackManipulation for StackManipulation {
+    type Item = NamedStackStep;
+    type NS = NamedStack;
+  }
+
+  #[derive(Debug, Clone)]
+  pub struct ZipperCondition;
+
+  impl gs::undecidable::ZipperCondition for ZipperCondition {
+    type SM = StackManipulation;
+
+    fn iterate(
+      &mut self,
+      _input: gs::undecidable::ZipperInput<Self::SM>,
+    ) -> gs::undecidable::ZipperResult<Self::SM> {
+      /* let gs::undecidable::ZipperInput { left, right } = input; */
+      /* gs::undecidable::ZipperResult::Complete(left); */
+      todo!("not yet implemented")
+    }
+  }
+
+  pub type CE =
+    gs::synthesis::CaseElement<Lit, ProductionReference, StackManipulation, ZipperCondition>;
 
   #[derive(Debug, Clone)]
   pub struct Case(<Vec<CE> as IntoIterator>::IntoIter);
@@ -611,10 +715,12 @@ pub mod test_framework {
     fn next(&mut self) -> Option<Self::Item> { self.0.next() }
   }
 
-  impl gs::Case for Case {
+  impl gs::synthesis::Case for Case {
     type Item = CE;
     type Lit = Lit;
     type PR = ProductionReference;
+    type SM = StackManipulation;
+    type ZC = ZipperCondition;
   }
 
   #[derive(Debug, Clone)]
@@ -630,7 +736,7 @@ pub mod test_framework {
     fn next(&mut self) -> Option<Self::Item> { self.0.next() }
   }
 
-  impl gs::Production for Production {
+  impl gs::synthesis::Production for Production {
     type C = Case;
     type Item = Case;
   }
@@ -650,7 +756,7 @@ pub mod test_framework {
     fn next(&mut self) -> Option<Self::Item> { self.0.next() }
   }
 
-  impl gs::SimultaneousProductions for SP {
+  impl gs::synthesis::SimultaneousProductions for SP {
     type Item = (ProductionReference, Self::P);
     type P = Production;
   }
