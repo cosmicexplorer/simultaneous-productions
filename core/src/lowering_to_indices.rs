@@ -318,7 +318,6 @@ pub mod grammar_building {
       alloc::Allocator,
       cmp::{Ord, Ordering, PartialOrd},
       fmt,
-      hash::Hash,
       iter::{IntoIterator, Iterator},
     };
 
@@ -444,7 +443,7 @@ pub mod grammar_building {
 
     impl<Tok, Arena> TokenGrammar<Tok, Arena>
     where
-      Tok: Hash+Eq,
+      Tok: gs::types::Hashable,
       Arena: Allocator+Clone,
     {
       /// Walk productions and split literal strings.
@@ -461,12 +460,12 @@ pub mod grammar_building {
       ) -> Result<Self, GrammarConstructionError<ID>>
       where
         Lit: gs::direct::Literal<Tok=Tok>+IntoIterator<Item=Tok>,
-        ID: Hash+Eq+Clone,
+        ID: gs::types::Hashable+Clone,
         PR: gs::indirect::ProductionReference<ID=ID>,
-        S: Hash+Eq,
+        S: gs::types::Hashable,
         Sym: gs::explicit::StackSym<S=S>,
         SymSet: gs::explicit::SymbolSet<Sym=Sym>+IntoIterator<Item=Sym>,
-        N: Hash+Eq,
+        N: gs::types::Hashable,
         Name: gs::explicit::StackName<N=N>,
         NS: gs::explicit::NamedStack<Name=Name, SymSet=SymSet>,
         SM: gs::explicit::StackManipulation<NS=NS>+IntoIterator<Item=gs::explicit::StackStep<NS>>,

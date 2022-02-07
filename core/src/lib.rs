@@ -29,6 +29,7 @@
 #![no_std]
 #![allow(incomplete_features)]
 #![feature(allocator_api)]
+#![feature(trait_alias)]
 /* These clippy lint descriptions are purely non-functional and do not affect the functionality
  * or correctness of the code.
  * TODO: rustfmt breaks multiline comments when used one on top of another! (each with its own
@@ -121,6 +122,14 @@ pub mod allocation {
 /// declaring a grammar, their stability guarantees can be much lower than the
 /// definitions in this module.*
 pub mod grammar_specification {
+  /// Aliases used in the grammar specification.
+  pub mod types {
+    use core::hash::Hash;
+    /// Necessary requirement to hash an object, but not e.g. to
+    /// lexicographically sort it.
+    pub trait Hashable = Hash+Eq;
+  }
+
   /// Grammar components which expand into exactly one specific token.
   pub mod direct {
     use core::iter::IntoIterator;
@@ -133,7 +142,7 @@ pub mod grammar_specification {
       /// This parameter is *separate from, but may be the same as* the tokens
       /// we can actually parse with
       /// [Input::InChunk][super::execution::Input].
-      type Tok;
+      type Tok: super::types::Hashable;
       /// Override [IntoIterator::Item] with this trait's parameter.
       type Item: Into<Self::Tok>;
     }
@@ -147,7 +156,7 @@ pub mod grammar_specification {
     pub trait ProductionReference: Into<Self::ID> {
       /// Parameterized type to reference the identity of some particular
       /// [Production].
-      type ID;
+      type ID: super::types::Hashable;
     }
   }
 
@@ -162,7 +171,7 @@ pub mod grammar_specification {
     pub trait StackSym: Into<Self::S> {
       /// The type of stack symbols which are shared for some stack across the
       /// whole grammar.
-      type S;
+      type S: super::types::Hashable;
     }
 
     /// A set of stack symbols which is shared for some stack across the whole
@@ -177,7 +186,7 @@ pub mod grammar_specification {
     /// A name for a [NamedStack].
     pub trait StackName: Into<Self::N> {
       /// An identifier used for this stack across the grammar.
-      type N;
+      type N: super::types::Hashable;
     }
 
     /// A stack which the user can explicitly manipulate in a context-sensitive
@@ -415,7 +424,7 @@ pub mod state {
       lowering_to_indices::grammar_building as gb, parsing as p,
     };
 
-    use core::{alloc::Allocator, fmt, hash::Hash, iter::IntoIterator};
+    use core::{alloc::Allocator, fmt, iter::IntoIterator};
 
     /// Container for an implementor of
     /// [gs::synthesis::SimultaneousProductions].
@@ -424,14 +433,14 @@ pub mod state {
 
     impl<Tok, Lit, ID, PR, S, Sym, SymSet, N, Name, NS, SM, ZC, C, P, SP> Init<SP>
     where
-      Tok: Hash+Eq,
+      Tok: gs::types::Hashable,
       Lit: gs::direct::Literal<Tok=Tok>+IntoIterator<Item=Tok>,
-      ID: Hash+Eq+Clone,
+      ID: gs::types::Hashable+Clone,
       PR: gs::indirect::ProductionReference<ID=ID>,
-      S: Hash+Eq,
+      S: gs::types::Hashable,
       Sym: gs::explicit::StackSym<S=S>,
       SymSet: gs::explicit::SymbolSet<Sym=Sym>+IntoIterator<Item=Sym>,
-      N: Hash+Eq,
+      N: gs::types::Hashable,
       Name: gs::explicit::StackName<N=N>,
       NS: gs::explicit::NamedStack<Name=Name, SymSet=SymSet>,
       SM: gs::explicit::StackManipulation<NS=NS>+IntoIterator<Item=gs::explicit::StackStep<NS>>,
@@ -473,7 +482,7 @@ pub mod state {
 
     impl<Tok, Arena> Indexed<Tok, Arena>
     where
-      Tok: Hash+Eq+fmt::Debug+Clone,
+      Tok: gs::types::Hashable+fmt::Debug+Clone,
       Arena: Allocator+Clone,
     {
       /// Create a [`p::ParseableGrammar`] and convert to a parseable state.

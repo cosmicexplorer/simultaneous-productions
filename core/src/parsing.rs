@@ -407,7 +407,7 @@ where Arena: Allocator+Clone
     input: &Input<Tok, Arena>,
   ) -> Result<Vec<PossibleStates<Arena>, Arena>, ParsingInputFailure<Tok>>
   where
-    Tok: Hash+Eq+fmt::Debug+Clone,
+    Tok: crate::grammar_specification::types::Hashable+fmt::Debug+Clone,
   {
     let arena = mapping.allocator_handoff();
 
