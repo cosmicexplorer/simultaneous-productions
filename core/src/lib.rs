@@ -247,7 +247,10 @@ pub mod grammar_specification {
   /// Grammar components which synthesize the lower-level elements from
   /// [direct], [indirect], [explicit], and [undecidable].
   pub mod synthesis {
-    use super::{direct::*, explicit::*, indirect::*, undecidable::*};
+    use super::{
+      direct::Literal, explicit::StackManipulation, indirect::ProductionReference,
+      undecidable::ZipperCondition,
+    };
 
     use core::iter::IntoIterator;
 
@@ -557,6 +560,11 @@ pub mod test_framework {
     }
   }
 
+  /// Declare a type backed by [Vec<char>::IntoIter] which forwards trait
+  /// implementations to a newly constructed vector type.
+  ///
+  /// This allows us to implement [Iterator] without having to create a name for
+  /// an intermediate `IntoIter` type.
   macro_rules! string_iterator {
     ($type_name:ident) => {
       #[derive(Debug, Clone)]
@@ -631,6 +639,7 @@ pub mod test_framework {
     type N = Self;
   }
 
+  /* FIXME: make this use an Rc<StackName/SymbolSet> instead? */
   #[derive(Debug, Clone)]
   pub struct NamedStack {
     pub name: StackName,
@@ -652,6 +661,7 @@ pub mod test_framework {
 
   pub type NamedStackStep = gs::explicit::StackStep<NamedStack>;
 
+  /* FIXME: make this use an Rc<NamedStack> instead? */
   #[derive(Debug, Clone)]
   pub struct StackManipulation {
     named_stack: NamedStack,
