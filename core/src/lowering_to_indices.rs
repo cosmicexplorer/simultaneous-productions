@@ -39,7 +39,7 @@ use crate::grammar_specification::{Literal, ProductionReference};
 #[cfg(doc)]
 use grammar_building::TokenGrammar;
 
-/// ???
+/// Specification for internal graph model of the grammar.
 ///
 /// All these `Ref` types have nice properties, like being storeable without
 /// reference to any particular graph, being totally ordered, and being able
@@ -51,43 +51,33 @@ pub mod graph_coordinates {
   #[cfg(doc)]
   use crate::grammar_specification as gs;
 
+  macro_rules! via_primitive {
+    ($type_name:ident, $primitive:ident) => {
+      /* #[doc = $doc] */
+      #[derive(Debug, Copy, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
+      pub struct $type_name(pub $primitive);
+
+      impl From<$primitive> for $type_name {
+        fn from(value: $primitive) -> Self { Self(value) }
+      }
+
+      impl From<$type_name> for $primitive {
+        fn from(value: $type_name) -> Self { value.0 }
+      }
+    };
+  }
+
+  /* FIXME: make doc comment apply to the macro expansion!! */
   /// Points to a particular Production within a sequence of
   /// [gs::synthesis::Production]s.
   ///
   /// A version of [gs::synthesis::ProductionReference] which uses a [usize] for
   /// speed.
-  #[derive(Debug, Copy, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
-  pub struct ProdRef(pub usize);
+  via_primitive![ProdRef, usize];
 
-  impl From<usize> for ProdRef {
-    fn from(value: usize) -> Self { Self(value) }
-  }
+  via_primitive![CaseRef, usize];
 
-  impl From<ProdRef> for usize {
-    fn from(value: ProdRef) -> Self { value.0 }
-  }
-
-  #[derive(Debug, Copy, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
-  pub struct CaseRef(pub usize);
-
-  impl From<usize> for CaseRef {
-    fn from(value: usize) -> Self { Self(value) }
-  }
-
-  impl From<CaseRef> for usize {
-    fn from(value: CaseRef) -> Self { value.0 }
-  }
-
-  #[derive(Debug, Copy, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
-  pub struct CaseElRef(pub usize);
-
-  impl From<usize> for CaseElRef {
-    fn from(value: usize) -> Self { Self(value) }
-  }
-
-  impl From<CaseElRef> for usize {
-    fn from(value: CaseElRef) -> Self { value.0 }
-  }
+  via_primitive![CaseElRef, usize];
 
   #[derive(Debug, Copy, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
   pub struct ProdCaseRef {
@@ -102,20 +92,12 @@ pub mod graph_coordinates {
     pub el: CaseElRef,
   }
 
+  /* FIXME: make doc comment apply to the macro expansion!! */
   /// Points to a particular token value within an alphabet.
   ///
   /// Differs from [TokenPosition], which points to an individual *state* in
   /// the graph (which may be satisfied by exactly one token *value*).
-  #[derive(Debug, Copy, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
-  pub struct TokRef(pub usize);
-
-  impl From<usize> for TokRef {
-    fn from(value: usize) -> Self { Self(value) }
-  }
-
-  impl From<TokRef> for usize {
-    fn from(value: TokRef) -> Self { value.0 }
-  }
+  via_primitive![TokRef, usize];
 
   #[derive(Debug, Copy, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
   pub enum CaseEl {

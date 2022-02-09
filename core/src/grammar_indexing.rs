@@ -38,7 +38,6 @@ use indexmap::{IndexMap, IndexSet};
 
 use core::{
   alloc::Allocator,
-  cmp::{Eq, PartialEq},
   fmt,
   hash::{Hash, Hasher},
 };
