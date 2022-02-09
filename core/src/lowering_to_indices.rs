@@ -121,62 +121,64 @@ pub mod grammar_building {
     /* use heapless::{FnvIndexMap, FnvIndexSet, IndexMap, IndexSet, Vec}; */
     use indexmap::IndexMap;
 
-    #[derive(Debug)]
-    pub struct Case<Arena>(pub Vec<gc::CaseEl, Arena>)
-    where Arena: Allocator;
+    macro_rules! vec_type {
+      ($type_name:ident, $collection_type:ty) => {
+        #[derive(Debug)]
+        pub struct $type_name<Arena>(pub $collection_type)
+        where Arena: Allocator+Clone;
 
+        impl<Arena> PartialEq for $type_name<Arena>
+        where Arena: Allocator+Clone
+        {
+          fn eq(&self, other: &Self) -> bool { self.0 == other.0 }
+        }
 
-    impl<Arena> PartialEq for Case<Arena>
-    where Arena: Allocator
-    {
-      fn eq(&self, other: &Self) -> bool { self.0 == other.0 }
+        impl<Arena> Eq for $type_name<Arena> where Arena: Allocator+Clone {}
+
+        impl<Arena> Clone for $type_name<Arena>
+        where Arena: Allocator+Clone
+        {
+          fn clone(&self) -> Self { Self(self.0.clone()) }
+        }
+      };
     }
 
-    impl<Arena> Eq for Case<Arena> where Arena: Allocator {}
+    vec_type![Case, Vec<gc::CaseEl, Arena>];
 
-    impl<Arena> Clone for Case<Arena>
-    where Arena: Allocator+Clone
-    {
-      fn clone(&self) -> Self { Self(self.0.clone()) }
+    vec_type![Production, Vec<Case<Arena>, Arena>];
+
+    macro_rules! indexmap_type {
+      ($type_name:ident, $collection_type:ty) => {
+        #[derive(Debug)]
+        pub struct $type_name<Arena>(pub $collection_type)
+        where Arena: Allocator+Clone;
+
+        impl<Arena> HandoffAllocable for $type_name<Arena>
+        where Arena: Allocator+Clone
+        {
+          type Arena = Arena;
+
+          fn allocator_handoff(&self) -> Arena { self.0.arena() }
+        }
+
+        impl<Arena> PartialEq for $type_name<Arena>
+        where Arena: Allocator+Clone
+        {
+          fn eq(&self, other: &Self) -> bool { self.0 == other.0 }
+        }
+
+        impl<Arena> Eq for $type_name<Arena> where Arena: Allocator+Clone {}
+
+        impl<Arena> Clone for $type_name<Arena>
+        where Arena: Allocator+Clone
+        {
+          fn clone(&self) -> Self { Self(self.0.clone()) }
+        }
+      };
     }
 
-    #[derive(Debug)]
-    pub struct Production<Arena>(pub Vec<Case<Arena>, Arena>)
-    where Arena: Allocator;
-
-    impl<Arena> PartialEq for Production<Arena>
-    where Arena: Allocator
-    {
-      fn eq(&self, other: &Self) -> bool { self.0 == other.0 }
-    }
-
-    impl<Arena> Eq for Production<Arena> where Arena: Allocator {}
-
-    impl<Arena> Clone for Production<Arena>
-    where Arena: Allocator+Clone
-    {
-      fn clone(&self) -> Self { Self(self.0.clone()) }
-    }
-
-    #[derive(Debug)]
-    pub struct DetokenizedProductions<Arena>(
-      IndexMap<gc::ProdRef, Production<Arena>, Arena, DefaultHasher>,
-    )
-    where Arena: Allocator+Clone;
-
-    impl<Arena> PartialEq for DetokenizedProductions<Arena>
-    where Arena: Allocator+Clone
-    {
-      fn eq(&self, other: &Self) -> bool { self.0 == other.0 }
-    }
-
-    impl<Arena> Eq for DetokenizedProductions<Arena> where Arena: Allocator+Clone {}
-
-    impl<Arena> Clone for DetokenizedProductions<Arena>
-    where Arena: Allocator+Clone
-    {
-      fn clone(&self) -> Self { Self(self.0.clone()) }
-    }
+    indexmap_type![DetokenizedProductions,
+                   IndexMap<gc::ProdRef, Production<Arena>, Arena, DefaultHasher>];
 
     impl<Arena> DetokenizedProductions<Arena>
     where Arena: Allocator+Clone
@@ -198,61 +200,42 @@ pub mod grammar_building {
       }
     }
 
+    macro_rules! intern_tok_type {
+      ($type_name:ident, $collection_type:ty) => {
+        #[derive(Debug, Clone)]
+        pub struct $type_name<Tok, Arena>(pub $collection_type)
+        where Arena: Allocator+Clone;
+
+        impl<Tok, Arena> HandoffAllocable for $type_name<Tok, Arena>
+        where Arena: Allocator+Clone
+        {
+          type Arena = Arena;
+
+          fn allocator_handoff(&self) -> Arena { self.0.allocator_handoff() }
+        }
+
+        impl<Tok, Arena> PartialEq for $type_name<Tok, Arena>
+        where
+          Tok: Eq,
+          Arena: Allocator+Clone,
+        {
+          fn eq(&self, other: &Self) -> bool { self.0 == other.0 }
+        }
+
+        impl<Tok, Arena> Eq for $type_name<Tok, Arena>
+        where
+          Tok: Eq,
+          Arena: Allocator+Clone,
+        {
+        }
+      };
+    }
+
     /// An alphabet of tokens for a grammar.
-    #[derive(Debug, Clone)]
-    pub struct Alphabet<Tok, Arena>(pub InternArena<Tok, gc::TokRef, Arena>)
-    where Arena: Allocator;
+    intern_tok_type![Alphabet, InternArena<Tok, gc::TokRef, Arena>];
 
-    impl<Tok, Arena> HandoffAllocable for Alphabet<Tok, Arena>
-    where Arena: Allocator+Clone
-    {
-      type Arena = Arena;
-
-      fn allocator_handoff(&self) -> Arena { self.0.allocator_handoff() }
-    }
-
-    impl<Tok, Arena> PartialEq for Alphabet<Tok, Arena>
-    where
-      Tok: Eq,
-      Arena: Allocator,
-    {
-      fn eq(&self, other: &Self) -> bool { self.0 == other.0 }
-    }
-
-    impl<Tok, Arena> Eq for Alphabet<Tok, Arena>
-    where
-      Tok: Eq,
-      Arena: Allocator,
-    {
-    }
-
-    #[derive(Debug)]
-    pub struct AlphabetMapping<Arena>(
-      IndexMap<gc::TokRef, Vec<gc::TokenPosition, Arena>, Arena, DefaultHasher>,
-    )
-    where Arena: Allocator+Clone;
-
-    impl<Arena> HandoffAllocable for AlphabetMapping<Arena>
-    where Arena: Allocator+Clone
-    {
-      type Arena = Arena;
-
-      fn allocator_handoff(&self) -> Arena { self.0.arena() }
-    }
-
-    impl<Arena> PartialEq for AlphabetMapping<Arena>
-    where Arena: Allocator+Clone
-    {
-      fn eq(&self, other: &Self) -> bool { self.0 == other.0 }
-    }
-
-    impl<Arena> Eq for AlphabetMapping<Arena> where Arena: Allocator+Clone {}
-
-    impl<Arena> Clone for AlphabetMapping<Arena>
-    where Arena: Allocator+Clone
-    {
-      fn clone(&self) -> Self { Self(self.0.clone()) }
-    }
+    indexmap_type![AlphabetMapping,
+                   IndexMap<gc::TokRef, Vec<gc::TokenPosition, Arena>, Arena, DefaultHasher>];
 
     impl<Arena> AlphabetMapping<Arena>
     where Arena: Allocator+Clone
