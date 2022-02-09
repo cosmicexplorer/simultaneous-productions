@@ -20,11 +20,10 @@
  */
 
 use crate::{
+  types::Allocator,
   allocation::HandoffAllocable, grammar_indexing as gi,
   lowering_to_indices::graph_coordinates as gc, parsing as p, types::Vec,
 };
-
-use core::alloc::Allocator;
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum ReconstructionError {}

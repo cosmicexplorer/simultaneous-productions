@@ -115,13 +115,11 @@ pub mod grammar_building {
     use crate::{
       allocation::HandoffAllocable,
       interns::InternArena,
-      types::{DefaultHasher, Vec},
+      types::{Allocator, DefaultHasher, Vec},
     };
 
     /* use heapless::{FnvIndexMap, FnvIndexSet, IndexMap, IndexSet, Vec}; */
     use indexmap::IndexMap;
-
-    use core::alloc::Allocator;
 
     #[derive(Debug)]
     pub struct Case<Arena>(pub Vec<gc::CaseEl, Arena>)
