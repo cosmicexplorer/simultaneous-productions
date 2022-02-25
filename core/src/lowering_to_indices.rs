@@ -99,10 +99,16 @@ pub mod graph_coordinates {
   /// the graph (which may be satisfied by exactly one token *value*).
   via_primitive![TokRef, usize];
 
+  via_primitive![SMRef, usize];
+
+  via_primitive![ZCRef, usize];
+
   #[derive(Debug, Copy, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
   pub enum CaseEl {
     Tok(TokRef),
     Prod(ProdRef),
+    SM(SMRef),
+    ZC(ZCRef),
   }
 }
 
@@ -117,6 +123,8 @@ pub mod grammar_building {
       interns::InternArena,
       types::{Allocator, DefaultHasher, Vec},
     };
+
+    use core::hash::Hash;
 
     /* use heapless::{FnvIndexMap, FnvIndexSet, IndexMap, IndexSet, Vec}; */
     use indexmap::IndexMap;
@@ -200,63 +208,89 @@ pub mod grammar_building {
       }
     }
 
-    macro_rules! intern_tok_type {
-      ($type_name:ident, $collection_type:ty) => {
-        #[derive(Debug, Clone)]
-        pub struct $type_name<Tok, Arena>(pub $collection_type)
-        where Arena: Allocator+Clone;
-
-        impl<Tok, Arena> HandoffAllocable for $type_name<Tok, Arena>
-        where Arena: Allocator+Clone
-        {
-          type Arena = Arena;
-
-          fn allocator_handoff(&self) -> Arena { self.0.allocator_handoff() }
-        }
-
-        impl<Tok, Arena> PartialEq for $type_name<Tok, Arena>
-        where
-          Tok: Eq,
-          Arena: Allocator+Clone,
-        {
-          fn eq(&self, other: &Self) -> bool { self.0 == other.0 }
-        }
-
-        impl<Tok, Arena> Eq for $type_name<Tok, Arena>
-        where
-          Tok: Eq,
-          Arena: Allocator+Clone,
-        {
-        }
-      };
-    }
-
-    /// An alphabet of tokens for a grammar.
-    intern_tok_type![Alphabet, InternArena<Tok, gc::TokRef, Arena>];
-
-    indexmap_type![AlphabetMapping,
-                   IndexMap<gc::TokRef, Vec<gc::TokenPosition, Arena>, Arena, DefaultHasher>];
-
-    impl<Arena> AlphabetMapping<Arena>
+    /// Merge an intern table with a mapping of locations in the input where the
+    /// interned object is found.
+    #[derive(Debug, Clone)]
+    pub struct InternedLookupTable<Tok, Key, Arena>
     where Arena: Allocator+Clone
     {
-      pub fn new_in(arena: Arena) -> Self { Self(IndexMap::new_in(arena)) }
+      alphabet: InternArena<Tok, Key, Arena>,
+      locations: IndexMap<Key, Vec<gc::TokenPosition, Arena>, Arena, DefaultHasher>,
+    }
 
-      pub fn insert_new_position(&mut self, entry: (gc::TokRef, gc::TokenPosition)) {
+    impl<Tok, Key, Arena> PartialEq for InternedLookupTable<Tok, Key, Arena>
+    where
+      Tok: Eq,
+      Key: Hash+Eq,
+      Arena: Allocator+Clone,
+    {
+      fn eq(&self, other: &Self) -> bool {
+        self.alphabet == other.alphabet && self.locations == other.locations
+      }
+    }
+
+    impl<Tok, Key, Arena> Eq for InternedLookupTable<Tok, Key, Arena>
+    where
+      Tok: Eq,
+      Key: Hash+Eq,
+      Arena: Allocator+Clone,
+    {
+    }
+
+    impl<Tok, Key, Arena> HandoffAllocable for InternedLookupTable<Tok, Key, Arena>
+    where Arena: Allocator+Clone
+    {
+      type Arena = Arena;
+
+      fn allocator_handoff(&self) -> Self::Arena { self.alphabet.allocator_handoff() }
+    }
+
+    impl<Tok, Key, Arena> InternedLookupTable<Tok, Key, Arena>
+    where
+      Arena: Allocator+Clone,
+      Tok: Eq,
+      Key: From<usize>,
+    {
+      pub fn retrieve_intern(&self, x: &Tok) -> Option<Key> { self.alphabet.retrieve_intern(x) }
+
+      pub fn intern_exclusive(&mut self, tok: Tok) -> Key { self.alphabet.intern_exclusive(tok) }
+    }
+
+    impl<Tok, Key, Arena> InternedLookupTable<Tok, Key, Arena>
+    where
+      Arena: Allocator+Clone,
+      Tok: Eq,
+      Key: Hash+Eq,
+    {
+      pub fn insert_new_position(&mut self, entry: (Key, gc::TokenPosition)) {
         let (key, new_value) = entry;
         let arena = self.allocator_handoff();
-        let entry = self.0.entry(key).or_insert_with(|| Vec::new_in(arena));
+        let entry = self
+          .locations
+          .entry(key)
+          .or_insert_with(|| Vec::new_in(arena));
         (*entry).push(new_value);
       }
 
-      pub fn get(&self, tok_ref: gc::TokRef) -> Option<&[gc::TokenPosition]> {
-        self.0.get(&tok_ref).map(|ps| ps.as_ref())
+      pub fn get(&self, tok_ref: Key) -> Option<&[gc::TokenPosition]> {
+        self.locations.get(&tok_ref).map(|ps| ps.as_ref())
+      }
+    }
+
+    impl<Tok, Key, Arena> InternedLookupTable<Tok, Key, Arena>
+    where Arena: Allocator+Clone
+    {
+      pub fn new_in(arena: Arena) -> Self {
+        Self {
+          alphabet: InternArena::new(arena.clone()),
+          locations: IndexMap::new_in(arena),
+        }
       }
 
       pub fn into_index_map(
         self,
-      ) -> IndexMap<gc::TokRef, Vec<gc::TokenPosition, Arena>, Arena, DefaultHasher> {
-        self.0
+      ) -> IndexMap<Key, Vec<gc::TokenPosition, Arena>, Arena, DefaultHasher> {
+        self.locations
       }
     }
   }
@@ -354,13 +388,12 @@ pub mod grammar_building {
       fn cmp(&self, other: &Self) -> Ordering { self.get_id().cmp(other.get_id()) }
     }
 
-    #[derive(Debug)]
+    #[derive(Debug, Clone)]
     pub struct TokenGrammar<Tok, Arena>
     where Arena: Allocator+Clone
     {
       pub graph: DetokenizedProductions<Arena>,
-      pub alphabet: Alphabet<Tok, Arena>,
-      pub token_states: AlphabetMapping<Arena>,
+      pub tokens: InternedLookupTable<Tok, gc::TokRef, Arena>,
     }
 
     impl<Tok, Arena> PartialEq for TokenGrammar<Tok, Arena>
@@ -369,9 +402,7 @@ pub mod grammar_building {
       Arena: Allocator+Clone,
     {
       fn eq(&self, other: &Self) -> bool {
-        self.graph == other.graph
-          && self.alphabet == other.alphabet
-          && self.token_states == other.token_states
+        self.graph == other.graph && self.tokens == other.tokens
       }
     }
 
@@ -387,21 +418,7 @@ pub mod grammar_building {
     {
       type Arena = Arena;
 
-      fn allocator_handoff(&self) -> Arena { self.alphabet.allocator_handoff() }
-    }
-
-    impl<Tok, Arena> Clone for TokenGrammar<Tok, Arena>
-    where
-      Tok: Clone,
-      Arena: Allocator+Clone,
-    {
-      fn clone(&self) -> Self {
-        Self {
-          graph: self.graph.clone(),
-          alphabet: self.alphabet.clone(),
-          token_states: self.token_states.clone(),
-        }
-      }
+      fn allocator_handoff(&self) -> Arena { self.tokens.allocator_handoff() }
     }
 
     impl<Tok, Arena> TokenGrammar<Tok, Arena>
@@ -455,8 +472,8 @@ pub mod grammar_building {
         // Collect all the tokens (splitting up literals) as we traverse the
         // productions. So literal strings are "flattened" into their individual
         // tokens.
-        let mut alphabet: InternArena<Tok, gc::TokRef, Arena> = InternArena::new(arena.clone());
-        let mut token_states: AlphabetMapping<Arena> = AlphabetMapping::new_in(arena.clone());
+        let mut tokens: InternedLookupTable<Tok, gc::TokRef, Arena> =
+          InternedLookupTable::new_in(arena.clone());
         let mut ret_prods: DetokenizedProductions<Arena> =
           DetokenizedProductions::new_in(arena.clone());
 
@@ -472,7 +489,7 @@ pub mod grammar_building {
               match el {
                 gs::synthesis::CaseElement::Lit(lit) => {
                   for tok in lit.into_iter() {
-                    let tok_ref = alphabet.intern_exclusive(tok);
+                    let tok_ref = tokens.intern_exclusive(tok);
 
                     ret_els.push(gc::CaseEl::Tok(tok_ref));
 
@@ -482,7 +499,7 @@ pub mod grammar_building {
                       case: case_ref,
                       el: el_ref,
                     };
-                    token_states.insert_new_position((tok_ref, cur_pos));
+                    tokens.insert_new_position((tok_ref, cur_pos));
 
                     case_el_ind += 1;
                   }
@@ -515,8 +532,7 @@ pub mod grammar_building {
 
         Ok(Self {
           graph: ret_prods,
-          alphabet: Alphabet(alphabet),
-          token_states,
+          tokens,
         })
       }
     }
@@ -526,12 +542,7 @@ pub mod grammar_building {
 #[cfg(test)]
 mod tests {
   use super::{grammar_building as gb, graph_coordinates as gc};
-  use crate::{
-    interns::InternArena,
-    state,
-    test_framework::*,
-    types::{Global, Vec},
-  };
+  use crate::{state, test_framework::*, types::Global};
 
   #[test]
   fn token_grammar_unsorted_alphabet() {
@@ -564,17 +575,20 @@ mod tests {
         .to_vec(),
       ),
     ));
-    let mut ts = gb::AlphabetMapping::new_in(Global);
-    ts.insert_new_position((gc::TokRef(0), new_token_position(0, 0, 0)));
-    ts.insert_new_position((gc::TokRef(1), new_token_position(0, 0, 1)));
-    ts.insert_new_position((gc::TokRef(2), new_token_position(0, 0, 2)));
-    ts.insert_new_position((gc::TokRef(0), new_token_position(0, 0, 3)));
+    let mut ts = gb::InternedLookupTable::<char, gc::TokRef, Global>::new_in(Global);
+    /* NB: The tokens are allocated in the order they are encountered in the
+     * grammar! */
+    let c_ref = ts.intern_exclusive('c');
+    let a_ref = ts.intern_exclusive('a');
+    assert_eq!(a_ref, ts.intern_exclusive('a'));
+    let b_ref = ts.intern_exclusive('b');
+    ts.insert_new_position((c_ref, new_token_position(0, 0, 0)));
+    ts.insert_new_position((a_ref, new_token_position(0, 0, 1)));
+    ts.insert_new_position((b_ref, new_token_position(0, 0, 2)));
+    ts.insert_new_position((c_ref, new_token_position(0, 0, 3)));
     assert_eq!(grammar, gb::TokenGrammar {
-      alphabet: gb::Alphabet(InternArena::from(
-        ['c', 'a', 'b'].iter().cloned().collect::<Vec<_>>()
-      )),
       graph: dt,
-      token_states: ts
+      tokens: ts,
     });
   }
 
@@ -626,18 +640,18 @@ mod tests {
         .to_vec(),
       ),
     ));
-    let mut ts = gb::AlphabetMapping::new_in(Global);
-    ts.insert_new_position((gc::TokRef(0), new_token_position(0, 0, 0)));
-    ts.insert_new_position((gc::TokRef(1), new_token_position(0, 0, 1)));
-    ts.insert_new_position((gc::TokRef(0), new_token_position(1, 0, 0)));
-    ts.insert_new_position((gc::TokRef(1), new_token_position(1, 0, 1)));
-    ts.insert_new_position((gc::TokRef(0), new_token_position(1, 1, 1)));
+    let mut ts = gb::InternedLookupTable::<char, gc::TokRef, Global>::new_in(Global);
+    let a_ref = ts.intern_exclusive('a');
+    assert_eq!(a_ref, ts.intern_exclusive('a'));
+    let b_ref = ts.intern_exclusive('b');
+    ts.insert_new_position((a_ref, new_token_position(0, 0, 0)));
+    ts.insert_new_position((b_ref, new_token_position(0, 0, 1)));
+    ts.insert_new_position((a_ref, new_token_position(1, 0, 0)));
+    ts.insert_new_position((b_ref, new_token_position(1, 0, 1)));
+    ts.insert_new_position((a_ref, new_token_position(1, 1, 1)));
     assert_eq!(grammar, gb::TokenGrammar {
-      alphabet: gb::Alphabet(InternArena::from(
-        ['a', 'b'].iter().cloned().collect::<Vec<_>>()
-      )),
       graph: dt,
-      token_states: ts,
+      tokens: ts,
     });
   }
 

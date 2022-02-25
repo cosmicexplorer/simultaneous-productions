@@ -402,14 +402,13 @@ where Arena: Allocator+Clone
   }
 
   fn get_possible_states_for_input<Tok>(
-    alphabet: &gb::Alphabet<Tok, Arena>,
-    mapping: &gb::AlphabetMapping<Arena>,
+    tokens: &gb::InternedLookupTable<Tok, gc::TokRef, Arena>,
     input: &Input<Tok, Arena>,
   ) -> Result<Vec<PossibleStates<Arena>, Arena>, ParsingInputFailure<Tok>>
   where
     Tok: crate::grammar_specification::types::Hashable+fmt::Debug+Clone,
   {
-    let arena = mapping.allocator_handoff();
+    let arena = tokens.allocator_handoff();
 
     /* NB: Bookend the internal states with Start and End states (creating a
      * vector with 2 more entries than `input`)! */
@@ -420,11 +419,10 @@ where Arena: Allocator+Clone
     ps.push(PossibleStates(st));
 
     for tok in input.0.iter() {
-      let tok_ref = alphabet
-        .0
+      let tok_ref = tokens
         .retrieve_intern(tok)
         .ok_or_else(|| ParsingInputFailure::UnknownToken(tok.clone()))?;
-      let tok_positions = mapping
+      let tok_positions = tokens
         .get(tok_ref)
         .ok_or(ParsingInputFailure::UnknownTokRef(tok_ref))?;
       let mut states: Vec<_, Arena> = Vec::with_capacity_in(tok_positions.len(), arena.clone());
@@ -459,11 +457,9 @@ where Arena: Allocator+Clone
           ..
         },
       token_states_mapping,
-      alphabet,
     } = grammar;
     Ok(ParseableGrammar {
       input_as_states: Self::get_possible_states_for_input(
-        &alphabet,
         &token_states_mapping,
         input,
       )?,

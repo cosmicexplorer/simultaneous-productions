@@ -117,19 +117,6 @@ where
 
 impl<T, R, Arena> InternArena<T, R, Arena>
 where
-  R: Into<usize>,
-  Arena: Allocator,
-{
-  pub fn retrieve(&self, key: R) -> &T {
-    self
-      .obarray
-      .get(key.into())
-      .expect("the type safety with the R parameter was supposed to stop this")
-  }
-}
-
-impl<T, R, Arena> InternArena<T, R, Arena>
-where
   T: Eq,
   R: From<usize>,
   Arena: Allocator,

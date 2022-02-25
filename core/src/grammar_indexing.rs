@@ -1001,18 +1001,17 @@ where Arena: Allocator+Clone
 pub struct PreprocessedGrammar<Tok, Arena>
 where Arena: Allocator+Clone
 {
-  /// `M: T -> {Q}`, where `{Q}` is sets of states!
-  ///
-  /// These don't need to be quick to access or otherwise optimized for the
-  /// algorithm until we create a `Parse` -- these are chosen to reduce
-  /// redundancy.
-  pub token_states_mapping: gb::AlphabetMapping<Arena>,
   /// `A: T x T -> {S}^+_-`
   ///
   /// where `{S}^+_-` (LaTeX formatting) is ordered sequences of signed
   /// stack symbols!
   pub cyclic_graph_decomposition: CyclicGraphDecomposition<Arena>,
-  pub alphabet: gb::Alphabet<Tok, Arena>,
+  /// `M: T -> {Q}`, where `{Q}` is sets of states!
+  ///
+  /// These don't need to be quick to access or otherwise optimized for the
+  /// algorithm until we create a `Parse` -- these are chosen to reduce
+  /// redundancy.
+  pub token_states_mapping: gb::InternedLookupTable<Tok, gc::TokRef, Arena>,
 }
 
 impl<Tok, Arena> HandoffAllocable for PreprocessedGrammar<Tok, Arena>
@@ -1020,7 +1019,7 @@ where Arena: Allocator+Clone
 {
   type Arena = Arena;
 
-  fn allocator_handoff(&self) -> Arena { self.alphabet.allocator_handoff() }
+  fn allocator_handoff(&self) -> Arena { self.token_states_mapping.allocator_handoff() }
 }
 
 impl<Tok, Arena> PreprocessedGrammar<Tok, Arena>
@@ -1047,8 +1046,7 @@ where Arena: Allocator+Clone
     grammar: gb::TokenGrammar<Tok, Arena>,
   ) -> (
     EpsilonIntervalGraph<Arena>,
-    gb::Alphabet<Tok, Arena>,
-    gb::AlphabetMapping<Arena>,
+    gb::InternedLookupTable<Tok, gc::TokRef, Arena>,
   ) {
     /* We would like to just accept a DetokenizedProductions here, but we call
      * this method directly in testing, and without the whole grammar object
@@ -1056,10 +1054,9 @@ where Arena: Allocator+Clone
     // TODO: what is "type ascription" referring to here^ lol
     let gb::TokenGrammar {
       graph: production_graph,
-      alphabet,
-      token_states,
+      tokens,
     } = grammar;
-    let arena = alphabet.allocator_handoff();
+    let arena = tokens.allocator_handoff();
     let prods = production_graph.into_index_map();
     /* We would really like to use .flat_map()s here, but it's not clear how to
      * do that while mutating the global `cur_anon_sym_index` value. When
@@ -1138,6 +1135,12 @@ where Arena: Allocator+Clone
                 arena: arena.clone(),
               });
             },
+            gc::CaseEl::SM(_sm_ref) => {
+              todo!("can't handle sm ref yet")
+            },
+            gc::CaseEl::ZC(_zc_ref) => {
+              todo!("can't handle zc ref yet")
+            },
           }
         }
         /* Construct the interval of all remaining nonterminals to the end of the
@@ -1162,20 +1165,18 @@ where Arena: Allocator+Clone
         all_intervals: really_all_intervals,
         anon_step_mapping,
       },
-      alphabet,
-      token_states,
+      tokens,
     )
   }
 
   pub fn new(grammar: gb::TokenGrammar<Tok, Arena>) -> Self {
-    let (terminals_interval_graph, alphabet, token_states) =
+    let (terminals_interval_graph, tokens) =
       Self::produce_terminals_interval_graph(grammar);
     let cyclic_graph_decomposition: CyclicGraphDecomposition<Arena> =
       terminals_interval_graph.connect_all_vertices();
     PreprocessedGrammar {
-      token_states_mapping: token_states,
+      token_states_mapping: tokens,
       cyclic_graph_decomposition,
-      alphabet,
     }
   }
 }
@@ -1197,7 +1198,7 @@ mod tests {
       .unwrap();
     assert_eq!(
       grammar
-        .token_states
+        .tokens
         .into_index_map()
         .into_iter()
         .collect::<Vec<_>>(),
@@ -1234,7 +1235,7 @@ mod tests {
         .try_index_with_allocator(Global)
         .unwrap();
 
-    let (noncyclic_interval_graph, _, _) =
+    let (noncyclic_interval_graph, _) =
       PreprocessedGrammar::produce_terminals_interval_graph(noncyclic_grammar);
 
     let s_0 = new_token_position(0, 0, 0);
@@ -1567,7 +1568,7 @@ mod tests {
     let state::preprocessing::Detokenized::<char, _>(grammar) = state::preprocessing::Init(prods)
       .try_index_with_allocator(Global)
       .unwrap();
-    let (interval_graph, _, _) = PreprocessedGrammar::produce_terminals_interval_graph(grammar);
+    let (interval_graph, _) = PreprocessedGrammar::produce_terminals_interval_graph(grammar);
     assert_eq!(&interval_graph, &EpsilonIntervalGraph {
       all_intervals: [
         ContiguousNonterminalInterval {
