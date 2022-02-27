@@ -446,7 +446,7 @@ pub mod state {
       SM: gs::explicit::StackManipulation<NS=NS>+IntoIterator<Item=gs::explicit::StackStep<NS>>,
       ZC: gs::undecidable::ZipperCondition<SM=SM>,
       C: gs::synthesis::Case<PR=PR>+IntoIterator<Item=gs::synthesis::CaseElement<Lit, PR, SM, ZC>>,
-      P: gs::synthesis::Production<C=C>+IntoIterator<Item=C>+Eq,
+      P: gs::synthesis::Production<C=C>+IntoIterator<Item=C>,
       SP: gs::synthesis::SimultaneousProductions<P=P>+IntoIterator<Item=(PR, P)>,
     {
       /// Create a [`gb::TokenGrammar`] and convert it to [`Detokenized`] for
@@ -627,16 +627,6 @@ pub mod test_framework {
   #[derive(Debug, Clone)]
   pub struct SymbolSet(<Vec<StackSym> as IntoIterator>::IntoIter);
 
-  impl SymbolSet {
-    fn to_vec(&self) -> Vec<StackSym> { self.0.clone().collect() }
-  }
-
-  impl PartialEq for SymbolSet {
-    fn eq(&self, other: &Self) -> bool { self.to_vec() == other.to_vec() }
-  }
-
-  impl Eq for SymbolSet {}
-
   impl From<&[StackSym]> for SymbolSet {
     fn from(value: &[StackSym]) -> Self { Self(value.to_vec().into_iter()) }
   }
@@ -659,7 +649,7 @@ pub mod test_framework {
   }
 
   /* FIXME: make this use an Rc<StackName/SymbolSet> instead? */
-  #[derive(Debug, Clone, PartialEq, Eq)]
+  #[derive(Debug, Clone)]
   pub struct NamedStack {
     pub name: StackName,
     pub sym_set: SymbolSet,
@@ -687,19 +677,6 @@ pub mod test_framework {
     stack_steps: <Vec<NamedStackStep> as IntoIterator>::IntoIter,
   }
 
-  impl StackManipulation {
-    fn into_stack_steps_vec(&self) -> Vec<NamedStackStep> { self.stack_steps.clone().collect() }
-  }
-
-  impl PartialEq for StackManipulation {
-    fn eq(&self, other: &Self) -> bool {
-      self.named_stack == other.named_stack
-        && self.into_stack_steps_vec() == other.into_stack_steps_vec()
-    }
-  }
-
-  impl Eq for StackManipulation {}
-
   impl AsRef<<StackManipulation as gs::explicit::StackManipulation>::NS> for StackManipulation {
     fn as_ref(&self) -> &NamedStack { &self.named_stack }
   }
@@ -725,7 +702,7 @@ pub mod test_framework {
     type NS = NamedStack;
   }
 
-  #[derive(Debug, Clone, PartialEq, Eq)]
+  #[derive(Debug, Clone)]
   pub struct ZipperCondition;
 
   impl gs::undecidable::ZipperCondition for ZipperCondition {
@@ -747,16 +724,6 @@ pub mod test_framework {
   #[derive(Debug, Clone)]
   pub struct Case(<Vec<CE> as IntoIterator>::IntoIter);
 
-  impl Case {
-    fn to_vec(&self) -> Vec<CE> { self.0.clone().collect() }
-  }
-
-  impl PartialEq for Case {
-    fn eq(&self, other: &Self) -> bool { self.to_vec() == other.to_vec() }
-  }
-
-  impl Eq for Case {}
-
   impl From<&[CE]> for Case {
     fn from(value: &[CE]) -> Self { Self(value.to_vec().into_iter()) }
   }
@@ -777,20 +744,6 @@ pub mod test_framework {
 
   #[derive(Debug, Clone)]
   pub struct Production(<Vec<Case> as IntoIterator>::IntoIter);
-
-  impl Production {
-    fn to_vec(&self) -> Vec<Case> {
-      self.0.clone().collect()
-    }
-  }
-
-  impl PartialEq for Production {
-    fn eq(&self, other: &Self) -> bool {
-      self.to_vec() == other.to_vec()
-    }
-  }
-
-  impl Eq for Production {}
 
   impl From<&[Case]> for Production {
     fn from(value: &[Case]) -> Self { Self(value.to_vec().into_iter()) }

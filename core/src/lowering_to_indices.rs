@@ -155,6 +155,59 @@ pub mod grammar_building {
 
     vec_type![Production, Vec<Case<Arena>, Arena>];
 
+    macro_rules! indexmap_type {
+      ($type_name:ident, $collection_type:ty) => {
+        #[derive(Debug)]
+        pub struct $type_name<Arena>(pub $collection_type)
+        where Arena: Allocator+Clone;
+
+        impl<Arena> HandoffAllocable for $type_name<Arena>
+        where Arena: Allocator+Clone
+        {
+          type Arena = Arena;
+
+          fn allocator_handoff(&self) -> Arena { self.0.arena() }
+        }
+
+        impl<Arena> PartialEq for $type_name<Arena>
+        where Arena: Allocator+Clone
+        {
+          fn eq(&self, other: &Self) -> bool { self.0 == other.0 }
+        }
+
+        impl<Arena> Eq for $type_name<Arena> where Arena: Allocator+Clone {}
+
+        impl<Arena> Clone for $type_name<Arena>
+        where Arena: Allocator+Clone
+        {
+          fn clone(&self) -> Self { Self(self.0.clone()) }
+        }
+      };
+    }
+
+    indexmap_type![DetokenizedProductions,
+                   IndexMap<gc::ProdRef, Production<Arena>, Arena, DefaultHasher>];
+
+    impl<Arena> DetokenizedProductions<Arena>
+    where Arena: Allocator+Clone
+    {
+      pub fn new_in(arena: Arena) -> Self { Self(IndexMap::new_in(arena)) }
+
+      pub fn insert_new_production(&mut self, entry: (gc::ProdRef, Production<Arena>)) {
+        let (key, value) = entry;
+        match self.0.insert_full(key, value) {
+          (_, Some(_)) => unreachable!("expected all productions to have unique IDs"),
+          (_, None) => (),
+        }
+      }
+
+      pub fn into_index_map(
+        self,
+      ) -> IndexMap<gc::ProdRef, Production<Arena>, Arena, DefaultHasher> {
+        self.0
+      }
+    }
+
     /// Merge an intern table with a mapping of locations in the input where the
     /// interned object is found.
     #[derive(Debug, Clone)]
@@ -234,33 +287,11 @@ pub mod grammar_building {
         }
       }
 
-      pub fn locations_into_index_map(
+      pub fn into_index_map(
         self,
       ) -> IndexMap<Key, Vec<gc::TokenPosition, Arena>, Arena, DefaultHasher> {
         self.locations
       }
-    }
-
-    impl<Tok, Key, Arena> InternedLookupTable<Tok, Key, Arena>
-    where
-      Tok: Clone,
-      Arena: Allocator+Clone,
-    {
-      pub fn with_alphabet(alphabet: InternArena<Tok, Key, Arena>) -> Self {
-        let arena = alphabet.allocator_handoff();
-        Self {
-          alphabet,
-          locations: IndexMap::new_in(arena),
-        }
-      }
-    }
-
-    impl<Tok, Key, Arena> InternedLookupTable<Tok, Key, Arena>
-    where
-      Key: From<usize>,
-      Arena: Allocator+Clone,
-    {
-      pub fn alphabet_into_vec(self) -> Vec<(Key, Tok), Arena> { self.alphabet.into_vec() }
     }
   }
 
@@ -361,7 +392,7 @@ pub mod grammar_building {
     pub struct TokenGrammar<Tok, Arena>
     where Arena: Allocator+Clone
     {
-      pub graph: InternedLookupTable<Production<Arena>, gc::ProdRef, Arena>,
+      pub graph: DetokenizedProductions<Arena>,
       pub tokens: InternedLookupTable<Tok, gc::TokRef, Arena>,
     }
 
@@ -421,37 +452,31 @@ pub mod grammar_building {
         ZC: gs::undecidable::ZipperCondition<SM=SM>,
         C:
           gs::synthesis::Case<PR=PR>+IntoIterator<Item=gs::synthesis::CaseElement<Lit, PR, SM, ZC>>,
-        P: gs::synthesis::Production<C=C>+IntoIterator<Item=C>+Eq,
+        P: gs::synthesis::Production<C=C>+IntoIterator<Item=C>,
         SP: gs::synthesis::SimultaneousProductions<P=P>+IntoIterator<Item=(PR, P)>,
       {
-        /* Collect all the tokens (splitting up literals) as we traverse the
-         * productions. So literal strings are "flattened" into their individual
-         * tokens. */
-        let mut tokens: InternedLookupTable<Tok, gc::TokRef, Arena> =
-          InternedLookupTable::new_in(arena.clone());
-        /* Similarly, collect all the production *references* while traversing the
-         * productions. */
-        let mut ret_prods: InternedLookupTable<Production<Arena>, gc::ProdRef, Arena> =
-          InternedLookupTable::new_in(arena.clone());
-
-        /* Map all of the productions out of the grammar by name. */
         let (all_prods, id_prod_mapping) = {
-          let mut all_prods = InternArena::<P, gc::ProdRef, Arena>::new(arena.clone());
+          let mut all_prods: InternArena<P, gc::ProdRef, Arena> = InternArena::new(arena.clone());
           let mut id_prod_mapping: IndexMap<ID, gc::ProdRef, Arena, DefaultHasher> =
             IndexMap::new_in(arena.clone());
-
           for (prod_ref, prod) in sp.into_iter() {
-            let intern_token = all_prods.intern_exclusive(prod);
+            let intern_token = all_prods.intern_always_new_increasing(prod);
             let id: PR::ID = prod_ref.into();
             if id_prod_mapping.insert(id.clone(), intern_token).is_some() {
               return Err(GrammarConstructionError::DuplicateProductionId(id));
             }
           }
-
           (all_prods.into_vec(), id_prod_mapping)
         };
 
-        /* Build up a TokenGrammar from the list of productions. */
+        // Collect all the tokens (splitting up literals) as we traverse the
+        // productions. So literal strings are "flattened" into their individual
+        // tokens.
+        let mut tokens: InternedLookupTable<Tok, gc::TokRef, Arena> =
+          InternedLookupTable::new_in(arena.clone());
+        let mut ret_prods: DetokenizedProductions<Arena> =
+          DetokenizedProductions::new_in(arena.clone());
+
         for (prod_ref, prod) in all_prods.into_iter() {
           let mut ret_cases: Vec<Case<Arena>, Arena> = Vec::new_in(arena.clone());
           for (case_ind, case) in prod.into_iter().enumerate() {
@@ -461,12 +486,6 @@ pub mod grammar_building {
              * so we can't directly use .enumerate() */
             let mut case_el_ind: usize = 0;
             for el in case.into_iter() {
-              let el_ref: gc::CaseElRef = case_el_ind.into();
-              let cur_pos = gc::TokenPosition {
-                prod: prod_ref,
-                case: case_ref,
-                el: el_ref,
-              };
               match el {
                 gs::synthesis::CaseElement::Lit(lit) => {
                   for tok in lit.into_iter() {
@@ -474,6 +493,12 @@ pub mod grammar_building {
 
                     ret_els.push(gc::CaseEl::Tok(tok_ref));
 
+                    let el_ref: gc::CaseElRef = case_el_ind.into();
+                    let cur_pos = gc::TokenPosition {
+                      prod: prod_ref,
+                      case: case_ref,
+                      el: el_ref,
+                    };
                     tokens.insert_new_position((tok_ref, cur_pos));
 
                     case_el_ind += 1;
@@ -487,8 +512,6 @@ pub mod grammar_building {
                       return Err(GrammarConstructionError::UnrecognizedProdRefId(id));
                     },
                   };
-
-                  ret_prods.insert_new_position((pr, cur_pos));
 
                   ret_els.push(gc::CaseEl::Prod(pr));
 
@@ -504,10 +527,7 @@ pub mod grammar_building {
             }
             ret_cases.push(Case(ret_els));
           }
-          let ret_prod_ref = ret_prods.intern_exclusive(Production(ret_cases));
-          /* We want to ensure that `all_prods` and `ret_prods.alphabet` remain in
-           * sync! */
-          assert_eq!(usize::from(ret_prod_ref), usize::from(prod_ref));
+          ret_prods.insert_new_production((prod_ref, Production(ret_cases)));
         }
 
         Ok(Self {
@@ -537,23 +557,24 @@ mod tests {
     let state::preprocessing::Detokenized(grammar) = state::preprocessing::Init(prods)
       .try_index_with_allocator(Global)
       .unwrap();
-    let mut dt =
-      gb::InternedLookupTable::<gb::Production<Global>, gc::ProdRef, Global>::new_in(Global);
-    let prod_ref = dt.intern_exclusive(gb::Production(
-      [gb::Case(
-        [
-          gc::CaseEl::Tok(gc::TokRef(0)),
-          gc::CaseEl::Tok(gc::TokRef(1)),
-          gc::CaseEl::Tok(gc::TokRef(2)),
-          gc::CaseEl::Tok(gc::TokRef(0)),
-        ]
+    let mut dt = gb::DetokenizedProductions::new_in(Global);
+    dt.insert_new_production((
+      gc::ProdRef(0),
+      gb::Production(
+        [gb::Case(
+          [
+            gc::CaseEl::Tok(gc::TokRef(0)),
+            gc::CaseEl::Tok(gc::TokRef(1)),
+            gc::CaseEl::Tok(gc::TokRef(2)),
+            gc::CaseEl::Tok(gc::TokRef(0)),
+          ]
+          .as_ref()
+          .to_vec(),
+        )]
         .as_ref()
         .to_vec(),
-      )]
-      .as_ref()
-      .to_vec(),
+      ),
     ));
-    assert_eq!(prod_ref, gc::ProdRef(0));
     let mut ts = gb::InternedLookupTable::<char, gc::TokRef, Global>::new_in(Global);
     /* NB: The tokens are allocated in the order they are encountered in the
      * grammar! */
@@ -577,45 +598,48 @@ mod tests {
     let state::preprocessing::Detokenized(grammar) = state::preprocessing::Init(prods)
       .try_index_with_allocator(Global)
       .unwrap();
-    let mut dt =
-      gb::InternedLookupTable::<gb::Production<Global>, gc::ProdRef, Global>::new_in(Global);
-    let prod_ref_0 = dt.intern_exclusive(gb::Production(
-      [gb::Case(
-        [
-          gc::CaseEl::Tok(gc::TokRef(0)),
-          gc::CaseEl::Tok(gc::TokRef(1)),
-        ]
-        .as_ref()
-        .to_vec(),
-      )]
-      .as_ref()
-      .to_vec(),
-    ));
-    assert_eq!(prod_ref_0, gc::ProdRef(0));
-    let prod_ref_1 = dt.intern_exclusive(gb::Production(
-      [
-        gb::Case(
+    let mut dt = gb::DetokenizedProductions::new_in(Global);
+    dt.insert_new_production((
+      gc::ProdRef(0),
+      gb::Production(
+        [gb::Case(
           [
             gc::CaseEl::Tok(gc::TokRef(0)),
             gc::CaseEl::Tok(gc::TokRef(1)),
-            gc::CaseEl::Prod(gc::ProdRef(0)),
           ]
           .as_ref()
           .to_vec(),
-        ),
-        gb::Case(
-          [
-            gc::CaseEl::Prod(gc::ProdRef(0)),
-            gc::CaseEl::Tok(gc::TokRef(0)),
-          ]
-          .as_ref()
-          .to_vec(),
-        ),
-      ]
-      .as_ref()
-      .to_vec(),
+        )]
+        .as_ref()
+        .to_vec(),
+      ),
     ));
-    assert_eq!(prod_ref_1, gc::ProdRef(1));
+    dt.insert_new_production((
+      gc::ProdRef(1),
+      gb::Production(
+        [
+          gb::Case(
+            [
+              gc::CaseEl::Tok(gc::TokRef(0)),
+              gc::CaseEl::Tok(gc::TokRef(1)),
+              gc::CaseEl::Prod(gc::ProdRef(0)),
+            ]
+            .as_ref()
+            .to_vec(),
+          ),
+          gb::Case(
+            [
+              gc::CaseEl::Prod(gc::ProdRef(0)),
+              gc::CaseEl::Tok(gc::TokRef(0)),
+            ]
+            .as_ref()
+            .to_vec(),
+          ),
+        ]
+        .as_ref()
+        .to_vec(),
+      ),
+    ));
     let mut ts = gb::InternedLookupTable::<char, gc::TokRef, Global>::new_in(Global);
     let a_ref = ts.intern_exclusive('a');
     assert_eq!(a_ref, ts.intern_exclusive('a'));

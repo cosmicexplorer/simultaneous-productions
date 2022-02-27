@@ -1057,8 +1057,7 @@ where Arena: Allocator+Clone
       tokens,
     } = grammar;
     let arena = tokens.allocator_handoff();
-    let prods = production_graph.alphabet_into_vec();
-
+    let prods = production_graph.into_index_map();
     /* We would really like to use .flat_map()s here, but it's not clear how to
      * do that while mutating the global `cur_anon_sym_index` value. When
      * `move` is used on the inner loop, the value of `cur_anon_sym_index`
@@ -1069,8 +1068,7 @@ where Arena: Allocator+Clone
       Vec::new_in(arena.clone());
     let mut anon_step_mapping: IndexMap<AnonSym, UnflattenedProdCaseRef, Arena, DefaultHasher> =
       IndexMap::new_in(arena.clone());
-
-    for (cur_prod_ref, the_prod) in prods.into_iter() {
+    for (cur_prod_ref, the_prod) in prods.iter() {
       let gb::Production(cases) = the_prod;
       for (case_ind, the_case) in cases.iter().enumerate() {
         let cur_case_ref: gc::CaseRef = case_ind.into();
@@ -1080,7 +1078,7 @@ where Arena: Allocator+Clone
 
         /* NB: make an anon sym whenever stepping onto a case! */
         let cur_prod_case = gc::ProdCaseRef {
-          prod: cur_prod_ref,
+          prod: *cur_prod_ref,
           case: cur_case_ref,
         };
         let (pos_case_anon, neg_case_anon) = Self::make_pos_neg_anon_steps(
@@ -1090,13 +1088,13 @@ where Arena: Allocator+Clone
         );
 
         let mut cur_elements: Vec<EpsilonGraphVertex, Arena> = Vec::new_in(arena.clone());
-        cur_elements.push(EpsilonGraphVertex::Start(cur_prod_ref));
+        cur_elements.push(EpsilonGraphVertex::Start(*cur_prod_ref));
         cur_elements.push(pos_case_anon);
 
         for (element_of_case_ind, el) in elements_of_case.iter().enumerate() {
           let cur_el_ref: gc::CaseElRef = element_of_case_ind.into();
           let cur_pos = gc::TokenPosition {
-            prod: cur_prod_ref,
+            prod: *cur_prod_ref,
             case: cur_case_ref,
             el: cur_el_ref,
           };
@@ -1151,7 +1149,7 @@ where Arena: Allocator+Clone
           Vec::with_capacity_in(cur_elements.len() + 2, arena.clone());
         final_interval.extend(cur_elements.into_iter());
         final_interval.push(neg_case_anon);
-        final_interval.push(EpsilonGraphVertex::End(cur_prod_ref));
+        final_interval.push(EpsilonGraphVertex::End(*cur_prod_ref));
 
         /* Register the interval of all remaining nonterminals in the results list. */
         all_intervals_from_this_case.push(ContiguousNonterminalInterval {
@@ -1201,7 +1199,7 @@ mod tests {
     assert_eq!(
       grammar
         .tokens
-        .locations_into_index_map()
+        .into_index_map()
         .into_iter()
         .collect::<Vec<_>>(),
       [
@@ -1781,7 +1779,7 @@ mod tests {
     let a_prod = gc::ProdRef(0);
     let b_prod = gc::ProdRef(1);
     assert_eq!(
-      preprocessed_grammar.token_states_mapping.locations_into_index_map(),
+      preprocessed_grammar.token_states_mapping.into_index_map(),
       [
         (
           gc::TokRef(0),
@@ -2032,7 +2030,7 @@ mod tests {
     let _c_prod = gc::ProdRef(2); /* unused */
 
     assert_eq!(
-      preprocessed_grammar.token_states_mapping.locations_into_index_map(),
+      preprocessed_grammar.token_states_mapping.into_index_map(),
       [
         (gc::TokRef(0), [first_a, second_a].as_ref().to_vec()),
         (
