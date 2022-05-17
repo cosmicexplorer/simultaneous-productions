@@ -1138,9 +1138,6 @@ where Arena: Allocator+Clone
             gc::CaseEl::SM(_sm_ref) => {
               todo!("can't handle sm ref yet")
             },
-            gc::CaseEl::ZC(_zc_ref) => {
-              todo!("can't handle zc ref yet")
-            },
           }
         }
         /* Construct the interval of all remaining nonterminals to the end of the

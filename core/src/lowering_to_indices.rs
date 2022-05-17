@@ -101,14 +101,11 @@ pub mod graph_coordinates {
 
   via_primitive![SMRef, usize];
 
-  via_primitive![ZCRef, usize];
-
   #[derive(Debug, Copy, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
   pub enum CaseEl {
     Tok(TokRef),
     Prod(ProdRef),
     SM(SMRef),
-    ZC(ZCRef),
   }
 }
 
@@ -434,7 +431,7 @@ pub mod grammar_building {
       ///    at.
       /// 2. Match up [ProductionReference]s to [ProdRef]s, or error
       ///    out.
-      pub fn new<Lit, ID, PR, S, Sym, SymSet, N, Name, NS, SM, ZC, C, P, SP>(
+      pub fn new<Lit, ID, PR, S, Sym, SymSet, N, Name, NS, SM, C, P, SP>(
         sp: SP,
         arena: Arena,
       ) -> Result<Self, GrammarConstructionError<ID>>
@@ -449,9 +446,7 @@ pub mod grammar_building {
         Name: gs::explicit::StackName<N=N>,
         NS: gs::explicit::NamedStack<Name=Name, SymSet=SymSet>,
         SM: gs::explicit::StackManipulation<NS=NS>+IntoIterator<Item=gs::explicit::StackStep<S>>,
-        ZC: gs::undecidable::ZipperCondition<SM=SM>,
-        C:
-          gs::synthesis::Case<PR=PR>+IntoIterator<Item=gs::synthesis::CaseElement<Lit, PR, SM, ZC>>,
+        C: gs::synthesis::Case<PR=PR>+IntoIterator<Item=gs::synthesis::CaseElement<Lit, PR, SM>>,
         P: gs::synthesis::Production<C=C>+IntoIterator<Item=C>,
         SP: gs::synthesis::SimultaneousProductions<P=P>+IntoIterator<Item=(PR, P)>,
       {
@@ -519,9 +514,6 @@ pub mod grammar_building {
                 },
                 gs::synthesis::CaseElement::Stack(_) => {
                   todo!("can't handle stack manipulations yet")
-                },
-                gs::synthesis::CaseElement::Zipper(_) => {
-                  todo!("can't handle zipper conditions yet")
                 },
               }
             }

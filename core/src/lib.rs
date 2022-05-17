@@ -219,49 +219,10 @@ pub mod grammar_specification {
     }
   }
 
-  /// Grammar components which iteratively attempt to match up two adjacent
-  /// parse trees.
-  pub mod undecidable {
-    use super::explicit::StackManipulation;
-
-    use displaydoc::Display;
-
-    /// adjacent parse trees to be matched: left={left}, right={right}
-    #[derive(Debug, Display, Copy, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
-    pub struct ZipperInput<SM> {
-      /// The left parse tree to be matched.
-      pub left: SM,
-      /// The right parse tree to be matched.
-      pub right: SM,
-    }
-
-    /// The result of calling [ZipperCondition::iterate].
-    #[derive(Debug, Display, Copy, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
-    pub enum ZipperResult<SM> {
-      /// zipper needs further iteration: {0}
-      Incomplete(ZipperInput<SM>),
-      /// zipper has been satisfied: {0}
-      Complete(SM),
-    }
-
-    /// A description of how two adjacent parse trees should be joined together.
-    pub trait ZipperCondition {
-      /// Parameterized type to represent the modification to the stack that
-      /// [Self::iterate] should perform.
-      type SM: StackManipulation;
-      /// Process `input` to determine whether the zipper condition is
-      /// satisfied.
-      fn iterate(&mut self, input: ZipperInput<Self::SM>) -> ZipperResult<Self::SM>;
-    }
-  }
-
   /// Grammar components which synthesize the lower-level elements from
   /// [direct], [indirect], [explicit], and [undecidable].
   pub mod synthesis {
-    use super::{
-      direct::Literal, explicit::StackManipulation, indirect::ProductionReference,
-      undecidable::ZipperCondition,
-    };
+    use super::{direct::Literal, explicit::StackManipulation, indirect::ProductionReference};
 
     use core::iter::IntoIterator;
 
@@ -270,15 +231,13 @@ pub mod grammar_specification {
     /// Each individual element that can be matched against some input in a
     /// case.
     #[derive(Debug, Display, Copy, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
-    pub enum CaseElement<Lit, PR, SM, ZC> {
+    pub enum CaseElement<Lit, PR, SM> {
       /// literal value {0}
       Lit(Lit),
       /// production reference {0}
       Prod(PR),
       /// explicit stack manipulation {0}
       Stack(SM),
-      /// zipper condition {0}
-      Zipper(ZC),
     }
 
     /// A sequence of *elements* which, if successfully matched against some
@@ -291,10 +250,8 @@ pub mod grammar_specification {
       /// Explicit stack manipulations to perform upon transitioning between
       /// tokens.
       type SM: StackManipulation;
-      /// Logic to "zip" together adjacent parse tree stack diffs.
-      type ZC: ZipperCondition;
       /// Override of [Iterator::Item].
-      type Item: Into<CaseElement<Self::Lit, Self::PR, Self::SM, Self::ZC>>;
+      type Item: Into<CaseElement<Self::Lit, Self::PR, Self::SM>>;
     }
 
     /// A disjunction of cases.
@@ -433,7 +390,7 @@ pub mod state {
     #[derive(Debug, Copy, Clone)]
     pub struct Init<SP>(pub SP);
 
-    impl<Tok, Lit, ID, PR, S, Sym, SymSet, N, Name, NS, SM, ZC, C, P, SP> Init<SP>
+    impl<Tok, Lit, ID, PR, S, Sym, SymSet, N, Name, NS, SM, C, P, SP> Init<SP>
     where
       Tok: gs::types::Hashable,
       Lit: gs::direct::Literal<Tok=Tok>+IntoIterator<Item=Tok>,
@@ -446,8 +403,7 @@ pub mod state {
       Name: gs::explicit::StackName<N=N>,
       NS: gs::explicit::NamedStack<Name=Name, SymSet=SymSet>,
       SM: gs::explicit::StackManipulation<NS=NS>+IntoIterator<Item=gs::explicit::StackStep<S>>,
-      ZC: gs::undecidable::ZipperCondition<SM=SM>,
-      C: gs::synthesis::Case<PR=PR>+IntoIterator<Item=gs::synthesis::CaseElement<Lit, PR, SM, ZC>>,
+      C: gs::synthesis::Case<PR=PR>+IntoIterator<Item=gs::synthesis::CaseElement<Lit, PR, SM>>,
       P: gs::synthesis::Production<C=C>+IntoIterator<Item=C>,
       SP: gs::synthesis::SimultaneousProductions<P=P>+IntoIterator<Item=(PR, P)>,
     {
@@ -704,24 +660,7 @@ pub mod test_framework {
     type NS = NamedStack;
   }
 
-  #[derive(Debug, Clone)]
-  pub struct ZipperCondition;
-
-  impl gs::undecidable::ZipperCondition for ZipperCondition {
-    type SM = StackManipulation;
-
-    fn iterate(
-      &mut self,
-      _input: gs::undecidable::ZipperInput<Self::SM>,
-    ) -> gs::undecidable::ZipperResult<Self::SM> {
-      /* let gs::undecidable::ZipperInput { left, right } = input; */
-      /* gs::undecidable::ZipperResult::Complete(left); */
-      todo!("not yet implemented")
-    }
-  }
-
-  pub type CE =
-    gs::synthesis::CaseElement<Lit, ProductionReference, StackManipulation, ZipperCondition>;
+  pub type CE = gs::synthesis::CaseElement<Lit, ProductionReference, StackManipulation>;
 
   #[derive(Debug, Clone)]
   pub struct Case(<Vec<CE> as IntoIterator>::IntoIter);
@@ -741,7 +680,6 @@ pub mod test_framework {
     type Lit = Lit;
     type PR = ProductionReference;
     type SM = StackManipulation;
-    type ZC = ZipperCondition;
   }
 
   #[derive(Debug, Clone)]
