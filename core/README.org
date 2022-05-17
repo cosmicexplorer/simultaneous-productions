@@ -2,6 +2,11 @@
 #+STARTUP: showall
 
 * TODO [0/3] MVP
-1. [ ] Context-sensitive parsing with /parallel subcontexts/.
-2. [ ] /Collectors/ as coroutines.
+1. [ ] [[collectors]] as coroutines.
+   - This is /before/ [[parallel subcontexts]] because it can probably be implemented with this.
+2. [ ] Context-sensitive parsing with [[parallel subcontexts]].
 3. [ ] Regular subgraph parsing via the [[https://docs.rs/regex/latest/regex/index.html][rust regex library]].
+
+* collectors
+
+* parallel subcontexts
