@@ -431,7 +431,7 @@ pub mod grammar_building {
       ///    at.
       /// 2. Match up [ProductionReference]s to [ProdRef]s, or error
       ///    out.
-      pub fn new<Lit, ID, PR, S, Sym, SymSet, N, Name, NS, SM, C, P, SP>(
+      pub fn new<Lit, ID, PR, C, P, SP>(
         sp: SP,
         arena: Arena,
       ) -> Result<Self, GrammarConstructionError<ID>>
@@ -439,14 +439,7 @@ pub mod grammar_building {
         Lit: gs::direct::Literal<Tok=Tok>+IntoIterator<Item=Tok>,
         ID: gs::types::Hashable+Clone,
         PR: gs::indirect::ProductionReference<ID=ID>,
-        S: gs::types::Hashable,
-        Sym: gs::explicit::StackSym<S=S>,
-        SymSet: gs::explicit::SymbolSet<Sym=Sym>+IntoIterator<Item=Sym>,
-        N: gs::types::Hashable,
-        Name: gs::explicit::StackName<N=N>,
-        NS: gs::explicit::NamedStack<Name=Name, SymSet=SymSet>,
-        SM: gs::explicit::StackManipulation<NS=NS>+IntoIterator<Item=gs::explicit::StackStep<S>>,
-        C: gs::synthesis::Case<PR=PR>+IntoIterator<Item=gs::synthesis::CaseElement<Lit, PR, SM>>,
+        C: gs::synthesis::Case<PR=PR>+IntoIterator<Item=gs::synthesis::CaseElement<Lit, PR>>,
         P: gs::synthesis::Production<C=C>+IntoIterator<Item=C>,
         SP: gs::synthesis::SimultaneousProductions<P=P>+IntoIterator<Item=(PR, P)>,
       {
@@ -511,9 +504,6 @@ pub mod grammar_building {
                   ret_els.push(gc::CaseEl::Prod(pr));
 
                   case_el_ind += 1;
-                },
-                gs::synthesis::CaseElement::Stack(_) => {
-                  todo!("can't handle stack manipulations yet")
                 },
               }
             }

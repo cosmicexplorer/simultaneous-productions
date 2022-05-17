@@ -160,69 +160,21 @@ pub mod grammar_specification {
     }
   }
 
-  /// Grammar components which explicitly manipulate a named stack.
-  pub mod explicit {
-    use core::convert::AsRef;
-
-    use displaydoc::Display;
-
-    /// A type representing a symbol which can be pushed onto or popped from a
-    /// [NamedStack].
-    pub trait StackSym: Into<Self::S> {
-      /// The type of stack symbols which are shared for some stack across the
-      /// whole grammar.
-      type S: super::types::Hashable;
-    }
-
-    /// A set of stack symbols which is shared for some stack across the whole
-    /// grammar.
-    pub trait SymbolSet: IntoIterator {
-      /// The type of stack symbols in this set.
-      type Sym: StackSym;
-      /// [IntoIterator::Item] is each allowing stack symbol in this set.
-      type Item: Into<<Self::Sym as StackSym>::S>;
-    }
-
-    /// A name for a [NamedStack].
-    pub trait StackName: Into<Self::N> {
-      /// An identifier used for this stack across the grammar.
+  pub mod context {
+    pub trait ContextName: Into<Self::N> {
       type N: super::types::Hashable;
     }
 
-    /// A stack which the user can explicitly manipulate in a context-sensitive
-    /// grammar.
-    pub trait NamedStack: AsRef<Self::Name>+AsRef<Self::SymSet> {
-      /// The name of this stack.
-      type Name: StackName;
-      /// The set of symbols allowed for this stack.
-      type SymSet: SymbolSet;
-    }
-
-    /// The types of operations that can be performed on a [NamedStack].
-    #[derive(Debug, Display, Copy, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
-    pub enum StackStep<S> {
-      /// Push a symbol onto the stack.
-      Positive(S),
-      /// Pop a symbol off of the stack.
-      Negative(S),
-    }
-
-    /// A list of [StackStep]s to apply when traversing between tokens in a
-    /// context-sensitive grammar.
-    pub trait StackManipulation: AsRef<Self::NS>+IntoIterator {
-      /// The stack being manipulated.
-      type NS: NamedStack;
-      /// [IntoIterator::Item] is a single stack step.
-      type Item: Into<
-        StackStep<<<<Self::NS as NamedStack>::SymSet as SymbolSet>::Sym as StackSym>::S>,
-      >;
+    pub struct ContextDeclaration<Name: ContextName, PR: super::indirect::ProductionReference> {
+      pub name: Name,
+      pub prod_ref: PR,
     }
   }
 
   /// Grammar components which synthesize the lower-level elements from
   /// [direct], [indirect], [explicit], and [undecidable].
   pub mod synthesis {
-    use super::{direct::Literal, explicit::StackManipulation, indirect::ProductionReference};
+    use super::{direct::Literal, indirect::ProductionReference};
 
     use core::iter::IntoIterator;
 
@@ -231,13 +183,11 @@ pub mod grammar_specification {
     /// Each individual element that can be matched against some input in a
     /// case.
     #[derive(Debug, Display, Copy, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
-    pub enum CaseElement<Lit, PR, SM> {
+    pub enum CaseElement<Lit, PR> {
       /// literal value {0}
       Lit(Lit),
       /// production reference {0}
       Prod(PR),
-      /// explicit stack manipulation {0}
-      Stack(SM),
     }
 
     /// A sequence of *elements* which, if successfully matched against some
@@ -247,11 +197,8 @@ pub mod grammar_specification {
       type Lit: Literal;
       /// References to productions used in this case.
       type PR: ProductionReference;
-      /// Explicit stack manipulations to perform upon transitioning between
-      /// tokens.
-      type SM: StackManipulation;
       /// Override of [Iterator::Item].
-      type Item: Into<CaseElement<Self::Lit, Self::PR, Self::SM>>;
+      type Item: Into<CaseElement<Self::Lit, Self::PR>>;
     }
 
     /// A disjunction of cases.
@@ -390,20 +337,13 @@ pub mod state {
     #[derive(Debug, Copy, Clone)]
     pub struct Init<SP>(pub SP);
 
-    impl<Tok, Lit, ID, PR, S, Sym, SymSet, N, Name, NS, SM, C, P, SP> Init<SP>
+    impl<Tok, Lit, ID, PR, C, P, SP> Init<SP>
     where
       Tok: gs::types::Hashable,
       Lit: gs::direct::Literal<Tok=Tok>+IntoIterator<Item=Tok>,
       ID: gs::types::Hashable+Clone,
       PR: gs::indirect::ProductionReference<ID=ID>,
-      S: gs::types::Hashable,
-      Sym: gs::explicit::StackSym<S=S>,
-      SymSet: gs::explicit::SymbolSet<Sym=Sym>+IntoIterator<Item=Sym>,
-      N: gs::types::Hashable,
-      Name: gs::explicit::StackName<N=N>,
-      NS: gs::explicit::NamedStack<Name=Name, SymSet=SymSet>,
-      SM: gs::explicit::StackManipulation<NS=NS>+IntoIterator<Item=gs::explicit::StackStep<S>>,
-      C: gs::synthesis::Case<PR=PR>+IntoIterator<Item=gs::synthesis::CaseElement<Lit, PR, SM>>,
+      C: gs::synthesis::Case<PR=PR>+IntoIterator<Item=gs::synthesis::CaseElement<Lit, PR>>,
       P: gs::synthesis::Production<C=C>+IntoIterator<Item=C>,
       SP: gs::synthesis::SimultaneousProductions<P=P>+IntoIterator<Item=(PR, P)>,
     {
@@ -509,7 +449,6 @@ pub mod test_framework {
   use crate::{lowering_to_indices::graph_coordinates as gc, types::Vec};
 
   use core::{
-    convert::AsRef,
     hash::{Hash, Hasher},
     iter::{IntoIterator, Iterator},
     str,
@@ -576,91 +515,7 @@ pub mod test_framework {
     type ID = Self;
   }
 
-  string_iterator![StackSym];
-
-  impl gs::explicit::StackSym for StackSym {
-    type S = Self;
-  }
-
-  #[derive(Debug, Clone)]
-  pub struct SymbolSet(<Vec<StackSym> as IntoIterator>::IntoIter);
-
-  impl From<&[StackSym]> for SymbolSet {
-    fn from(value: &[StackSym]) -> Self { Self(value.to_vec().into_iter()) }
-  }
-
-  impl Iterator for SymbolSet {
-    type Item = StackSym;
-
-    fn next(&mut self) -> Option<Self::Item> { self.0.next() }
-  }
-
-  impl gs::explicit::SymbolSet for SymbolSet {
-    type Item = StackSym;
-    type Sym = StackSym;
-  }
-
-  string_iterator![StackName];
-
-  impl gs::explicit::StackName for StackName {
-    type N = Self;
-  }
-
-  /* FIXME: make this use an Rc<StackName/SymbolSet> instead? */
-  #[derive(Debug, Clone)]
-  pub struct NamedStack {
-    pub name: StackName,
-    pub sym_set: SymbolSet,
-  }
-
-  impl AsRef<<NamedStack as gs::explicit::NamedStack>::Name> for NamedStack {
-    fn as_ref(&self) -> &StackName { &self.name }
-  }
-
-  impl AsRef<<NamedStack as gs::explicit::NamedStack>::SymSet> for NamedStack {
-    fn as_ref(&self) -> &SymbolSet { &self.sym_set }
-  }
-
-  impl gs::explicit::NamedStack for NamedStack {
-    type Name = StackName;
-    type SymSet = SymbolSet;
-  }
-
-  pub type NamedStackStep = gs::explicit::StackStep<StackSym>;
-
-  /* FIXME: make this use an Rc<NamedStack> instead? */
-  #[derive(Debug, Clone)]
-  pub struct StackManipulation {
-    named_stack: NamedStack,
-    stack_steps: <Vec<NamedStackStep> as IntoIterator>::IntoIter,
-  }
-
-  impl AsRef<<StackManipulation as gs::explicit::StackManipulation>::NS> for StackManipulation {
-    fn as_ref(&self) -> &NamedStack { &self.named_stack }
-  }
-
-  impl From<(&NamedStack, &[NamedStackStep])> for StackManipulation {
-    fn from(value: (&NamedStack, &[NamedStackStep])) -> Self {
-      let (named_stack, stack_steps) = value;
-      Self {
-        named_stack: named_stack.clone(),
-        stack_steps: stack_steps.to_vec().into_iter(),
-      }
-    }
-  }
-
-  impl Iterator for StackManipulation {
-    type Item = NamedStackStep;
-
-    fn next(&mut self) -> Option<Self::Item> { self.stack_steps.next() }
-  }
-
-  impl gs::explicit::StackManipulation for StackManipulation {
-    type Item = NamedStackStep;
-    type NS = NamedStack;
-  }
-
-  pub type CE = gs::synthesis::CaseElement<Lit, ProductionReference, StackManipulation>;
+  pub type CE = gs::synthesis::CaseElement<Lit, ProductionReference>;
 
   #[derive(Debug, Clone)]
   pub struct Case(<Vec<CE> as IntoIterator>::IntoIter);
@@ -679,7 +534,6 @@ pub mod test_framework {
     type Item = CE;
     type Lit = Lit;
     type PR = ProductionReference;
-    type SM = StackManipulation;
   }
 
   #[derive(Debug, Clone)]
