@@ -466,26 +466,28 @@ pub mod test_framework {
     }
   }
 
-  /// Declare a type backed by [Vec<char>::IntoIter] which forwards trait
+  /// Declare a type backed by [Vec::IntoIter] which forwards trait
   /// implementations to a newly constructed vector type.
   ///
   /// This allows us to implement [Iterator] without having to create a name for
   /// an intermediate `IntoIter` type.
-  macro_rules! string_iterator {
-    ($type_name:ident) => {
+  macro_rules! into_iter {
+    ($type_name:ident, $item:ty) => {
       #[derive(Debug, Clone)]
-      pub struct $type_name(<Vec<char> as IntoIterator>::IntoIter);
+      pub struct $type_name(<Vec<$item> as IntoIterator>::IntoIter);
 
       impl $type_name {
-        fn as_new_vec(&self) -> Vec<char> { self.0.clone().collect() }
+        fn as_new_vec(&self) -> Vec<$item> { self.0.clone().collect() }
       }
 
-      impl From<&str> for $type_name {
-        fn from(value: &str) -> Self { Self(value.chars().collect::<Vec<_>>().into_iter()) }
+      impl From<&[$item]> for $type_name {
+        fn from(value: &[$item]) -> Self {
+          Self(value.iter().cloned().collect::<Vec<_>>().into_iter())
+        }
       }
 
       impl Iterator for $type_name {
-        type Item = char;
+        type Item = $item;
 
         fn next(&mut self) -> Option<Self::Item> { self.0.next() }
       }
@@ -499,17 +501,35 @@ pub mod test_framework {
       }
 
       impl Eq for $type_name {}
+
+      impl Default for $type_name {
+        fn default() -> Self { Self(Vec::new().into_iter()) }
+      }
     };
   }
 
-  string_iterator![Lit];
+  /// A specialization of [into_iter] for strings.
+  macro_rules! string_iter {
+    ($type_name:ident) => {
+      into_iter![$type_name, char];
+
+      impl From<&str> for $type_name {
+        fn from(value: &str) -> Self {
+          let chars = value.chars().collect::<Vec<_>>();
+          Self::from(&chars[..])
+        }
+      }
+    };
+  }
+
+  string_iter![Lit];
 
   impl gs::direct::Literal for Lit {
     type Item = char;
     type Tok = char;
   }
 
-  string_iterator![ProductionReference];
+  string_iter![ProductionReference];
 
   impl gs::indirect::ProductionReference for ProductionReference {
     type ID = Self;
@@ -517,18 +537,7 @@ pub mod test_framework {
 
   pub type CE = gs::synthesis::CaseElement<Lit, ProductionReference>;
 
-  #[derive(Debug, Clone)]
-  pub struct Case(<Vec<CE> as IntoIterator>::IntoIter);
-
-  impl From<&[CE]> for Case {
-    fn from(value: &[CE]) -> Self { Self(value.to_vec().into_iter()) }
-  }
-
-  impl Iterator for Case {
-    type Item = CE;
-
-    fn next(&mut self) -> Option<Self::Item> { self.0.next() }
-  }
+  into_iter![Case, CE];
 
   impl gs::synthesis::Case for Case {
     type Item = CE;
@@ -536,38 +545,14 @@ pub mod test_framework {
     type PR = ProductionReference;
   }
 
-  #[derive(Debug, Clone)]
-  pub struct Production(<Vec<Case> as IntoIterator>::IntoIter);
-
-  impl From<&[Case]> for Production {
-    fn from(value: &[Case]) -> Self { Self(value.to_vec().into_iter()) }
-  }
-
-  impl Iterator for Production {
-    type Item = Case;
-
-    fn next(&mut self) -> Option<Self::Item> { self.0.next() }
-  }
+  into_iter![Production, Case];
 
   impl gs::synthesis::Production for Production {
     type C = Case;
     type Item = Case;
   }
 
-  #[derive(Debug, Clone)]
-  pub struct SP(<Vec<(ProductionReference, Production)> as IntoIterator>::IntoIter);
-
-  impl From<&[(ProductionReference, Production)]> for SP {
-    fn from(value: &[(ProductionReference, Production)]) -> Self {
-      Self(value.to_vec().into_iter())
-    }
-  }
-
-  impl Iterator for SP {
-    type Item = (ProductionReference, Production);
-
-    fn next(&mut self) -> Option<Self::Item> { self.0.next() }
-  }
+  into_iter![SP, (ProductionReference, Production)];
 
   impl gs::synthesis::SimultaneousProductions for SP {
     type Item = (ProductionReference, Self::P);
