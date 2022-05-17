@@ -1,0 +1,7 @@
+#+TITLE: sp-core
+#+STARTUP: showall
+
+* TODO [0/3] MVP
+1. [ ] Context-sensitive parsing with /parallel subcontexts/.
+2. [ ] /Collectors/ as coroutines.
+3. [ ] Regular subgraph parsing via the [[https://docs.rs/regex/latest/regex/index.html][rust regex library]].
