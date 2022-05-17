@@ -200,11 +200,11 @@ pub mod grammar_specification {
 
     /// The types of operations that can be performed on a [NamedStack].
     #[derive(Debug, Display, Copy, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
-    pub enum StackStep<NS> {
+    pub enum StackStep<S> {
       /// Push a symbol onto the stack.
-      Positive(NS),
+      Positive(S),
       /// Pop a symbol off of the stack.
-      Negative(NS),
+      Negative(S),
     }
 
     /// A list of [StackStep]s to apply when traversing between tokens in a
@@ -213,7 +213,9 @@ pub mod grammar_specification {
       /// The stack being manipulated.
       type NS: NamedStack;
       /// [IntoIterator::Item] is a single stack step.
-      type Item: Into<StackStep<Self::NS>>;
+      type Item: Into<
+        StackStep<<<<Self::NS as NamedStack>::SymSet as SymbolSet>::Sym as StackSym>::S>,
+      >;
     }
   }
 
@@ -443,7 +445,7 @@ pub mod state {
       N: gs::types::Hashable,
       Name: gs::explicit::StackName<N=N>,
       NS: gs::explicit::NamedStack<Name=Name, SymSet=SymSet>,
-      SM: gs::explicit::StackManipulation<NS=NS>+IntoIterator<Item=gs::explicit::StackStep<NS>>,
+      SM: gs::explicit::StackManipulation<NS=NS>+IntoIterator<Item=gs::explicit::StackStep<S>>,
       ZC: gs::undecidable::ZipperCondition<SM=SM>,
       C: gs::synthesis::Case<PR=PR>+IntoIterator<Item=gs::synthesis::CaseElement<Lit, PR, SM, ZC>>,
       P: gs::synthesis::Production<C=C>+IntoIterator<Item=C>,
@@ -668,7 +670,7 @@ pub mod test_framework {
     type SymSet = SymbolSet;
   }
 
-  pub type NamedStackStep = gs::explicit::StackStep<NamedStack>;
+  pub type NamedStackStep = gs::explicit::StackStep<StackSym>;
 
   /* FIXME: make this use an Rc<NamedStack> instead? */
   #[derive(Debug, Clone)]

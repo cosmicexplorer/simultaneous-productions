@@ -448,7 +448,7 @@ pub mod grammar_building {
         N: gs::types::Hashable,
         Name: gs::explicit::StackName<N=N>,
         NS: gs::explicit::NamedStack<Name=Name, SymSet=SymSet>,
-        SM: gs::explicit::StackManipulation<NS=NS>+IntoIterator<Item=gs::explicit::StackStep<NS>>,
+        SM: gs::explicit::StackManipulation<NS=NS>+IntoIterator<Item=gs::explicit::StackStep<S>>,
         ZC: gs::undecidable::ZipperCondition<SM=SM>,
         C:
           gs::synthesis::Case<PR=PR>+IntoIterator<Item=gs::synthesis::CaseElement<Lit, PR, SM, ZC>>,
