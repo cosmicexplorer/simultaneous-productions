@@ -41,10 +41,19 @@ A parser $p = ({I}, {P})$ such that:
   - See the [[case study: c lexer hack]] for an example of <<augmenting>> parsers with unordered outputs!
 
 ** arbitrary
-- /This mechanism may be easy enough to add on top of unordered outputs, but it is out of scope for v1./
+- /TODO: This mechanism may be easy enough to add on top of unordered outputs, but it is out of scope for v1./
 
 * case study: c lexer hack
+- We define a [[regular]] /lexer/ which produces [[ordered]] tokens that do not differentiate between either case of the ambiguous C lexing token.
+- Our [[CFG]] /parser/ produces [[ordered]] productions as well as [[unordered]] entries to a global symbol table.
+- Our /top-level/ [[CSG]] parser consumes both [[ordered]] and [[unordered]] entries.
+  - These unordered entries should be reconcilable via the [[S.P. algorithm]]!
+  - The possible parse trees that S.P. cycles through will contain both of the C lexer ambiguous possibilities.
+    - If an adjacent parse tree contains a typedef for the type from the ambiguous parse, then joining that parse tree will succeed!
+    - *TODO: figure out how to keep trying adjacent parse trees here? Does S.P. already work for this?*
 
+* case study: fast lexing
+- /FIXME: define a CSG parser which consumes the output of the rust regex library!/
 
 * S.P. algorithm
 
