@@ -1,12 +1,53 @@
 #+TITLE: sp-core
 #+STARTUP: showall
 
-* TODO [0/3] MVP
-1. [ ] [[collectors]] as coroutines.
-   - This is /before/ [[parallel subcontexts]] because it can probably be implemented with this.
-2. [ ] Context-sensitive parsing with [[parallel subcontexts]].
-3. [ ] Regular subgraph parsing via the [[https://docs.rs/regex/latest/regex/index.html][rust regex library]].
+* TODO [0/2] goals
+1. [ ] define [[parsers]] which can perform [[composition]]
+   - [ ] Regular subgraph parsing via the [[https://docs.rs/regex/latest/regex/index.html][rust regex library]].
+2. [ ] Context-sensitive parsing which maintains [[explicit complexity classes]]!
 
-* collectors
+* parsers
+A parser $p = ({I}, {P})$ such that:
+1. An /alphabet/ $\Sigma_p$ is a *finite*, /non-empty/ set.
+   - /non-empty may not be necessary!/
+2. The /input/ stream $I_p = \{_{i=1}^n t_i\}$ is an *ordered sequence* s.t. $t_i \in \Sigma_p \forall i$.
+   - *This stream may be countably infinite!* For now, we can assume $n$ is a finite natural number.
+3. The /output/ <<productions>> $\{P\}$ is an *ordered sequence* of [[context]] entries.
 
-* parallel subcontexts
+** composition
+- We would like to  extend the definition of [[parsers]] to enable /composition/, similar to standard function composition.
+  - Importantly, our goal here is to produce <<reusable parsers>>!
+
+*** explicit complexity classes
+- In order to achieve [[reusable parsers]], we want to be able to reason about the complexity of each sub-parser.
+  - In particular, we would like to be able to test each sub-parser in isolation, without invoking the linguistic complexity of a <<parent parser>>!
+- However, we also want to use that /exact/ sub-parser when we compose it into the parent!
+  - One way to solve this: define a shared [[context]] that each parser contributes to.
+  - When parsers are /composed/, they then /consume some subset of the child parser's context!/
+    - Importantly, *parent parsers can consume context entries produced by transitive children!*
+
+* context
+- A /context/ is the global state which [[parsers]] contribute to.
+- A parser's [[productions]] may be [[ordered]] and/or [[unordered]].
+
+** ordered
+- For <<regular>> parsers, all [[productions]] are /ordered/.
+  - This means that when parsed, the [[S.P. algorithm]] will ensure they match the ordered productions from neighboring tokens.
+- For <<CFG>> parsers, all productions are also ordered, but when a nested rule is entered, they will contribute to a [[stack]].
+
+** unordered
+- A <<CSG>> parser is defined as a parser which /consumes/ unordered outputs.
+  - In order to produce [[reusable parsers]], we want to directly use [[regular]] and [[CFG]] parsers **which will also produce unordered outputs!*
+  - See the [[case study: c lexer hack]] for an example of <<augmenting>> parsers with unordered outputs!
+
+** arbitrary
+- /This mechanism may be easy enough to add on top of unordered outputs, but it is out of scope for v1./
+
+* case study: c lexer hack
+
+
+* S.P. algorithm
+
+** grammar
+
+** stack
