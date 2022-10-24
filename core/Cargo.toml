@@ -1,18 +1,18 @@
 [package]
-name = "sp-core"
-version = "0.0.0"
-authors = ["Danny McClanahan <1305167+cosmicexplorer@users.noreply.github.com>"]
-edition = "2018"
+name                    = "sp-core"
+version                 = "0.0.0"
+authors                 = ["Danny McClanahan <1305167+cosmicexplorer@users.noreply.github.com>"]
+edition                 = "2018"
 
 [dependencies]
 # heapless = "0.7.1"
-displaydoc = { git = "https://github.com/yaahc/displaydoc", rev = "7159bb5c9d41ca3c7ccf04ae86ae3acb0ea12a27" }
-indexmap = { git = "https://github.com/cosmicexplorer/indexmap", rev = "231e4358ddb850a22d3c2e90e58328f9dbb8a092" }
-priority-queue = { git = "https://github.com/cosmicexplorer/priority-queue", rev = "a052fee32fa3da7eaeb26888163936459681bd28" }
-twox-hash = "1.6.0"
+displaydoc              = { git = "https://github.com/yaahc/displaydoc", rev = "7159bb5c9d41ca3c7ccf04ae86ae3acb0ea12a27" }
+indexmap                = { git = "https://github.com/cosmicexplorer/indexmap", rev = "231e4358ddb850a22d3c2e90e58328f9dbb8a092" }
+priority-queue          = { git = "https://github.com/cosmicexplorer/priority-queue", rev = "a052fee32fa3da7eaeb26888163936459681bd28" }
+twox-hash               = "1.6.0"
 
 [features]
-default = ["nightly", "generator-api", "stream-api"]
-generator-api = []
-stream-api = []
-nightly = ["indexmap/nightly", "priority-queue/nightly"]
+default                 = ["nightly", "generator-api", "stream-api"]
+generator-api           = []
+stream-api              = []
+nightly                 = ["indexmap/nightly", "priority-queue/nightly"]
