@@ -127,10 +127,6 @@ pub mod grammar_specification {
       pub label: Label,
     }
 
-    pub trait Edges {
-      fn edges(&self) -> Vec<Edge> { Vec::new() }
-    }
-
     pub struct GraphBuilder {
       graph_id: String,
       vertices: Vec<Id>,
@@ -156,7 +152,7 @@ pub mod grammar_specification {
         );
       }
 
-      pub fn accept_edges<E: Edges>(&mut self, e: E) { self.edges.extend(e.edges().into_iter()); }
+      pub fn accept_edges(&mut self, e: Vec<Edge>) { self.edges.extend(e.into_iter()); }
     }
 
     impl<'a> dot::Labeller<'a, Id, Edge> for GraphBuilder {
@@ -210,31 +206,16 @@ pub mod grammar_specification {
         );
       }
 
-      struct E(pub Vertex, pub Vertex);
-
-      struct EdgeCollection(pub Vec<E>);
-
-      impl Edges for EdgeCollection {
-        fn edges(&self) -> Vec<Edge> {
-          self
-            .0
-            .iter()
-            .map(|E(source, target)| Edge {
-              source: source.id.clone(),
-              target: target.id.clone(),
-              label: Label("asdf".to_string()),
-            })
-            .collect()
-        }
-      }
-
       #[test]
       fn render_single_edge() {
         let mut gb = GraphBuilder::new("test_graph".to_string());
         gb.accept_vertex(Vertex::numeric(0));
         gb.accept_vertex(Vertex::numeric(1));
-        let ec = EdgeCollection(vec![E(Vertex::numeric(0), Vertex::numeric(1))]);
-        gb.accept_edges(ec);
+        gb.accept_edges(vec![Edge {
+          source: Vertex::numeric(0).id,
+          target: Vertex::numeric(1).id,
+          label: Label("asdf".to_string()),
+        }]);
 
         let mut output: Vec<u8> = Vec::new();
         dot::render(&gb, &mut output).unwrap();
@@ -540,8 +521,6 @@ pub mod state {
 pub mod test_framework {
   use super::grammar_specification::{self as gs, graphviz as gv};
   use crate::lowering_to_indices::graph_coordinates as gc;
-
-  use uuid::Uuid;
 
   use core::{
     hash::{Hash, Hasher},
