@@ -6,24 +6,25 @@ digraph test_sp_graph {
         label = "Productions";
         color = blue;
         fontcolor = blue;
+        node [color="blue", fontcolor="blue"];
         rank  = same;
-        prod_a[label="prod_a"];
-        prod_b[label="prod_b"];
+        prod_a[label="A"];
+        prod_b[label="B"];
     }
 
     subgraph a_prod {
         cluster = true;
-        label = "A";
+        label = "Cases: A";
         color = purple;
         fontcolor = purple;
         rank = same;
         subgraph a_case_0 {
             cluster = true;
-            label = "Case 0";
+            label = "0";
             color = green4;
             fontcolor = green4;
             rank = same;
-            vertex_0[label="ab"];
+            vertex_0[label="<ab>", color="brown", fontcolor="brown"];
         }
     }
     prod_a -> vertex_0[label="", color="red"];
@@ -31,35 +32,35 @@ digraph test_sp_graph {
 
     subgraph b_prod {
         cluster = true;
-        label = "B";
+        label = "Cases: B";
         color = purple;
         fontcolor = purple;
         rank = same;
         subgraph b_case_0 {
             cluster = true;
-            label = "Case 0";
+            label = "0";
             color = green4;
             fontcolor = green4;
             rank = same;
-            vertex_1[label="ab"];
-            vertex_2[label="ref: a"];
+            vertex_1[label="<ab>", color="brown", fontcolor="brown"];
+            vertex_2[label="ref: A", color="darkgoldenrod", fontcolor="darkgoldenrod"];
         }
         subgraph b_case_1 {
             cluster = true;
-            label = "Case 1";
+            label = "1";
             color = green4;
             fontcolor = green4;
             rank = same;
-            vertex_3[label="ref: a"];
-            vertex_4[label="a"];
+            vertex_3[label="ref: A", color="darkgoldenrod", fontcolor="darkgoldenrod"];
+            vertex_4[label="<a>", color="brown", fontcolor="brown"];
         }
     }
     prod_b -> vertex_1[label="", color="red"];
     vertex_1 -> vertex_2[label="", color="aqua"];
-    vertex_2 -> prod_a[label="", color="yellow"];
+    vertex_2 -> prod_a[label="", color="darkgoldenrod"];
     vertex_2 -> prod_b[label="", color="black"];
     prod_b -> vertex_3[label="", color="red"];
-    vertex_3 -> prod_a[label="", color="yellow"];
+    vertex_3 -> prod_a[label="", color="darkgoldenrod"];
     vertex_3 -> vertex_4[label="", color="aqua"];
     vertex_4 -> prod_b[label="", color="black"];
 }
