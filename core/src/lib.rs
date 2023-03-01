@@ -81,6 +81,7 @@ pub mod grammar_specification {
 
   pub mod graphviz {
     use dot;
+    use indexmap::IndexMap;
 
     use std::borrow::Cow;
 
@@ -93,14 +94,37 @@ pub mod grammar_specification {
       }
     }
 
-    pub trait Vertex {
-      fn id(&self) -> Id;
+    #[derive(Debug, Clone)]
+    pub struct Label(pub String);
+
+    impl Label {
+      pub fn to_dot_label<'a>(&self) -> dot::LabelText<'a> {
+        dot::LabelText::LabelStr(self.0.clone().into())
+      }
     }
 
-    #[derive(Debug, Hash, PartialEq, Eq, Clone)]
+    #[derive(Debug, Clone)]
+    pub struct Vertex {
+      pub id: Id,
+      pub label: Label,
+    }
+
+    #[cfg(test)]
+    impl Vertex {
+      fn numeric(index: usize) -> Self {
+        let key = format!("node_{}", index);
+        Self {
+          id: Id(key.clone()),
+          label: Label(key),
+        }
+      }
+    }
+
+    #[derive(Debug, Clone)]
     pub struct Edge {
       pub source: Id,
       pub target: Id,
+      pub label: Label,
     }
 
     pub trait Edges {
@@ -110,6 +134,7 @@ pub mod grammar_specification {
     pub struct GraphBuilder {
       graph_id: String,
       vertices: Vec<Id>,
+      vertex_labels: IndexMap<Id, Label>,
       edges: Vec<Edge>,
     }
 
@@ -118,11 +143,18 @@ pub mod grammar_specification {
         Self {
           graph_id,
           vertices: Vec::new(),
+          vertex_labels: IndexMap::new(),
           edges: Vec::new(),
         }
       }
 
-      pub fn accept_vertex<V: Vertex>(&mut self, v: V) { self.vertices.push(v.id()); }
+      pub fn accept_vertex(&mut self, v: Vertex) {
+        self.vertices.push(v.id.clone());
+        assert!(
+          self.vertex_labels.insert(v.id, v.label).is_none(),
+          "vertex already registered"
+        );
+      }
 
       pub fn accept_edges<E: Edges>(&mut self, e: E) { self.edges.extend(e.edges().into_iter()); }
     }
@@ -132,7 +164,17 @@ pub mod grammar_specification {
         dot::Id::new(self.graph_id.as_str()).expect("graph id construction failed")
       }
 
-      fn node_id(&'a self, n: &Id) -> dot::Id<'a> { n.to_dot_id() }
+      fn node_id(&'a self, v: &Id) -> dot::Id<'a> { v.to_dot_id() }
+
+      fn node_label<'b>(&'b self, v: &Id) -> dot::LabelText<'b> {
+        self
+          .vertex_labels
+          .get(v)
+          .expect("missing node label")
+          .to_dot_label()
+      }
+
+      fn edge_label<'b>(&'b self, e: &Edge) -> dot::LabelText<'b> { e.label.to_dot_label() }
     }
 
     impl<'a> dot::GraphWalk<'a, Id, Edge> for GraphBuilder {
@@ -151,16 +193,10 @@ pub mod grammar_specification {
 
       use std::str;
 
-      struct V(pub usize);
-
-      impl Vertex for V {
-        fn id(&self) -> Id { Id(format!("node_{}", self.0)) }
-      }
-
       #[test]
       fn render_single_vertex() {
         let mut gb = GraphBuilder::new("test_graph".to_string());
-        gb.accept_vertex(V(0));
+        gb.accept_vertex(Vertex::numeric(0));
 
         let mut output: Vec<u8> = Vec::new();
         dot::render(&gb, &mut output).unwrap();
@@ -174,7 +210,7 @@ pub mod grammar_specification {
         );
       }
 
-      struct E(pub V, pub V);
+      struct E(pub Vertex, pub Vertex);
 
       struct EdgeCollection(pub Vec<E>);
 
@@ -184,8 +220,9 @@ pub mod grammar_specification {
             .0
             .iter()
             .map(|E(source, target)| Edge {
-              source: source.id(),
-              target: target.id(),
+              source: source.id.clone(),
+              target: target.id.clone(),
+              label: Label("asdf".to_string()),
             })
             .collect()
         }
@@ -194,9 +231,9 @@ pub mod grammar_specification {
       #[test]
       fn render_single_edge() {
         let mut gb = GraphBuilder::new("test_graph".to_string());
-        gb.accept_vertex(V(0));
-        gb.accept_vertex(V(1));
-        let ec = EdgeCollection(vec![E(V(0), V(1))]);
+        gb.accept_vertex(Vertex::numeric(0));
+        gb.accept_vertex(Vertex::numeric(1));
+        let ec = EdgeCollection(vec![E(Vertex::numeric(0), Vertex::numeric(1))]);
         gb.accept_edges(ec);
 
         let mut output: Vec<u8> = Vec::new();
@@ -208,7 +245,7 @@ pub mod grammar_specification {
           "digraph test_graph {\n    \
              node_0[label=\"node_0\"];\n    \
              node_1[label=\"node_1\"];\n    \
-             node_0 -> node_1[label=\"\"];\n\
+             node_0 -> node_1[label=\"asdf\"];\n\
            }\n"
         );
       }
@@ -501,8 +538,10 @@ pub mod state {
 /// [`no_std`]: https://docs.rust-embedded.org/book/intro/no-std.html
 #[cfg(test)]
 pub mod test_framework {
-  use super::grammar_specification as gs;
+  use super::grammar_specification::{self as gs, graphviz as gv};
   use crate::lowering_to_indices::graph_coordinates as gc;
+
+  use uuid::Uuid;
 
   use core::{
     hash::{Hash, Hasher},
@@ -575,6 +614,11 @@ pub mod test_framework {
           Self::from(&chars[..])
         }
       }
+
+      #[allow(dead_code)]
+      impl $type_name {
+        fn into_string(&self) -> String { String::from_iter(self.0.clone()) }
+      }
     };
   }
 
@@ -596,6 +640,41 @@ pub mod test_framework {
   }
 
   pub type CE = gs::synthesis::CaseElement<Lit, ProductionReference>;
+
+  /* pub struct CEGraphviz { */
+  /* pub case_element: CE, */
+  /* pub id: gv::Id, */
+  /* } */
+
+  /* impl CEGraphviz { */
+  /* pub fn new(case_element: CE) -> Self { */
+  /* Self { */
+  /* case_element, */
+  /* id: gv::Id(Uuid::new_v4().to_string()) */
+  /* } */
+  /* } */
+  /* } */
+
+  /* impl gv::Vertex for CEGraphviz { */
+  /* fn id(&self) -> gv::Id { */
+  /* self.id.clone() */
+  /* } */
+
+  /* fn label(&self) -> gv::Label { */
+  /* match self { */
+  /* CE::Lit(lit) => gv::Label(lit.into_string()), */
+  /* CE::Prod(pr) => gv::Label(pr.into_string()), */
+  /* } */
+  /* } */
+  /* } */
+
+  /* impl gv::Edges for CEGraphviz { */
+  /* fn edges(&self) -> Vec<gv::Edge> { */
+  /* match self P */
+  /* CE::Lit(lit) => Vec::new(), */
+  /* CE::Prod(pr) => vec![], */
+  /* } */
+  /* } */
 
   into_iter![Case, CE];
 
