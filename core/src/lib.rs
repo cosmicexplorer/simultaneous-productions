@@ -680,10 +680,12 @@ pub mod test_framework {
           let new_edge = gv::Edge {
             source: prev_id,
             target: new_id.clone(),
-            label: gv::Label("asdf".to_string()),
+            /* label: gv::Label("asdf".to_string()), */
+            label: gv::Label("".to_string()),
           };
           prev_id = new_id.clone();
           edges.push(new_edge);
+
           // (2.3) If this is a prod ref, then add another edge from this to the prod
           // ref's id!
           if let CE::Prod(pr) = case_el {
@@ -692,15 +694,18 @@ pub mod test_framework {
             edges.push(gv::Edge {
               source: new_id,
               target: target_id,
-              label: gv::Label("pr asdf".to_string()),
+              /* label: gv::Label("pr asdf".to_string()), */
+              label: gv::Label("".to_string()),
             });
           }
         }
 
+        // (2.4) Link this final case element back with the production!
         edges.push(gv::Edge {
           source: prev_id,
           target: this_prod_ref_id.clone(),
-          label: gv::Label("final asdf".to_string()),
+          /* label: gv::Label("final asdf".to_string()), */
+          label: gv::Label("".to_string()),
         });
       }
     }
@@ -742,6 +747,22 @@ pub mod test_framework {
       ]
       .as_ref(),
     )
+  }
+
+  #[test]
+  fn non_cyclic_graphviz() {
+    use dot;
+
+    use std::str;
+
+    let sp = non_cyclic_productions();
+    let gb = build_sp_graph(sp);
+
+    let mut output: Vec<u8> = Vec::new();
+    dot::render(&gb, &mut output).unwrap();
+    let output = str::from_utf8_mut(&mut output).unwrap();
+
+    assert_eq!(output, "asdf");
   }
 
   pub fn basic_productions() -> SP {

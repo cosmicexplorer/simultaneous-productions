@@ -1,0 +1,65 @@
+digraph test_sp_graph {
+    compound = true;
+
+    subgraph prods {
+        cluster = true;
+        label = "Productions";
+        color = blue;
+        fontcolor = blue;
+        rank  = same;
+        prod_a[label="prod_a"];
+        prod_b[label="prod_b"];
+    }
+
+    subgraph a_prod {
+        cluster = true;
+        label = "A";
+        color = purple;
+        fontcolor = purple;
+        rank = same;
+        subgraph a_case_0 {
+            cluster = true;
+            label = "Case 0";
+            color = green4;
+            fontcolor = green4;
+            rank = same;
+            vertex_0[label="ab"];
+        }
+    }
+    prod_a -> vertex_0[label="", color="red"];
+    vertex_0 -> prod_a[label="", color="black"];
+
+    subgraph b_prod {
+        cluster = true;
+        label = "B";
+        color = purple;
+        fontcolor = purple;
+        rank = same;
+        subgraph b_case_0 {
+            cluster = true;
+            label = "Case 0";
+            color = green4;
+            fontcolor = green4;
+            rank = same;
+            vertex_1[label="ab"];
+            vertex_2[label="ref: a"];
+        }
+        subgraph b_case_1 {
+            cluster = true;
+            label = "Case 1";
+            color = green4;
+            fontcolor = green4;
+            rank = same;
+            vertex_3[label="ref: a"];
+            vertex_4[label="a"];
+        }
+    }
+    prod_b -> vertex_1[label="", color="red"];
+    vertex_1 -> vertex_2[label="", color="aqua"];
+    vertex_2 -> prod_a[label="", color="yellow"];
+    vertex_2 -> prod_b[label="", color="black"];
+    prod_b -> vertex_3[label="", color="red"];
+    vertex_3 -> prod_a[label="", color="yellow"];
+    vertex_3 -> vertex_4[label="", color="aqua"];
+    vertex_4 -> prod_b[label="", color="black"];
+}
