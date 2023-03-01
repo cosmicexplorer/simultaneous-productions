@@ -129,7 +129,7 @@ pub mod grammar_specification {
 
     impl<'a> dot::Labeller<'a, Id, Edge> for GraphBuilder {
       fn graph_id(&'a self) -> dot::Id<'a> {
-        dot::Id::new(self.graph_id.as_str()).expect("graph id construction")
+        dot::Id::new(self.graph_id.as_str()).expect("graph id construction failed")
       }
 
       fn node_id(&'a self, n: &Id) -> dot::Id<'a> { n.to_dot_id() }
@@ -168,7 +168,9 @@ pub mod grammar_specification {
 
         assert_eq!(
           output,
-          "digraph test_graph {\n    node_0[label=\"node_0\"];\n}\n"
+          "digraph test_graph {\n    \
+             node_0[label=\"node_0\"];\n\
+           }\n"
         );
       }
 
@@ -201,7 +203,14 @@ pub mod grammar_specification {
         dot::render(&gb, &mut output).unwrap();
         let output = str::from_utf8_mut(&mut output).unwrap();
 
-        assert_eq!(output, "digraph test_graph {\n    node_0[label=\"node_0\"];\n    node_1[label=\"node_1\"];\n    node_0 -> node_1[label=\"\"];\n}\n");
+        assert_eq!(
+          output,
+          "digraph test_graph {\n    \
+             node_0[label=\"node_0\"];\n    \
+             node_1[label=\"node_1\"];\n    \
+             node_0 -> node_1[label=\"\"];\n\
+           }\n"
+        );
       }
     }
   }
