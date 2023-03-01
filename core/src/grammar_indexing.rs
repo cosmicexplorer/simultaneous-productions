@@ -1,7 +1,7 @@
 /*
  * Description: Implementation for getting a PreprocessedGrammar.
  *
- * Copyright (C) 2021-2022 Danny McClanahan <dmcC2@hypnicjerk.ai>
+ * Copyright (C) 2021-2023 Danny McClanahan <dmcC2@hypnicjerk.ai>
  * SPDX-License-Identifier: AGPL-3.0
  *
  * This program is free software: you can redistribute it and/or modify
@@ -28,16 +28,11 @@
 //!
 //! *Implementation Note: Performance doesn't matter here.*
 
-use crate::{
-  allocation::HandoffAllocable,
-  lowering_to_indices::{grammar_building as gb, graph_coordinates as gc},
-  types::{DefaultHasher, Vec},
-};
+use crate::lowering_to_indices::{grammar_building as gb, graph_coordinates as gc};
 
 use indexmap::{IndexMap, IndexSet};
 
 use core::{
-  alloc::Allocator,
   fmt,
   hash::{Hash, Hasher},
 };
@@ -224,36 +219,21 @@ impl NamedOrAnonStep {
 }
 
 #[derive(Clone)]
-pub struct StackDiffSegment<Arena>(pub Vec<NamedOrAnonStep, Arena>)
-where Arena: Allocator;
+pub struct StackDiffSegment(pub Vec<NamedOrAnonStep>);
 
-impl<Arena> HandoffAllocable for StackDiffSegment<Arena>
-where Arena: Allocator+Clone
-{
-  type Arena = Arena;
-
-  fn allocator_handoff(&self) -> Arena { self.0.allocator().clone() }
-}
-
-impl<Arena> PartialEq for StackDiffSegment<Arena>
-where Arena: Allocator
-{
+impl PartialEq for StackDiffSegment {
   fn eq(&self, other: &Self) -> bool { self.0 == other.0 }
 }
 
-impl<Arena> Eq for StackDiffSegment<Arena> where Arena: Allocator {}
+impl Eq for StackDiffSegment {}
 
-impl<Arena> fmt::Debug for StackDiffSegment<Arena>
-where Arena: Allocator
-{
+impl fmt::Debug for StackDiffSegment {
   fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
     write!(f, "StackDiffSegment({:?})", &self.0)
   }
 }
 
-impl<Arena> Hash for StackDiffSegment<Arena>
-where Arena: Allocator
-{
+impl Hash for StackDiffSegment {
   fn hash<H: Hasher>(&self, state: &mut H) { self.0.hash(state) }
 }
 
@@ -261,10 +241,8 @@ where Arena: Allocator
 pub struct TrieNodeRef(pub usize);
 
 #[derive(Debug, Clone)]
-pub struct StackTrieNode<Arena>
-where Arena: Allocator+Clone
-{
-  pub stack_diff: StackDiffSegment<Arena>,
+pub struct StackTrieNode {
+  pub stack_diff: StackDiffSegment,
   /* During parsing, the top of the stack will be a named or anonymous symbol. We can negate
    * that (it should always be a positive step on the top of the stack, so a negative
    * step, I think) to get a NamedOrAnonStep which can index into the relevant segments.
@@ -272,16 +250,14 @@ where Arena: Allocator+Clone
    * during the parse. TODO: make a "build" method that removes the RefCell, coalesces
    * stack diffs, and makes the next nodes an IndexMap (??? on the last part given lex
    * BFS?!)! */
-  pub next_nodes: IndexSet<StackTrieNextEntry, Arena, DefaultHasher>,
+  pub next_nodes: IndexSet<StackTrieNextEntry>,
   /* Doubly-linked so that they can be traversed from either direction -- this is (maybe) key
    * to parallelism in parsing! */
-  pub prev_nodes: IndexSet<StackTrieNextEntry, Arena, DefaultHasher>,
+  pub prev_nodes: IndexSet<StackTrieNextEntry>,
 }
 
 
-impl<Arena> PartialEq for StackTrieNode<Arena>
-where Arena: Allocator+Clone
-{
+impl PartialEq for StackTrieNode {
   fn eq(&self, other: &Self) -> bool {
     self.stack_diff == other.stack_diff
       && self.next_nodes == other.next_nodes
@@ -289,13 +265,11 @@ where Arena: Allocator+Clone
   }
 }
 
-impl<Arena> Eq for StackTrieNode<Arena> where Arena: Allocator+Clone {}
+impl Eq for StackTrieNode {}
 
-impl<Arena> StackTrieNode<Arena>
-where Arena: Allocator+Clone
-{
-  fn bare(vtx: EpsilonGraphVertex, arena: Arena) -> Self {
-    let mut diff = Vec::new_in(arena.clone());
+impl StackTrieNode {
+  fn bare(vtx: EpsilonGraphVertex) -> Self {
+    let mut diff = Vec::new();
     match vtx.get_step() {
       None => (),
       Some(step) => {
@@ -304,8 +278,8 @@ where Arena: Allocator+Clone
     }
     StackTrieNode {
       stack_diff: StackDiffSegment(diff),
-      next_nodes: IndexSet::new_in(arena.clone()),
-      prev_nodes: IndexSet::new_in(arena),
+      next_nodes: IndexSet::new(),
+      prev_nodes: IndexSet::new(),
     }
   }
 }
@@ -317,43 +291,30 @@ pub enum StackTrieNextEntry {
 }
 
 #[derive(Debug, Clone)]
-pub struct EpsilonNodeStateSubgraph<Arena>
-where Arena: Allocator+Clone
-{
-  pub vertex_mapping: IndexMap<EpsilonGraphVertex, TrieNodeRef, Arena, DefaultHasher>,
-  pub trie_node_universe: Vec<StackTrieNode<Arena>, Arena>,
+pub struct EpsilonNodeStateSubgraph {
+  pub vertex_mapping: IndexMap<EpsilonGraphVertex, TrieNodeRef>,
+  pub trie_node_universe: Vec<StackTrieNode>,
 }
 
-impl<Arena> HandoffAllocable for EpsilonNodeStateSubgraph<Arena>
-where Arena: Allocator+Clone
-{
-  type Arena = Arena;
 
-  fn allocator_handoff(&self) -> Arena { self.vertex_mapping.arena() }
-}
-
-impl<Arena> PartialEq for EpsilonNodeStateSubgraph<Arena>
-where Arena: Allocator+Clone
-{
+impl PartialEq for EpsilonNodeStateSubgraph {
   fn eq(&self, other: &Self) -> bool {
     self.vertex_mapping == other.vertex_mapping
       && self.trie_node_universe == other.trie_node_universe
   }
 }
 
-impl<Arena> Eq for EpsilonNodeStateSubgraph<Arena> where Arena: Allocator+Clone {}
+impl Eq for EpsilonNodeStateSubgraph {}
 
-impl<Arena> EpsilonNodeStateSubgraph<Arena>
-where Arena: Allocator+Clone
-{
-  fn new_in(arena: Arena) -> Self {
+impl EpsilonNodeStateSubgraph {
+  fn new() -> Self {
     EpsilonNodeStateSubgraph {
-      vertex_mapping: IndexMap::new_in(arena.clone()),
-      trie_node_universe: Vec::new_in(arena),
+      vertex_mapping: IndexMap::new(),
+      trie_node_universe: Vec::new(),
     }
   }
 
-  fn get_trie(&mut self, node_ref: TrieNodeRef) -> &mut StackTrieNode<Arena> {
+  fn get_trie(&mut self, node_ref: TrieNodeRef) -> &mut StackTrieNode {
     let TrieNodeRef(node_index) = node_ref;
     self
       .trie_node_universe
@@ -362,7 +323,7 @@ where Arena: Allocator+Clone
   }
 
   fn trie_ref_for_vertex(&mut self, vtx: &EpsilonGraphVertex) -> TrieNodeRef {
-    let basic_node = StackTrieNode::bare(*vtx, self.allocator_handoff());
+    let basic_node = StackTrieNode::bare(*vtx);
     let trie_node_ref_for_vertex = if let Some(x) = self.vertex_mapping.get(vtx) {
       *x
     } else {
@@ -382,33 +343,24 @@ where Arena: Allocator+Clone
 }
 
 #[derive(Debug, Clone)]
-pub struct ContiguousNonterminalInterval<Arena>
-where Arena: Allocator
-{
-  pub interval: Vec<EpsilonGraphVertex, Arena>,
-  pub arena: Arena,
+pub struct ContiguousNonterminalInterval {
+  pub interval: Vec<EpsilonGraphVertex>,
 }
 
-impl<Arena> PartialEq for ContiguousNonterminalInterval<Arena>
-where Arena: Allocator
-{
+impl PartialEq for ContiguousNonterminalInterval {
   fn eq(&self, other: &Self) -> bool { self.interval == other.interval }
 }
 
-impl<Arena> Eq for ContiguousNonterminalInterval<Arena> where Arena: Allocator {}
+impl Eq for ContiguousNonterminalInterval {}
 
 #[derive(Debug, Clone)]
-pub struct CyclicGraphDecomposition<Arena>
-where Arena: Allocator+Clone
-{
-  pub cyclic_subgraph: EpsilonNodeStateSubgraph<Arena>,
-  pub pairwise_state_transitions: Vec<CompletedStatePairWithVertices<Arena>, Arena>,
-  pub anon_step_mapping: IndexMap<AnonSym, UnflattenedProdCaseRef, Arena, DefaultHasher>,
+pub struct CyclicGraphDecomposition {
+  pub cyclic_subgraph: EpsilonNodeStateSubgraph,
+  pub pairwise_state_transitions: Vec<CompletedStatePairWithVertices>,
+  pub anon_step_mapping: IndexMap<AnonSym, UnflattenedProdCaseRef>,
 }
 
-impl<Arena> PartialEq for CyclicGraphDecomposition<Arena>
-where Arena: Allocator+Clone
-{
+impl PartialEq for CyclicGraphDecomposition {
   fn eq(&self, other: &Self) -> bool {
     self.cyclic_subgraph == other.cyclic_subgraph
       && self.pairwise_state_transitions == other.pairwise_state_transitions
@@ -416,7 +368,7 @@ where Arena: Allocator+Clone
   }
 }
 
-impl<Arena> Eq for CyclicGraphDecomposition<Arena> where Arena: Allocator+Clone {}
+impl Eq for CyclicGraphDecomposition {}
 
 /* Pointers to the appropriate "forests" of stack transitions
  * starting/completing at each state. "starting" and "completing" are
@@ -427,44 +379,24 @@ impl<Arena> Eq for CyclicGraphDecomposition<Arena> where Arena: Allocator+Clone 
  * still applies). */
 // TODO: fix the above incorrect docstring!
 #[derive(Debug, Clone)]
-pub struct EpsilonIntervalGraph<Arena>
-where Arena: Allocator+Clone
-{
-  pub all_intervals: Vec<ContiguousNonterminalInterval<Arena>, Arena>,
-  pub anon_step_mapping: IndexMap<AnonSym, UnflattenedProdCaseRef, Arena, DefaultHasher>,
+pub struct EpsilonIntervalGraph {
+  pub all_intervals: Vec<ContiguousNonterminalInterval>,
+  pub anon_step_mapping: IndexMap<AnonSym, UnflattenedProdCaseRef>,
 }
 
-impl<Arena> HandoffAllocable for EpsilonIntervalGraph<Arena>
-where Arena: Allocator+Clone
-{
-  type Arena = Arena;
 
-  fn allocator_handoff(&self) -> Arena { self.anon_step_mapping.arena() }
-}
-
-impl<Arena> PartialEq for EpsilonIntervalGraph<Arena>
-where Arena: Allocator+Clone
-{
+impl PartialEq for EpsilonIntervalGraph {
   fn eq(&self, other: &Self) -> bool {
     self.all_intervals == other.all_intervals && self.anon_step_mapping == other.anon_step_mapping
   }
 }
 
-impl<Arena> Eq for EpsilonIntervalGraph<Arena> where Arena: Allocator+Clone {}
+impl Eq for EpsilonIntervalGraph {}
 
-impl<Arena> EpsilonIntervalGraph<Arena>
-where Arena: Allocator+Clone
-{
-  pub fn find_start_end_indices(
-    &self,
-  ) -> IndexMap<gc::ProdRef, StartEndEpsilonIntervals<Arena>, Arena, DefaultHasher> {
-    let arena = self.allocator_handoff();
-    let mut epsilon_subscripts_index: IndexMap<
-      gc::ProdRef,
-      StartEndEpsilonIntervals<Arena>,
-      Arena,
-      DefaultHasher,
-    > = IndexMap::new_in(arena.clone());
+impl EpsilonIntervalGraph {
+  pub fn find_start_end_indices(&self) -> IndexMap<gc::ProdRef, StartEndEpsilonIntervals> {
+    let mut epsilon_subscripts_index: IndexMap<gc::ProdRef, StartEndEpsilonIntervals> =
+      IndexMap::new();
     let EpsilonIntervalGraph { all_intervals, .. } = self;
     for interval in all_intervals.iter() {
       let ContiguousNonterminalInterval {
@@ -476,12 +408,12 @@ where Arena: Allocator+Clone
       match first {
           EpsilonGraphVertex::Start(start_prod_ref) => {
             let intervals_for_this_prod = epsilon_subscripts_index.entry(start_prod_ref)
-              .or_insert(StartEndEpsilonIntervals::new_in(arena.clone()));
+              .or_insert(StartEndEpsilonIntervals::new());
             (*intervals_for_this_prod).start_epsilons.push(interval.clone());
           },
           EpsilonGraphVertex::End(end_prod_ref) => {
             let intervals_for_this_prod = epsilon_subscripts_index.entry(end_prod_ref)
-              .or_insert(StartEndEpsilonIntervals::new_in(arena.clone()));
+              .or_insert(StartEndEpsilonIntervals::new());
             (*intervals_for_this_prod).end_epsilons.push(interval.clone());
           },
           _ => unreachable!("the beginning of an interval should always be a start (epsilon) or end (epsilon prime) vertex"),
@@ -490,16 +422,14 @@ where Arena: Allocator+Clone
     epsilon_subscripts_index
   }
 
-  pub fn connect_all_vertices(self) -> CyclicGraphDecomposition<Arena> {
+  pub fn connect_all_vertices(self) -> CyclicGraphDecomposition {
     let intervals_indexed_by_start_and_end = self.find_start_end_indices();
-    let arena = self.allocator_handoff();
     let EpsilonIntervalGraph {
       all_intervals,
       anon_step_mapping,
     } = self;
 
-    let mut all_completed_pairs_with_vertices: Vec<CompletedStatePairWithVertices<Arena>, Arena> =
-      Vec::new_in(arena.clone());
+    let mut all_completed_pairs_with_vertices: Vec<CompletedStatePairWithVertices> = Vec::new();
     /* NB: When finding token transitions, we keep track of which intermediate
      * transition states we've already seen by using this Hash impl. If any
      * stack cycles are detected when performing a single iteration, the
@@ -507,14 +437,13 @@ where Arena: Allocator+Clone
      * the same intermediate transition state, we additionally require checking
      * the identity of intermediate transition states to avoid looping
      * forever. */
-    let mut seen_transitions: IndexSet<IntermediateTokenTransition<Arena>, Arena, DefaultHasher> =
-      IndexSet::new_in(arena.clone());
+    let mut seen_transitions: IndexSet<IntermediateTokenTransition> = IndexSet::new();
 
-    let mut traversal_queue: Vec<IntermediateTokenTransition<Arena>, Arena> =
-      Vec::with_capacity_in(all_intervals.len(), arena.clone());
+    let mut traversal_queue: Vec<IntermediateTokenTransition> =
+      Vec::with_capacity(all_intervals.len());
     traversal_queue.extend(all_intervals.iter().map(IntermediateTokenTransition::new));
 
-    let mut all_stack_cycles: Vec<SingleStackCycle<Arena>, Arena> = Vec::new_in(arena.clone());
+    let mut all_stack_cycles: Vec<SingleStackCycle> = Vec::new();
 
     /* Find all the token transitions! */
     while !traversal_queue.is_empty() {
@@ -533,8 +462,8 @@ where Arena: Allocator+Clone
       all_stack_cycles.extend(cycles);
     }
 
-    let merged_stack_cycles: EpsilonNodeStateSubgraph<Arena> = {
-      let mut ret = EpsilonNodeStateSubgraph::new_in(arena);
+    let merged_stack_cycles: EpsilonNodeStateSubgraph = {
+      let mut ret = EpsilonNodeStateSubgraph::new();
       for cycle in all_stack_cycles.into_iter() {
         let SingleStackCycle(vertices) = cycle;
         for (cur_vtx_index, vtx) in vertices.iter().enumerate() {
@@ -578,103 +507,72 @@ where Arena: Allocator+Clone
 /// epsilon/epsilon prime when the PreprocessedGrammar is finally
 /// constructed.
 #[derive(Debug, Clone)]
-pub struct StartEndEpsilonIntervals<Arena>
-where Arena: Allocator
-{
-  pub start_epsilons: Vec<ContiguousNonterminalInterval<Arena>, Arena>,
-  pub end_epsilons: Vec<ContiguousNonterminalInterval<Arena>, Arena>,
+pub struct StartEndEpsilonIntervals {
+  pub start_epsilons: Vec<ContiguousNonterminalInterval>,
+  pub end_epsilons: Vec<ContiguousNonterminalInterval>,
 }
 
 
-impl<Arena> PartialEq for StartEndEpsilonIntervals<Arena>
-where Arena: Allocator
-{
+impl PartialEq for StartEndEpsilonIntervals {
   fn eq(&self, other: &Self) -> bool {
     self.start_epsilons == other.start_epsilons && self.end_epsilons == other.end_epsilons
   }
 }
 
-impl<Arena> Eq for StartEndEpsilonIntervals<Arena> where Arena: Allocator {}
+impl Eq for StartEndEpsilonIntervals {}
 
-impl<Arena> StartEndEpsilonIntervals<Arena>
-where Arena: Allocator+Clone
-{
-  fn new_in(arena: Arena) -> Self {
+impl StartEndEpsilonIntervals {
+  fn new() -> Self {
     StartEndEpsilonIntervals {
-      start_epsilons: Vec::new_in(arena.clone()),
-      end_epsilons: Vec::new_in(arena),
+      start_epsilons: Vec::new(),
+      end_epsilons: Vec::new(),
     }
   }
 }
 
 #[derive(Debug, Clone)]
-pub struct CompletedStatePairWithVertices<Arena>
-where Arena: Allocator
-{
+pub struct CompletedStatePairWithVertices {
   pub state_pair: StatePair,
-  pub interval: ContiguousNonterminalInterval<Arena>,
+  pub interval: ContiguousNonterminalInterval,
 }
 
-impl<Arena> PartialEq for CompletedStatePairWithVertices<Arena>
-where Arena: Allocator
-{
+impl PartialEq for CompletedStatePairWithVertices {
   fn eq(&self, other: &Self) -> bool {
     self.state_pair == other.state_pair && self.interval == other.interval
   }
 }
 
-impl<Arena> Eq for CompletedStatePairWithVertices<Arena> where Arena: Allocator {}
+impl Eq for CompletedStatePairWithVertices {}
 
 #[derive(Debug, Clone)]
-pub struct SingleStackCycle<Arena>(pub Vec<EpsilonGraphVertex, Arena>)
-where Arena: Allocator;
+pub struct SingleStackCycle(pub Vec<EpsilonGraphVertex>);
 
 #[derive(Debug, Clone)]
-struct TransitionIterationResult<Arena>
-where Arena: Allocator
-{
-  pub completed: Vec<CompletedStatePairWithVertices<Arena>, Arena>,
-  pub todo: Vec<IntermediateTokenTransition<Arena>, Arena>,
-  pub cycles: Vec<SingleStackCycle<Arena>, Arena>,
+struct TransitionIterationResult {
+  pub completed: Vec<CompletedStatePairWithVertices>,
+  pub todo: Vec<IntermediateTokenTransition>,
+  pub cycles: Vec<SingleStackCycle>,
 }
 
 #[derive(Debug, Clone)]
-struct IntermediateTokenTransition<Arena>
-where Arena: Allocator
-{
-  cur_traversal_intermediate_nonterminals: Vec<EpsilonGraphVertex, Arena>,
-  rest_of_interval: Vec<EpsilonGraphVertex, Arena>,
+struct IntermediateTokenTransition {
+  cur_traversal_intermediate_nonterminals: Vec<EpsilonGraphVertex>,
+  rest_of_interval: Vec<EpsilonGraphVertex>,
 }
 
-impl<Arena> HandoffAllocable for IntermediateTokenTransition<Arena>
-where Arena: Allocator+Clone
-{
-  type Arena = Arena;
 
-  fn allocator_handoff(&self) -> Arena {
-    self
-      .cur_traversal_intermediate_nonterminals
-      .allocator()
-      .clone()
-  }
-}
-
-impl<Arena> PartialEq for IntermediateTokenTransition<Arena>
-where Arena: Allocator
-{
+impl PartialEq for IntermediateTokenTransition {
   fn eq(&self, other: &Self) -> bool {
     self.cur_traversal_intermediate_nonterminals == other.cur_traversal_intermediate_nonterminals
       && self.rest_of_interval == other.rest_of_interval
   }
 }
 
-impl<Arena> Eq for IntermediateTokenTransition<Arena> where Arena: Allocator {}
+impl Eq for IntermediateTokenTransition {}
 
 /// This [Hash] implementation is stable because the collection types in this
 /// struct have a specific ordering.
-impl<Arena> Hash for IntermediateTokenTransition<Arena>
-where Arena: Allocator
-{
+impl Hash for IntermediateTokenTransition {
   fn hash<H: Hasher>(&self, state: &mut H) {
     for intermediate_vertex in self.cur_traversal_intermediate_nonterminals.iter() {
       intermediate_vertex.hash(state);
@@ -685,20 +583,17 @@ where Arena: Allocator
   }
 }
 
-impl<Arena> IntermediateTokenTransition<Arena>
-where Arena: Allocator+Clone
-{
-  fn new(wrapped_interval: &ContiguousNonterminalInterval<Arena>) -> Self {
-    let ContiguousNonterminalInterval { interval, arena } = wrapped_interval;
+impl IntermediateTokenTransition {
+  fn new(wrapped_interval: &ContiguousNonterminalInterval) -> Self {
+    let ContiguousNonterminalInterval { interval } = wrapped_interval;
     /* All intervals have a start and end node. */
     assert!(interval.len() >= 2);
     let start = interval[0];
-    let mut cur_start: Vec<EpsilonGraphVertex, Arena> = Vec::with_capacity_in(1, arena.clone());
+    let mut cur_start: Vec<EpsilonGraphVertex> = Vec::with_capacity(1);
     cur_start.push(start);
 
     let rest_of_interval = &interval[1..];
-    let mut cur_rest: Vec<EpsilonGraphVertex, Arena> =
-      Vec::with_capacity_in(rest_of_interval.len(), arena.clone());
+    let mut cur_rest: Vec<EpsilonGraphVertex> = Vec::with_capacity(rest_of_interval.len());
     cur_rest.extend_from_slice(rest_of_interval);
 
     IntermediateTokenTransition {
@@ -716,16 +611,9 @@ where Arena: Allocator+Clone
   fn check_for_cycles(
     &self,
     next: EpsilonGraphVertex,
-  ) -> (
-    IndexSet<EpsilonGraphVertex, Arena, DefaultHasher>,
-    Option<SingleStackCycle<Arena>>,
-  ) {
-    let arena = self.allocator_handoff();
-    let mut prev_nonterminals: IndexSet<EpsilonGraphVertex, Arena, DefaultHasher> =
-      IndexSet::with_capacity_in(
-        self.cur_traversal_intermediate_nonterminals.len(),
-        arena.clone(),
-      );
+  ) -> (IndexSet<EpsilonGraphVertex>, Option<SingleStackCycle>) {
+    let mut prev_nonterminals: IndexSet<EpsilonGraphVertex> =
+      IndexSet::with_capacity(self.cur_traversal_intermediate_nonterminals.len());
     prev_nonterminals.extend(self.cur_traversal_intermediate_nonterminals.iter().cloned());
 
     let (cur_vtx_ind, was_new_insert) = prev_nonterminals.insert_full(next);
@@ -734,15 +622,15 @@ where Arena: Allocator+Clone
     } else {
       /* If we have already seen this vertex, then a cycle was detected! */
       /* The cycle contains the start vertex and all the ones after it. */
-      let mut cycle_elements: Vec<EpsilonGraphVertex, Arena> = Vec::new_in(arena.clone());
+      let mut cycle_elements: Vec<EpsilonGraphVertex> = Vec::new();
       cycle_elements.extend(prev_nonterminals.iter().skip(cur_vtx_ind).cloned());
       let cur_cycle = SingleStackCycle(cycle_elements);
 
       /* Shuffle all the intermediate vertices off, but keep the cycle start
        * vertex. */
       let len_to_take = cur_vtx_ind + 1;
-      let mut remaining_elements: IndexSet<EpsilonGraphVertex, Arena, DefaultHasher> =
-        IndexSet::with_capacity_in(len_to_take, arena);
+      let mut remaining_elements: IndexSet<EpsilonGraphVertex> =
+        IndexSet::with_capacity(len_to_take);
       remaining_elements.extend(prev_nonterminals.into_iter().take(len_to_take));
 
       (remaining_elements, Some(cur_cycle))
@@ -754,18 +642,12 @@ where Arena: Allocator+Clone
     &self,
     start: &EpsilonGraphVertex,
     next: EpsilonGraphVertex,
-    indexed_intervals: &IndexMap<
-      gc::ProdRef,
-      StartEndEpsilonIntervals<Arena>,
-      Arena,
-      DefaultHasher,
-    >,
-    intermediate_nonterminals_for_next_step: IndexSet<EpsilonGraphVertex, Arena, DefaultHasher>,
+    indexed_intervals: &IndexMap<gc::ProdRef, StartEndEpsilonIntervals>,
+    intermediate_nonterminals_for_next_step: IndexSet<EpsilonGraphVertex>,
   ) -> (
-    Vec<CompletedStatePairWithVertices<Arena>, Arena>,
-    Vec<IntermediateTokenTransition<Arena>, Arena>,
+    Vec<CompletedStatePairWithVertices>,
+    Vec<IntermediateTokenTransition>,
   ) {
-    let arena = self.allocator_handoff();
     match next {
       /* Complete a transition, but also add more continuing from the start vertex. */
       EpsilonGraphVertex::Start(start_prod_ref) => {
@@ -779,21 +661,20 @@ where Arena: Allocator+Clone
           "all `ProdRef`s should have been accounted for when grouping by start and end intervals",
         );
 
-        let mut passthrough_intermediates: Vec<IntermediateTokenTransition<Arena>, Arena> =
-          Vec::with_capacity_in(interval.start_epsilons.len(), arena.clone());
+        let mut passthrough_intermediates: Vec<IntermediateTokenTransition> =
+          Vec::with_capacity(interval.start_epsilons.len());
         passthrough_intermediates.extend(interval.start_epsilons.iter().map(
           |ContiguousNonterminalInterval {
              interval: next_vertices,
              ..
            }| {
-            let mut nonterminals: Vec<EpsilonGraphVertex, Arena> =
-              Vec::with_capacity_in(intermediate_nonterminals_for_next_step.len(), arena.clone());
+            let mut nonterminals: Vec<EpsilonGraphVertex> =
+              Vec::with_capacity(intermediate_nonterminals_for_next_step.len());
             nonterminals.extend(intermediate_nonterminals_for_next_step.clone().into_iter());
 
             /* Get the rest of the interval without the epsilon node that it starts with. */
             let rest_of_interval = &next_vertices[1..];
-            let mut rest: Vec<EpsilonGraphVertex, Arena> =
-              Vec::with_capacity_in(rest_of_interval.len(), arena.clone());
+            let mut rest: Vec<EpsilonGraphVertex> = Vec::with_capacity(rest_of_interval.len());
             rest.extend_from_slice(rest_of_interval);
 
             IntermediateTokenTransition {
@@ -802,7 +683,7 @@ where Arena: Allocator+Clone
             }
           },
         ));
-        (Vec::new_in(arena), passthrough_intermediates)
+        (Vec::new(), passthrough_intermediates)
       },
       /* Similarly to ending on a Start vertex. */
       EpsilonGraphVertex::End(end_prod_ref) => {
@@ -819,8 +700,8 @@ where Arena: Allocator+Clone
         };
 
         let completed = if completed_path_makes_sense {
-          let mut relevant_interval_with_terminals: Vec<EpsilonGraphVertex, Arena> =
-            Vec::with_capacity_in(intermediate_nonterminals_for_next_step.len(), arena.clone());
+          let mut relevant_interval_with_terminals: Vec<EpsilonGraphVertex> =
+            Vec::with_capacity(intermediate_nonterminals_for_next_step.len());
           relevant_interval_with_terminals
             .extend(intermediate_nonterminals_for_next_step.clone().into_iter());
 
@@ -832,37 +713,34 @@ where Arena: Allocator+Clone
             state_pair: completed_state_pair,
             interval: ContiguousNonterminalInterval {
               interval: relevant_interval_with_terminals,
-              arena: arena.clone(),
             },
           };
 
-          let mut ret: Vec<CompletedStatePairWithVertices<Arena>, Arena> =
-            Vec::with_capacity_in(1, arena.clone());
+          let mut ret: Vec<CompletedStatePairWithVertices> = Vec::with_capacity(1);
           ret.push(single_completion);
           ret
         } else {
-          Vec::new_in(arena.clone())
+          Vec::new()
         };
 
         let interval = indexed_intervals.get(&end_prod_ref).expect(
           "all `ProdRef`s should have been accounted for when grouping by start and end intervals",
         );
 
-        let mut passthrough_intermediates: Vec<IntermediateTokenTransition<Arena>, Arena> =
-          Vec::with_capacity_in(interval.end_epsilons.len(), arena.clone());
+        let mut passthrough_intermediates: Vec<IntermediateTokenTransition> =
+          Vec::with_capacity(interval.end_epsilons.len());
         passthrough_intermediates.extend(interval.end_epsilons.clone().into_iter().map(
           |ContiguousNonterminalInterval {
              interval: next_vertices,
              ..
            }| {
-            let mut nonterminals: Vec<EpsilonGraphVertex, Arena> =
-              Vec::with_capacity_in(intermediate_nonterminals_for_next_step.len(), arena.clone());
+            let mut nonterminals: Vec<EpsilonGraphVertex> =
+              Vec::with_capacity(intermediate_nonterminals_for_next_step.len());
             nonterminals.extend(intermediate_nonterminals_for_next_step.clone().into_iter());
 
             /* Get the rest of the interval without the epsilon node that it starts with. */
             let rest_of_interval = &next_vertices[1..];
-            let mut rest: Vec<EpsilonGraphVertex, Arena> =
-              Vec::with_capacity_in(rest_of_interval.len(), arena.clone());
+            let mut rest: Vec<EpsilonGraphVertex> = Vec::with_capacity(rest_of_interval.len());
             rest.extend_from_slice(rest_of_interval);
 
             IntermediateTokenTransition {
@@ -876,24 +754,22 @@ where Arena: Allocator+Clone
       },
       /* `next` is the anonymous vertex, which is all we need it for. */
       EpsilonGraphVertex::Anon(_) => {
-        let mut nonterminals: Vec<EpsilonGraphVertex, Arena> =
-          Vec::with_capacity_in(intermediate_nonterminals_for_next_step.len(), arena.clone());
+        let mut nonterminals: Vec<EpsilonGraphVertex> =
+          Vec::with_capacity(intermediate_nonterminals_for_next_step.len());
         nonterminals.extend(intermediate_nonterminals_for_next_step.into_iter());
 
         /* Get the rest of the interval without the epsilon node that it starts with. */
         let rest_of_interval = &self.rest_of_interval[1..];
-        let mut rest: Vec<EpsilonGraphVertex, Arena> =
-          Vec::with_capacity_in(rest_of_interval.len(), arena.clone());
+        let mut rest: Vec<EpsilonGraphVertex> = Vec::with_capacity(rest_of_interval.len());
         rest.extend_from_slice(rest_of_interval);
 
-        let mut ret: Vec<IntermediateTokenTransition<Arena>, Arena> =
-          Vec::with_capacity_in(1, arena.clone());
+        let mut ret: Vec<IntermediateTokenTransition> = Vec::with_capacity(1);
         ret.push(IntermediateTokenTransition {
           cur_traversal_intermediate_nonterminals: nonterminals,
           rest_of_interval: rest,
         });
 
-        (Vec::new_in(arena), ret)
+        (Vec::new(), ret)
       },
       /* Similar to start and end, but the `todo` starts off at the state. */
       EpsilonGraphVertex::State(state_pos) => {
@@ -910,36 +786,31 @@ where Arena: Allocator+Clone
           },
         };
         let completed = if completed_path_makes_sense {
-          let mut relevant_interval_with_terminals: Vec<EpsilonGraphVertex, Arena> =
-            Vec::with_capacity_in(intermediate_nonterminals_for_next_step.len(), arena.clone());
+          let mut relevant_interval_with_terminals: Vec<EpsilonGraphVertex> =
+            Vec::with_capacity(intermediate_nonterminals_for_next_step.len());
           relevant_interval_with_terminals
             .extend(intermediate_nonterminals_for_next_step.into_iter());
 
-          let mut ret: Vec<CompletedStatePairWithVertices<Arena>, Arena> =
-            Vec::with_capacity_in(1, arena.clone());
+          let mut ret: Vec<CompletedStatePairWithVertices> = Vec::with_capacity(1);
           ret.push(CompletedStatePairWithVertices {
             state_pair: completed_state_pair,
             interval: ContiguousNonterminalInterval {
               interval: relevant_interval_with_terminals,
-              arena: arena.clone(),
             },
           });
           ret
         } else {
-          Vec::new_in(arena.clone())
+          Vec::new()
         };
 
-        let mut single_nonterminal: Vec<EpsilonGraphVertex, Arena> =
-          Vec::with_capacity_in(1, arena.clone());
+        let mut single_nonterminal: Vec<EpsilonGraphVertex> = Vec::with_capacity(1);
         single_nonterminal.push(next);
 
         let rest_of_interval = &self.rest_of_interval[1..];
-        let mut rest: Vec<EpsilonGraphVertex, Arena> =
-          Vec::with_capacity_in(rest_of_interval.len(), arena.clone());
+        let mut rest: Vec<EpsilonGraphVertex> = Vec::with_capacity(rest_of_interval.len());
         rest.extend(rest_of_interval.iter().cloned());
 
-        let mut single_transition: Vec<IntermediateTokenTransition<Arena>, Arena> =
-          Vec::with_capacity_in(1, arena);
+        let mut single_transition: Vec<IntermediateTokenTransition> = Vec::with_capacity(1);
         single_transition.push(IntermediateTokenTransition {
           cur_traversal_intermediate_nonterminals: single_nonterminal,
           rest_of_interval: rest,
@@ -952,15 +823,8 @@ where Arena: Allocator+Clone
 
   fn iterate_and_maybe_complete(
     &self,
-    indexed_intervals: &IndexMap<
-      gc::ProdRef,
-      StartEndEpsilonIntervals<Arena>,
-      Arena,
-      DefaultHasher,
-    >,
-  ) -> TransitionIterationResult<Arena> {
-    let arena = self.allocator_handoff();
-
+    indexed_intervals: &IndexMap<gc::ProdRef, StartEndEpsilonIntervals>,
+  ) -> TransitionIterationResult {
     let start = self.cur_traversal_intermediate_nonterminals[0];
     let next = self.rest_of_interval[0];
 
@@ -972,14 +836,14 @@ where Arena: Allocator+Clone
       intermediate_nonterminals_for_next_step,
     );
 
-    let mut known_cycles: Vec<SingleStackCycle<Arena>, Arena> = Vec::new_in(arena.clone());
+    let mut known_cycles: Vec<SingleStackCycle> = Vec::new();
     let todo = match cycles {
       None => todo,
       /* NB: If cycles were detected, don't return any `todo` nodes, as we have already
        * traversed them! */
       Some(cycle) => {
         known_cycles.push(cycle);
-        Vec::new_in(arena)
+        Vec::new()
       },
     };
     TransitionIterationResult {
@@ -998,38 +862,27 @@ where Arena: Allocator+Clone
 ///
 /// TODO: ^???
 #[derive(Debug, Clone)]
-pub struct PreprocessedGrammar<Tok, Arena>
-where Arena: Allocator+Clone
-{
+pub struct PreprocessedGrammar<Tok> {
   /// `A: T x T -> {S}^+_-`
   ///
   /// where `{S}^+_-` (LaTeX formatting) is ordered sequences of signed
   /// stack symbols!
-  pub cyclic_graph_decomposition: CyclicGraphDecomposition<Arena>,
+  pub cyclic_graph_decomposition: CyclicGraphDecomposition,
   /// `M: T -> {Q}`, where `{Q}` is sets of states!
   ///
   /// These don't need to be quick to access or otherwise optimized for the
   /// algorithm until we create a `Parse` -- these are chosen to reduce
   /// redundancy.
-  pub token_states_mapping: gb::InternedLookupTable<Tok, gc::TokRef, Arena>,
+  pub token_states_mapping: gb::InternedLookupTable<Tok, gc::TokRef>,
 }
 
-impl<Tok, Arena> HandoffAllocable for PreprocessedGrammar<Tok, Arena>
-where Arena: Allocator+Clone
-{
-  type Arena = Arena;
 
-  fn allocator_handoff(&self) -> Arena { self.token_states_mapping.allocator_handoff() }
-}
-
-impl<Tok, Arena> PreprocessedGrammar<Tok, Arena>
-where Arena: Allocator+Clone
-{
+impl<Tok> PreprocessedGrammar<Tok> {
   /// Intended to reduce visual clutter in the implementation of interval
   /// production.
   fn make_pos_neg_anon_steps(
     cur_index: &mut usize,
-    anon_step_mapping: &mut IndexMap<AnonSym, UnflattenedProdCaseRef, Arena, DefaultHasher>,
+    anon_step_mapping: &mut IndexMap<AnonSym, UnflattenedProdCaseRef>,
     cur_case: UnflattenedProdCaseRef,
   ) -> (EpsilonGraphVertex, EpsilonGraphVertex) {
     let the_sym = AnonSym(*cur_index);
@@ -1043,10 +896,10 @@ where Arena: Allocator+Clone
 
   /// TODO: document this great method!!!
   pub(crate) fn produce_terminals_interval_graph(
-    grammar: gb::TokenGrammar<Tok, Arena>,
+    grammar: gb::TokenGrammar<Tok>,
   ) -> (
-    EpsilonIntervalGraph<Arena>,
-    gb::InternedLookupTable<Tok, gc::TokRef, Arena>,
+    EpsilonIntervalGraph,
+    gb::InternedLookupTable<Tok, gc::TokRef>,
   ) {
     /* We would like to just accept a DetokenizedProductions here, but we call
      * this method directly in testing, and without the whole grammar object
@@ -1056,7 +909,6 @@ where Arena: Allocator+Clone
       graph: production_graph,
       tokens,
     } = grammar;
-    let arena = tokens.allocator_handoff();
     let prods = production_graph.into_index_map();
     /* We would really like to use .flat_map()s here, but it's not clear how to
      * do that while mutating the global `cur_anon_sym_index` value. When
@@ -1064,17 +916,14 @@ where Arena: Allocator+Clone
      * mysteriously gets reset, even if `move` is also used on the
      * outer loop. */
     let mut cur_anon_sym_index: usize = 0;
-    let mut really_all_intervals: Vec<ContiguousNonterminalInterval<Arena>, Arena> =
-      Vec::new_in(arena.clone());
-    let mut anon_step_mapping: IndexMap<AnonSym, UnflattenedProdCaseRef, Arena, DefaultHasher> =
-      IndexMap::new_in(arena.clone());
+    let mut really_all_intervals: Vec<ContiguousNonterminalInterval> = Vec::new();
+    let mut anon_step_mapping: IndexMap<AnonSym, UnflattenedProdCaseRef> = IndexMap::new();
     for (cur_prod_ref, the_prod) in prods.iter() {
       let gb::Production(cases) = the_prod;
       for (case_ind, the_case) in cases.iter().enumerate() {
         let cur_case_ref: gc::CaseRef = case_ind.into();
         let gb::Case(elements_of_case) = the_case;
-        let mut all_intervals_from_this_case: Vec<ContiguousNonterminalInterval<Arena>, Arena> =
-          Vec::new_in(arena.clone());
+        let mut all_intervals_from_this_case: Vec<ContiguousNonterminalInterval> = Vec::new();
 
         /* NB: make an anon sym whenever stepping onto a case! */
         let cur_prod_case = gc::ProdCaseRef {
@@ -1087,7 +936,7 @@ where Arena: Allocator+Clone
           UnflattenedProdCaseRef::Case(cur_prod_case),
         );
 
-        let mut cur_elements: Vec<EpsilonGraphVertex, Arena> = Vec::new_in(arena.clone());
+        let mut cur_elements: Vec<EpsilonGraphVertex> = Vec::new();
         cur_elements.push(EpsilonGraphVertex::Start(*cur_prod_ref));
         cur_elements.push(pos_case_anon);
 
@@ -1114,8 +963,8 @@ where Arena: Allocator+Clone
               );
 
               /* Generate the interval terminating at the current subprod split. */
-              let mut interval_upto_subprod: Vec<EpsilonGraphVertex, Arena> =
-                Vec::with_capacity_in(cur_elements.len() + 2, arena.clone());
+              let mut interval_upto_subprod: Vec<EpsilonGraphVertex> =
+                Vec::with_capacity(cur_elements.len() + 2);
               /* NB: we empty out the state of `cur_elements` here! */
               interval_upto_subprod.extend(cur_elements.drain(..));
               /* We /end/ this interval with a "start" vertex because this is going
@@ -1132,7 +981,6 @@ where Arena: Allocator+Clone
               /* Register the interval we just cut off in the results list. */
               all_intervals_from_this_case.push(ContiguousNonterminalInterval {
                 interval: interval_upto_subprod,
-                arena: arena.clone(),
               });
             },
             gc::CaseEl::SM(_sm_ref) => {
@@ -1142,8 +990,8 @@ where Arena: Allocator+Clone
         }
         /* Construct the interval of all remaining nonterminals to the end of the
          * production. */
-        let mut final_interval: Vec<EpsilonGraphVertex, Arena> =
-          Vec::with_capacity_in(cur_elements.len() + 2, arena.clone());
+        let mut final_interval: Vec<EpsilonGraphVertex> =
+          Vec::with_capacity(cur_elements.len() + 2);
         final_interval.extend(cur_elements.into_iter());
         final_interval.push(neg_case_anon);
         final_interval.push(EpsilonGraphVertex::End(*cur_prod_ref));
@@ -1151,7 +999,6 @@ where Arena: Allocator+Clone
         /* Register the interval of all remaining nonterminals in the results list. */
         all_intervals_from_this_case.push(ContiguousNonterminalInterval {
           interval: final_interval,
-          arena: arena.clone(),
         });
         /* Return all the intervals from this case. */
         really_all_intervals.extend(all_intervals_from_this_case);
@@ -1166,10 +1013,9 @@ where Arena: Allocator+Clone
     )
   }
 
-  pub fn new(grammar: gb::TokenGrammar<Tok, Arena>) -> Self {
-    let (terminals_interval_graph, tokens) =
-      Self::produce_terminals_interval_graph(grammar);
-    let cyclic_graph_decomposition: CyclicGraphDecomposition<Arena> =
+  pub fn new(grammar: gb::TokenGrammar<Tok>) -> Self {
+    let (terminals_interval_graph, tokens) = Self::produce_terminals_interval_graph(grammar);
+    let cyclic_graph_decomposition: CyclicGraphDecomposition =
       terminals_interval_graph.connect_all_vertices();
     PreprocessedGrammar {
       token_states_mapping: tokens,
@@ -1184,15 +1030,13 @@ mod tests {
   use crate::{
     state,
     test_framework::{basic_productions, new_token_position, non_cyclic_productions},
-    types::{DefaultHasher, Global},
   };
 
   #[test]
   fn token_grammar_state_indexing() {
     let prods = non_cyclic_productions();
-    let state::preprocessing::Detokenized::<char, _>(grammar) = state::preprocessing::Init(prods)
-      .try_index_with_allocator(Global)
-      .unwrap();
+    let state::preprocessing::Detokenized::<char>(grammar) =
+      state::preprocessing::Init(prods).try_index().unwrap();
     assert_eq!(
       grammar
         .tokens
@@ -1227,9 +1071,9 @@ mod tests {
   #[test]
   fn terminals_interval_graph() {
     let noncyclic_prods = non_cyclic_productions();
-    let state::preprocessing::Detokenized::<char, _>(noncyclic_grammar) =
+    let state::preprocessing::Detokenized::<char>(noncyclic_grammar) =
       state::preprocessing::Init(noncyclic_prods)
-        .try_index_with_allocator(Global)
+        .try_index()
         .unwrap();
 
     let (noncyclic_interval_graph, _) =
@@ -1276,7 +1120,6 @@ mod tests {
       ]
       .as_ref()
       .to_vec(),
-      arena: Global,
     };
     let b_start_to_a_start_0 = ContiguousNonterminalInterval {
       interval: [
@@ -1289,25 +1132,21 @@ mod tests {
       ]
       .as_ref()
       .to_vec(),
-      arena: Global,
     };
     let a_end_to_b_end_0 = ContiguousNonterminalInterval {
       interval: [a_end, b_0_anon_0_end, b_prod_anon_end, b_end]
         .as_ref()
         .to_vec(),
-      arena: Global,
     };
     let b_start_to_a_start_1 = ContiguousNonterminalInterval {
       interval: [b_start, b_1_anon_0_start, b_1_anon_0_start_2, a_start]
         .as_ref()
         .to_vec(),
-      arena: Global,
     };
     let a_end_to_b_end_1 = ContiguousNonterminalInterval {
       interval: [a_end, b_1_anon_0_end_2, b_1_1, b_1_anon_0_end, b_end]
         .as_ref()
         .to_vec(),
-      arena: Global,
     };
 
     assert_eq!(noncyclic_interval_graph, EpsilonIntervalGraph {
@@ -1347,7 +1186,7 @@ mod tests {
       ]
       .iter()
       .cloned()
-      .collect::<IndexMap<_, _, Global, DefaultHasher>>(),
+      .collect::<IndexMap<_, _>>(),
     });
 
     /* Now check for indices. */
@@ -1372,7 +1211,7 @@ mod tests {
       .to_vec()
       .iter()
       .cloned()
-      .collect::<IndexMap<_, _, Global, DefaultHasher>>()
+      .collect::<IndexMap<_, _>>()
     );
 
     /* Now check that the transition graph is as we expect. */
@@ -1383,7 +1222,7 @@ mod tests {
     } = noncyclic_interval_graph.connect_all_vertices();
     /* There are no stack cycles in the noncyclic graph. */
     assert_eq!(merged_stack_cycles, EpsilonNodeStateSubgraph {
-      vertex_mapping: IndexMap::new_in(Global),
+      vertex_mapping: IndexMap::new(),
       trie_node_universe: [].as_ref().to_vec(),
     });
     assert_eq!(
@@ -1429,7 +1268,6 @@ mod tests {
           },
           interval: ContiguousNonterminalInterval {
             interval: [a_start, a_prod_anon_start, a_0_0].as_ref().to_vec(),
-            arena: Global
           },
         },
         /* 2 */
@@ -1440,7 +1278,6 @@ mod tests {
           },
           interval: ContiguousNonterminalInterval {
             interval: [b_start, b_prod_anon_start, b_0_0].as_ref().to_vec(),
-            arena: Global
           },
         },
         /* 3 */
@@ -1451,7 +1288,6 @@ mod tests {
           },
           interval: ContiguousNonterminalInterval {
             interval: [a_0_0, a_0_1].as_ref().to_vec(),
-            arena: Global
           },
         },
         /* 4 */
@@ -1462,7 +1298,6 @@ mod tests {
           },
           interval: ContiguousNonterminalInterval {
             interval: [b_0_0, b_0_1].as_ref().to_vec(),
-            arena: Global
           },
         },
         /* 5 */
@@ -1473,7 +1308,6 @@ mod tests {
           },
           interval: ContiguousNonterminalInterval {
             interval: [b_1_1, b_1_anon_0_end, b_end].as_ref().to_vec(),
-            arena: Global
           },
         },
         /* 6 */
@@ -1484,7 +1318,6 @@ mod tests {
           },
           interval: ContiguousNonterminalInterval {
             interval: [a_0_1, a_prod_anon_end, a_end].as_ref().to_vec(),
-            arena: Global
           },
         },
         /* 7 */
@@ -1504,7 +1337,6 @@ mod tests {
             ]
             .as_ref()
             .to_vec(),
-            arena: Global,
           }
         },
         /* 8 */
@@ -1517,7 +1349,6 @@ mod tests {
             interval: [a_0_1, a_prod_anon_end, a_end, b_1_anon_0_end_2, b_1_1]
               .as_ref()
               .to_vec(),
-            arena: Global
           },
         },
         /* 9 */
@@ -1530,7 +1361,6 @@ mod tests {
             interval: [b_0_1, b_0_anon_0_start, a_start, a_prod_anon_start, a_0_0]
               .as_ref()
               .to_vec(),
-            arena: Global
           },
         },
         /* 10 */
@@ -1550,7 +1380,6 @@ mod tests {
             ]
             .as_ref()
             .to_vec(),
-            arena: Global
           },
         },
       ]
@@ -1562,9 +1391,8 @@ mod tests {
     /* TODO: test `.find_start_end_indices()` and `.connect_all_vertices()` here
      * too! */
     let prods = basic_productions();
-    let state::preprocessing::Detokenized::<char, _>(grammar) = state::preprocessing::Init(prods)
-      .try_index_with_allocator(Global)
-      .unwrap();
+    let state::preprocessing::Detokenized::<char>(grammar) =
+      state::preprocessing::Init(prods).try_index().unwrap();
     let (interval_graph, _) = PreprocessedGrammar::produce_terminals_interval_graph(grammar);
     assert_eq!(&interval_graph, &EpsilonIntervalGraph {
       all_intervals: [
@@ -1580,7 +1408,6 @@ mod tests {
           ]
           .as_ref()
           .to_vec(),
-          arena: Global
         },
         ContiguousNonterminalInterval {
           interval: [
@@ -1592,7 +1419,6 @@ mod tests {
           ]
           .as_ref()
           .to_vec(),
-          arena: Global
         },
         ContiguousNonterminalInterval {
           interval: [
@@ -1604,7 +1430,6 @@ mod tests {
           ]
           .as_ref()
           .to_vec(),
-          arena: Global
         },
         ContiguousNonterminalInterval {
           interval: [
@@ -1617,7 +1442,6 @@ mod tests {
           ]
           .as_ref()
           .to_vec(),
-          arena: Global
         },
         ContiguousNonterminalInterval {
           interval: [
@@ -1628,7 +1452,6 @@ mod tests {
           ]
           .as_ref()
           .to_vec(),
-          arena: Global
         },
         ContiguousNonterminalInterval {
           interval: [
@@ -1639,7 +1462,6 @@ mod tests {
           ]
           .as_ref()
           .to_vec(),
-          arena: Global
         },
         ContiguousNonterminalInterval {
           interval: [
@@ -1650,7 +1472,6 @@ mod tests {
           ]
           .as_ref()
           .to_vec(),
-          arena: Global
         },
         ContiguousNonterminalInterval {
           interval: [
@@ -1661,7 +1482,6 @@ mod tests {
           ]
           .as_ref()
           .to_vec(),
-          arena: Global
         },
         ContiguousNonterminalInterval {
           interval: [
@@ -1672,7 +1492,6 @@ mod tests {
           ]
           .as_ref()
           .to_vec(),
-          arena: Global
         },
         ContiguousNonterminalInterval {
           interval: [
@@ -1683,7 +1502,6 @@ mod tests {
           ]
           .as_ref()
           .to_vec(),
-          arena: Global,
         },
         ContiguousNonterminalInterval {
           interval: [
@@ -1696,7 +1514,6 @@ mod tests {
           ]
           .as_ref()
           .to_vec(),
-          arena: Global,
         }
       ]
       .as_ref()
@@ -1763,9 +1580,7 @@ mod tests {
   #[test]
   fn noncyclic_transition_graph() {
     let prods = non_cyclic_productions();
-    let detokenized = state::preprocessing::Init(prods)
-      .try_index_with_allocator(Global)
-      .unwrap();
+    let detokenized = state::preprocessing::Init(prods).try_index().unwrap();
     let state::preprocessing::Indexed(preprocessed_grammar) = detokenized.index();
 
     let first_a = new_token_position(0, 0, 0);
@@ -1786,13 +1601,13 @@ mod tests {
       ]
       .iter()
       .cloned()
-      .collect::<IndexMap<_, _, Global, DefaultHasher>>(),
+      .collect::<IndexMap<_, _>>(),
     );
 
     let other_cyclic_graph_decomposition = CyclicGraphDecomposition {
       cyclic_subgraph: EpsilonNodeStateSubgraph {
-        vertex_mapping: IndexMap::<_, _, Global, DefaultHasher>::new_in(Global),
-        trie_node_universe: Vec::new_in(Global),
+        vertex_mapping: IndexMap::<_, _>::new(),
+        trie_node_universe: Vec::new(),
       },
       pairwise_state_transitions: [
         CompletedStatePairWithVertices {
@@ -1808,7 +1623,6 @@ mod tests {
             ]
             .as_ref()
             .to_vec(),
-            arena: Global,
           },
         },
         CompletedStatePairWithVertices {
@@ -1824,7 +1638,6 @@ mod tests {
             ]
             .as_ref()
             .to_vec(),
-            arena: Global,
           },
         },
         CompletedStatePairWithVertices {
@@ -1839,7 +1652,6 @@ mod tests {
             ]
             .as_ref()
             .to_vec(),
-            arena: Global,
           },
         },
         CompletedStatePairWithVertices {
@@ -1854,7 +1666,6 @@ mod tests {
             ]
             .as_ref()
             .to_vec(),
-            arena: Global,
           },
         },
         CompletedStatePairWithVertices {
@@ -1870,7 +1681,6 @@ mod tests {
             ]
             .as_ref()
             .to_vec(),
-            arena: Global,
           },
         },
         CompletedStatePairWithVertices {
@@ -1886,7 +1696,6 @@ mod tests {
             ]
             .as_ref()
             .to_vec(),
-            arena: Global,
           },
         },
         CompletedStatePairWithVertices {
@@ -1905,7 +1714,6 @@ mod tests {
             ]
             .as_ref()
             .to_vec(),
-            arena: Global,
           },
         },
         CompletedStatePairWithVertices {
@@ -1923,7 +1731,6 @@ mod tests {
             ]
             .as_ref()
             .to_vec(),
-            arena: Global,
           },
         },
         CompletedStatePairWithVertices {
@@ -1941,7 +1748,6 @@ mod tests {
             ]
             .as_ref()
             .to_vec(),
-            arena: Global,
           },
         },
         CompletedStatePairWithVertices {
@@ -1960,7 +1766,6 @@ mod tests {
             ]
             .as_ref()
             .to_vec(),
-            arena: Global,
           },
         },
       ]
@@ -1993,7 +1798,7 @@ mod tests {
       ]
       .iter()
       .cloned()
-      .collect::<IndexMap<_, _, Global, DefaultHasher>>(),
+      .collect::<IndexMap<_, _>>(),
     };
 
     assert_eq!(
@@ -2005,9 +1810,7 @@ mod tests {
   #[test]
   fn cyclic_transition_graph() {
     let prods = basic_productions();
-    let detokenized = state::preprocessing::Init(prods)
-      .try_index_with_allocator(Global)
-      .unwrap();
+    let detokenized = state::preprocessing::Init(prods).try_index().unwrap();
     let state::preprocessing::Indexed(preprocessed_grammar) = detokenized.index();
 
     let first_a = new_token_position(0, 0, 0);
@@ -2041,7 +1844,7 @@ mod tests {
       ]
       .iter()
       .cloned()
-      .collect::<IndexMap<_, _, Global, DefaultHasher>>()
+      .collect::<IndexMap<_, _>>()
     );
 
     assert_eq!(
@@ -2132,10 +1935,10 @@ mod tests {
       ]
       .iter()
       .cloned()
-      .collect::<IndexMap<_, _, Global, DefaultHasher>>()
+      .collect::<IndexMap<_, _>>()
     );
 
-    let all_trie_nodes: &[StackTrieNode<Global>] = preprocessed_grammar
+    let all_trie_nodes: &[StackTrieNode] = preprocessed_grammar
       .cyclic_graph_decomposition
       .cyclic_subgraph
       .trie_node_universe
@@ -2155,11 +1958,11 @@ mod tests {
           next_nodes: [StackTrieNextEntry::Incomplete(TrieNodeRef(1))]
             .iter()
             .cloned()
-            .collect::<IndexSet<_, Global, DefaultHasher>>(),
+            .collect::<IndexSet<_>>(),
           prev_nodes: [StackTrieNextEntry::Incomplete(TrieNodeRef(2))]
             .iter()
             .cloned()
-            .collect::<IndexSet<_, Global, DefaultHasher>>()
+            .collect::<IndexSet<_>>()
         },
         /* 1 */
         StackTrieNode {
@@ -2171,11 +1974,11 @@ mod tests {
           next_nodes: [StackTrieNextEntry::Incomplete(TrieNodeRef(2))]
             .iter()
             .cloned()
-            .collect::<IndexSet<_, Global, DefaultHasher>>(),
+            .collect::<IndexSet<_>>(),
           prev_nodes: [StackTrieNextEntry::Incomplete(TrieNodeRef(0))]
             .iter()
             .cloned()
-            .collect::<IndexSet<_, Global, DefaultHasher>>()
+            .collect::<IndexSet<_>>()
         },
         /* 2 */
         StackTrieNode {
@@ -2187,11 +1990,11 @@ mod tests {
           next_nodes: [StackTrieNextEntry::Incomplete(TrieNodeRef(0))]
             .iter()
             .cloned()
-            .collect::<IndexSet<_, Global, DefaultHasher>>(),
+            .collect::<IndexSet<_>>(),
           prev_nodes: [StackTrieNextEntry::Incomplete(TrieNodeRef(1))]
             .iter()
             .cloned()
-            .collect::<IndexSet<_, Global, DefaultHasher>>()
+            .collect::<IndexSet<_>>()
         },
         /* 3 */
         StackTrieNode {
@@ -2208,14 +2011,14 @@ mod tests {
           ]
           .iter()
           .cloned()
-          .collect::<IndexSet<_, Global, DefaultHasher>>(),
+          .collect::<IndexSet<_>>(),
           prev_nodes: [
             StackTrieNextEntry::Incomplete(TrieNodeRef(5)),
             StackTrieNextEntry::Incomplete(TrieNodeRef(17))
           ]
           .iter()
           .cloned()
-          .collect::<IndexSet<_, Global, DefaultHasher>>()
+          .collect::<IndexSet<_>>()
         },
         /* 4 */
         StackTrieNode {
@@ -2227,11 +2030,11 @@ mod tests {
           next_nodes: [StackTrieNextEntry::Incomplete(TrieNodeRef(5))]
             .iter()
             .cloned()
-            .collect::<IndexSet<_, Global, DefaultHasher>>(),
+            .collect::<IndexSet<_>>(),
           prev_nodes: [StackTrieNextEntry::Incomplete(TrieNodeRef(3))]
             .iter()
             .cloned()
-            .collect::<IndexSet<_, Global, DefaultHasher>>()
+            .collect::<IndexSet<_>>()
         },
         /* 5 */
         StackTrieNode {
@@ -2243,11 +2046,11 @@ mod tests {
           next_nodes: [StackTrieNextEntry::Incomplete(TrieNodeRef(3))]
             .iter()
             .cloned()
-            .collect::<IndexSet<_, Global, DefaultHasher>>(),
+            .collect::<IndexSet<_>>(),
           prev_nodes: [StackTrieNextEntry::Incomplete(TrieNodeRef(4))]
             .iter()
             .cloned()
-            .collect::<IndexSet<_, Global, DefaultHasher>>()
+            .collect::<IndexSet<_>>()
         },
         /* 6 */
         StackTrieNode {
@@ -2255,11 +2058,11 @@ mod tests {
           next_nodes: [StackTrieNextEntry::Incomplete(TrieNodeRef(7))]
             .iter()
             .cloned()
-            .collect::<IndexSet<_, Global, DefaultHasher>>(),
+            .collect::<IndexSet<_>>(),
           prev_nodes: [StackTrieNextEntry::Incomplete(TrieNodeRef(9))]
             .iter()
             .cloned()
-            .collect::<IndexSet<_, Global, DefaultHasher>>()
+            .collect::<IndexSet<_>>()
         },
         /* 7 */
         StackTrieNode {
@@ -2271,11 +2074,11 @@ mod tests {
           next_nodes: [StackTrieNextEntry::Incomplete(TrieNodeRef(8))]
             .iter()
             .cloned()
-            .collect::<IndexSet<_, Global, DefaultHasher>>(),
+            .collect::<IndexSet<_>>(),
           prev_nodes: [StackTrieNextEntry::Incomplete(TrieNodeRef(6))]
             .iter()
             .cloned()
-            .collect::<IndexSet<_, Global, DefaultHasher>>()
+            .collect::<IndexSet<_>>()
         },
         /* 8 */
         StackTrieNode {
@@ -2289,11 +2092,11 @@ mod tests {
           next_nodes: [StackTrieNextEntry::Incomplete(TrieNodeRef(9))]
             .iter()
             .cloned()
-            .collect::<IndexSet<_, Global, DefaultHasher>>(),
+            .collect::<IndexSet<_>>(),
           prev_nodes: [StackTrieNextEntry::Incomplete(TrieNodeRef(7))]
             .iter()
             .cloned()
-            .collect::<IndexSet<_, Global, DefaultHasher>>()
+            .collect::<IndexSet<_>>()
         },
         /* 9 */
         StackTrieNode {
@@ -2305,11 +2108,11 @@ mod tests {
           next_nodes: [StackTrieNextEntry::Incomplete(TrieNodeRef(6))]
             .iter()
             .cloned()
-            .collect::<IndexSet<_, Global, DefaultHasher>>(),
+            .collect::<IndexSet<_>>(),
           prev_nodes: [StackTrieNextEntry::Incomplete(TrieNodeRef(8))]
             .iter()
             .cloned()
-            .collect::<IndexSet<_, Global, DefaultHasher>>()
+            .collect::<IndexSet<_>>()
         },
         /* 10 */
         StackTrieNode {
@@ -2317,11 +2120,11 @@ mod tests {
           next_nodes: [StackTrieNextEntry::Incomplete(TrieNodeRef(11))]
             .iter()
             .cloned()
-            .collect::<IndexSet<_, Global, DefaultHasher>>(),
+            .collect::<IndexSet<_>>(),
           prev_nodes: [StackTrieNextEntry::Incomplete(TrieNodeRef(13))]
             .iter()
             .cloned()
-            .collect::<IndexSet<_, Global, DefaultHasher>>()
+            .collect::<IndexSet<_>>()
         },
         /* 11 */
         StackTrieNode {
@@ -2333,11 +2136,11 @@ mod tests {
           next_nodes: [StackTrieNextEntry::Incomplete(TrieNodeRef(12))]
             .iter()
             .cloned()
-            .collect::<IndexSet<_, Global, DefaultHasher>>(),
+            .collect::<IndexSet<_>>(),
           prev_nodes: [StackTrieNextEntry::Incomplete(TrieNodeRef(10))]
             .iter()
             .cloned()
-            .collect::<IndexSet<_, Global, DefaultHasher>>()
+            .collect::<IndexSet<_>>()
         },
         /* 12 */
         StackTrieNode {
@@ -2354,14 +2157,14 @@ mod tests {
           ]
           .iter()
           .cloned()
-          .collect::<IndexSet<_, Global, DefaultHasher>>(),
+          .collect::<IndexSet<_>>(),
           prev_nodes: [
             StackTrieNextEntry::Incomplete(TrieNodeRef(11)),
             StackTrieNextEntry::Incomplete(TrieNodeRef(15))
           ]
           .iter()
           .cloned()
-          .collect::<IndexSet<_, Global, DefaultHasher>>()
+          .collect::<IndexSet<_>>()
         },
         /* 13 */
         StackTrieNode {
@@ -2373,11 +2176,11 @@ mod tests {
           next_nodes: [StackTrieNextEntry::Incomplete(TrieNodeRef(10))]
             .iter()
             .cloned()
-            .collect::<IndexSet<_, Global, DefaultHasher>>(),
+            .collect::<IndexSet<_>>(),
           prev_nodes: [StackTrieNextEntry::Incomplete(TrieNodeRef(12))]
             .iter()
             .cloned()
-            .collect::<IndexSet<_, Global, DefaultHasher>>()
+            .collect::<IndexSet<_>>()
         },
         /* 14 */
         StackTrieNode {
@@ -2389,11 +2192,11 @@ mod tests {
           next_nodes: [StackTrieNextEntry::Incomplete(TrieNodeRef(15))]
             .iter()
             .cloned()
-            .collect::<IndexSet<_, Global, DefaultHasher>>(),
+            .collect::<IndexSet<_>>(),
           prev_nodes: [StackTrieNextEntry::Incomplete(TrieNodeRef(3))]
             .iter()
             .cloned()
-            .collect::<IndexSet<_, Global, DefaultHasher>>()
+            .collect::<IndexSet<_>>()
         },
         /* 15 */
         StackTrieNode {
@@ -2405,11 +2208,11 @@ mod tests {
           next_nodes: [StackTrieNextEntry::Incomplete(TrieNodeRef(12))]
             .iter()
             .cloned()
-            .collect::<IndexSet<_, Global, DefaultHasher>>(),
+            .collect::<IndexSet<_>>(),
           prev_nodes: [StackTrieNextEntry::Incomplete(TrieNodeRef(14))]
             .iter()
             .cloned()
-            .collect::<IndexSet<_, Global, DefaultHasher>>()
+            .collect::<IndexSet<_>>()
         },
         /* 16 */
         StackTrieNode {
@@ -2421,11 +2224,11 @@ mod tests {
           next_nodes: [StackTrieNextEntry::Incomplete(TrieNodeRef(17))]
             .iter()
             .cloned()
-            .collect::<IndexSet<_, Global, DefaultHasher>>(),
+            .collect::<IndexSet<_>>(),
           prev_nodes: [StackTrieNextEntry::Incomplete(TrieNodeRef(12))]
             .iter()
             .cloned()
-            .collect::<IndexSet<_, Global, DefaultHasher>>()
+            .collect::<IndexSet<_>>()
         },
         /* 17 */
         StackTrieNode {
@@ -2437,11 +2240,11 @@ mod tests {
           next_nodes: [StackTrieNextEntry::Incomplete(TrieNodeRef(3))]
             .iter()
             .cloned()
-            .collect::<IndexSet<_, Global, DefaultHasher>>(),
+            .collect::<IndexSet<_>>(),
           prev_nodes: [StackTrieNextEntry::Incomplete(TrieNodeRef(16))]
             .iter()
             .cloned()
-            .collect::<IndexSet<_, Global, DefaultHasher>>()
+            .collect::<IndexSet<_>>()
         }
       ]
       .as_ref()

@@ -1,4 +1,4 @@
-/* Copyright (C) 2021 Danny McClanahan <dmcC2@hypnicjerk.ai> */
+/* Copyright (C) 2021-2023 Danny McClanahan <dmcC2@hypnicjerk.ai> */
 /* SPDX-License-Identifier: AGPL-3.0 */
 
 //! TODO: this module should probably just be thrown out completely but may

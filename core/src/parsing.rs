@@ -1,7 +1,7 @@
 /*
  * Description: Implementation of parsing.
  *
- * Copyright (C) 2021-2022 Danny McClanahan <dmcC2@hypnicjerk.ai>
+ * Copyright (C) 2021-2023 Danny McClanahan <dmcC2@hypnicjerk.ai>
  * SPDX-License-Identifier: AGPL-3.0
  *
  * This program is free software: you can redistribute it and/or modify
@@ -21,24 +21,20 @@
 //! Implementation of parsing. Performance does *(eventually)* matter here.
 
 use crate::{
-  allocation::HandoffAllocable,
-  grammar_indexing as gi,
+  grammar_indexing as gi, grammar_specification as gs,
   lowering_to_indices::{grammar_building as gb, graph_coordinates as gc},
-  types::{DefaultHasher, Vec},
 };
 
 use indexmap::{IndexMap, IndexSet};
 use priority_queue::PriorityQueue;
 
 use core::{
-  alloc::Allocator,
   cmp, fmt,
   hash::{Hash, Hasher},
 };
 
 #[derive(Debug, Clone)]
-pub struct Input<Tok, Arena>(pub Vec<Tok, Arena>)
-where Arena: Allocator;
+pub struct Input<Tok>(pub Vec<Tok>);
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub struct InputTokenIndex(pub usize);
@@ -70,25 +66,13 @@ trait SpansRange {
 
 /// A flattened version of the information in a [SpanningSubtree].
 #[derive(Clone)]
-pub struct FlattenedSpanInfo<Arena>
-where Arena: Allocator
-{
+pub struct FlattenedSpanInfo {
   pub state_pair: gi::StatePair,
   pub input_range: InputRange,
-  pub stack_diff: gi::StackDiffSegment<Arena>,
+  pub stack_diff: gi::StackDiffSegment,
 }
 
-impl<Arena> HandoffAllocable for FlattenedSpanInfo<Arena>
-where Arena: Allocator+Clone
-{
-  type Arena = Arena;
-
-  fn allocator_handoff(&self) -> Arena { self.stack_diff.allocator_handoff() }
-}
-
-impl<Arena> PartialEq for FlattenedSpanInfo<Arena>
-where Arena: Allocator
-{
+impl PartialEq for FlattenedSpanInfo {
   fn eq(&self, other: &Self) -> bool {
     self.state_pair == other.state_pair
       && self.input_range == other.input_range
@@ -96,11 +80,9 @@ where Arena: Allocator
   }
 }
 
-impl<Arena> Eq for FlattenedSpanInfo<Arena> where Arena: Allocator {}
+impl Eq for FlattenedSpanInfo {}
 
-impl<Arena> fmt::Debug for FlattenedSpanInfo<Arena>
-where Arena: Allocator
-{
+impl fmt::Debug for FlattenedSpanInfo {
   fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
     write!(
       f,
@@ -110,9 +92,7 @@ where Arena: Allocator
   }
 }
 
-impl<Arena> Hash for FlattenedSpanInfo<Arena>
-where Arena: Allocator
-{
+impl Hash for FlattenedSpanInfo {
   fn hash<H: Hasher>(&self, state: &mut H) {
     self.state_pair.hash(state);
     self.input_range.hash(state);
@@ -132,34 +112,20 @@ pub struct ParentInfo {
 /// We want to have a consistent `id` within each [SpanningSubtree], so we add
 /// new trees via a specific method which assigns them an id.
 #[derive(Clone)]
-pub struct SpanningSubtreeToCreate<Arena>
-where Arena: Allocator
-{
-  pub input_span: FlattenedSpanInfo<Arena>,
+pub struct SpanningSubtreeToCreate {
+  pub input_span: FlattenedSpanInfo,
   pub parents: Option<ParentInfo>,
 }
 
-impl<Arena> HandoffAllocable for SpanningSubtreeToCreate<Arena>
-where Arena: Allocator+Clone
-{
-  type Arena = Arena;
-
-  fn allocator_handoff(&self) -> Arena { self.input_span.allocator_handoff() }
-}
-
-impl<Arena> PartialEq for SpanningSubtreeToCreate<Arena>
-where Arena: Allocator
-{
+impl PartialEq for SpanningSubtreeToCreate {
   fn eq(&self, other: &Self) -> bool {
     self.input_span == other.input_span && self.parents == other.parents
   }
 }
 
-impl<Arena> Eq for SpanningSubtreeToCreate<Arena> where Arena: Allocator {}
+impl Eq for SpanningSubtreeToCreate {}
 
-impl<Arena> fmt::Debug for SpanningSubtreeToCreate<Arena>
-where Arena: Allocator
-{
+impl fmt::Debug for SpanningSubtreeToCreate {
   fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
     write!(
       f,
@@ -169,9 +135,7 @@ where Arena: Allocator
   }
 }
 
-impl<Arena> Hash for SpanningSubtreeToCreate<Arena>
-where Arena: Allocator
-{
+impl Hash for SpanningSubtreeToCreate {
   fn hash<H: Hasher>(&self, state: &mut H) {
     self.input_span.hash(state);
     self.parents.hash(state);
@@ -179,59 +143,39 @@ where Arena: Allocator
 }
 
 #[derive(Debug, Clone)]
-pub struct CompletelyFlattenedSubtree<Arena>
-where Arena: Allocator
-{
-  pub states: Vec<gi::LoweredState, Arena>,
+pub struct CompletelyFlattenedSubtree {
+  pub states: Vec<gi::LoweredState>,
   pub input_range: InputRange,
 }
 
-impl<Arena> PartialEq for CompletelyFlattenedSubtree<Arena>
-where Arena: Allocator
-{
+impl PartialEq for CompletelyFlattenedSubtree {
   fn eq(&self, other: &Self) -> bool {
     self.states == other.states && self.input_range == other.input_range
   }
 }
 
-impl<Arena> Eq for CompletelyFlattenedSubtree<Arena> where Arena: Allocator {}
+impl Eq for CompletelyFlattenedSubtree {}
 
-pub trait FlattenableToStates<Arena>
-where Arena: Allocator+Clone
-{
-  fn flatten_to_states(&self, parse: &Parse<Arena>) -> CompletelyFlattenedSubtree<Arena>;
+pub trait FlattenableToStates {
+  fn flatten_to_states(&self, parse: &Parse) -> CompletelyFlattenedSubtree;
 }
 
 #[derive(Clone)]
-pub struct SpanningSubtree<Arena>
-where Arena: Allocator
-{
-  pub input_span: FlattenedSpanInfo<Arena>,
+pub struct SpanningSubtree {
+  pub input_span: FlattenedSpanInfo,
   pub parents: Option<ParentInfo>,
   pub id: SpanningSubtreeRef,
 }
 
-impl<Arena> HandoffAllocable for SpanningSubtree<Arena>
-where Arena: Allocator+Clone
-{
-  type Arena = Arena;
-
-  fn allocator_handoff(&self) -> Arena { self.input_span.allocator_handoff() }
-}
-
-impl<Arena> PartialEq for SpanningSubtree<Arena>
-where Arena: Allocator
-{
+impl PartialEq for SpanningSubtree {
   fn eq(&self, other: &Self) -> bool {
     self.input_span == other.input_span && self.parents == other.parents && self.id == other.id
   }
 }
 
-impl<Arena> Eq for SpanningSubtree<Arena> where Arena: Allocator {}
+impl Eq for SpanningSubtree {}
 
-impl<Arena> fmt::Debug for SpanningSubtree<Arena>
-where Arena: Allocator
-{
+impl fmt::Debug for SpanningSubtree {
   fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
     write!(
       f,
@@ -241,9 +185,7 @@ where Arena: Allocator
   }
 }
 
-impl<Arena> Hash for SpanningSubtree<Arena>
-where Arena: Allocator
-{
+impl Hash for SpanningSubtree {
   fn hash<H: Hasher>(&self, state: &mut H) {
     self.input_span.hash(state);
     self.parents.hash(state);
@@ -251,14 +193,11 @@ where Arena: Allocator
   }
 }
 
-impl<Arena> FlattenableToStates<Arena> for SpanningSubtree<Arena>
-where Arena: Allocator+Clone
-{
-  fn flatten_to_states(&self, parse: &Parse<Arena>) -> CompletelyFlattenedSubtree<Arena> {
-    let arena = self.allocator_handoff();
+impl FlattenableToStates for SpanningSubtree {
+  fn flatten_to_states(&self, parse: &Parse) -> CompletelyFlattenedSubtree {
     match self.parents {
       None => {
-        let mut states: Vec<_, Arena> = Vec::with_capacity_in(2, arena);
+        let mut states: Vec<_> = Vec::with_capacity(2);
         states.extend_from_slice(&[
           self.input_span.state_pair.left,
           self.input_span.state_pair.right,
@@ -297,8 +236,8 @@ where Arena: Allocator+Clone
         assert_eq!(left_range.right_index.0, right_range.left_index.0);
         assert_eq!(left_states.last(), right_states.first());
         let right = &right_states[1..];
-        let mut linked_states: Vec<gi::LoweredState, Arena> =
-          Vec::with_capacity_in(left_states.len() + right.len(), arena);
+        let mut linked_states: Vec<gi::LoweredState> =
+          Vec::with_capacity(left_states.len() + right.len());
         linked_states.extend_from_slice(&left_states);
         linked_states.extend_from_slice(right);
         CompletelyFlattenedSubtree {
@@ -310,9 +249,7 @@ where Arena: Allocator+Clone
   }
 }
 
-impl<Arena> SpansRange for SpanningSubtree<Arena>
-where Arena: Allocator
-{
+impl SpansRange for SpanningSubtree {
   fn range(&self) -> InputRange {
     let SpanningSubtree {
       input_span: FlattenedSpanInfo { input_range, .. },
@@ -323,38 +260,22 @@ where Arena: Allocator
 }
 
 #[derive(Debug, Clone)]
-pub struct PossibleStates<Arena>(pub Vec<gi::LoweredState, Arena>)
-where Arena: Allocator;
+pub struct PossibleStates(pub Vec<gi::LoweredState>);
 
-impl<Arena> PartialEq for PossibleStates<Arena>
-where Arena: Allocator
-{
+impl PartialEq for PossibleStates {
   fn eq(&self, other: &Self) -> bool { self.0 == other.0 }
 }
 
-impl<Arena> Eq for PossibleStates<Arena> where Arena: Allocator {}
+impl Eq for PossibleStates {}
 
 #[derive(Debug, Clone)]
-pub struct ParseableGrammar<Arena>
-where Arena: Allocator+Clone
-{
-  pub input_as_states: Vec<PossibleStates<Arena>, Arena>,
-  pub pairwise_state_transition_table:
-    IndexMap<gi::StatePair, Vec<gi::StackDiffSegment<Arena>, Arena>, Arena, DefaultHasher>,
-  pub anon_step_mapping: IndexMap<gi::AnonSym, gi::UnflattenedProdCaseRef, Arena, DefaultHasher>,
+pub struct ParseableGrammar {
+  pub input_as_states: Vec<PossibleStates>,
+  pub pairwise_state_transition_table: IndexMap<gi::StatePair, Vec<gi::StackDiffSegment>>,
+  pub anon_step_mapping: IndexMap<gi::AnonSym, gi::UnflattenedProdCaseRef>,
 }
 
-impl<Arena> HandoffAllocable for ParseableGrammar<Arena>
-where Arena: Allocator+Clone
-{
-  type Arena = Arena;
-
-  fn allocator_handoff(&self) -> Arena { self.anon_step_mapping.arena() }
-}
-
-impl<Arena> PartialEq for ParseableGrammar<Arena>
-where Arena: Allocator+Clone
-{
+impl PartialEq for ParseableGrammar {
   fn eq(&self, other: &Self) -> bool {
     self.input_as_states == other.input_as_states
       && self.pairwise_state_transition_table == other.pairwise_state_transition_table
@@ -362,39 +283,30 @@ where Arena: Allocator+Clone
   }
 }
 
-impl<Arena> Eq for ParseableGrammar<Arena> where Arena: Allocator+Clone {}
+impl Eq for ParseableGrammar {}
 
-impl<Arena> ParseableGrammar<Arena>
-where Arena: Allocator+Clone
-{
+impl ParseableGrammar {
   /* TODO: get the transitive closure of this to get all the consecutive series
    * of states *over* length 2 and their corresponding stack diffs -- this
    * enables e.g. the use of SIMD instructions to find those series of
    * states! */
   fn connect_stack_diffs(
-    transitions: &[gi::CompletedStatePairWithVertices<Arena>],
-    arena: Arena,
-  ) -> IndexMap<gi::StatePair, Vec<gi::StackDiffSegment<Arena>, Arena>, Arena, DefaultHasher> {
-    let mut paired_segments: IndexMap<
-      gi::StatePair,
-      Vec<gi::StackDiffSegment<Arena>, Arena>,
-      Arena,
-      DefaultHasher,
-    > = IndexMap::new_in(arena);
+    transitions: &[gi::CompletedStatePairWithVertices],
+  ) -> IndexMap<gi::StatePair, Vec<gi::StackDiffSegment>> {
+    let mut paired_segments: IndexMap<gi::StatePair, Vec<gi::StackDiffSegment>> = IndexMap::new();
 
     for single_transition in transitions.iter() {
       let gi::CompletedStatePairWithVertices {
         state_pair,
-        /* FIXME: why do we care about this separate (?) arena? */
-        interval: gi::ContiguousNonterminalInterval { interval, arena },
+        interval: gi::ContiguousNonterminalInterval { interval },
       } = single_transition;
 
-      let mut diff: Vec<_, Arena> = Vec::new_in(arena.clone());
+      let mut diff: Vec<_> = Vec::new();
       diff.extend(interval.iter().flat_map(|vtx| vtx.get_step()));
 
       let cur_entry = paired_segments
         .entry(*state_pair)
-        .or_insert_with(|| Vec::new_in(arena.clone()));
+        .or_insert_with(|| Vec::new());
       (*cur_entry).push(gi::StackDiffSegment(diff));
     }
 
@@ -402,20 +314,18 @@ where Arena: Allocator+Clone
   }
 
   fn get_possible_states_for_input<Tok>(
-    tokens: &gb::InternedLookupTable<Tok, gc::TokRef, Arena>,
-    input: &Input<Tok, Arena>,
-  ) -> Result<Vec<PossibleStates<Arena>, Arena>, ParsingInputFailure<Tok>>
+    tokens: &gb::InternedLookupTable<Tok, gc::TokRef>,
+    input: &Input<Tok>,
+  ) -> Result<Vec<PossibleStates>, ParsingInputFailure<Tok>>
   where
     Tok: crate::grammar_specification::types::Hashable+fmt::Debug+Clone,
   {
-    let arena = tokens.allocator_handoff();
-
     /* NB: Bookend the internal states with Start and End states (creating a
      * vector with 2 more entries than `input`)! */
-    let mut st: Vec<_, Arena> = Vec::with_capacity_in(1, arena.clone());
+    let mut st: Vec<_> = Vec::with_capacity(1);
     st.push(gi::LoweredState::Start);
 
-    let mut ps: Vec<PossibleStates<Arena>, Arena> = Vec::new_in(arena.clone());
+    let mut ps: Vec<PossibleStates> = Vec::new();
     ps.push(PossibleStates(st));
 
     for tok in input.0.iter() {
@@ -425,7 +335,7 @@ where Arena: Allocator+Clone
       let tok_positions = tokens
         .get(tok_ref)
         .ok_or(ParsingInputFailure::UnknownTokRef(tok_ref))?;
-      let mut states: Vec<_, Arena> = Vec::with_capacity_in(tok_positions.len(), arena.clone());
+      let mut states: Vec<_> = Vec::with_capacity(tok_positions.len());
       states.extend(
         tok_positions
           .iter()
@@ -434,7 +344,7 @@ where Arena: Allocator+Clone
       ps.push(PossibleStates(states));
     }
 
-    let mut end: Vec<_, Arena> = Vec::with_capacity_in(1, arena);
+    let mut end: Vec<_> = Vec::with_capacity(1);
     end.push(gi::LoweredState::End);
     ps.push(PossibleStates(end));
 
@@ -442,13 +352,12 @@ where Arena: Allocator+Clone
   }
 
   pub fn new<Tok>(
-    grammar: gi::PreprocessedGrammar<Tok, Arena>,
-    input: &Input<Tok, Arena>,
+    grammar: gi::PreprocessedGrammar<Tok>,
+    input: &Input<Tok>,
   ) -> Result<Self, ParsingInputFailure<Tok>>
   where
-    Tok: Hash+Eq+fmt::Debug+Clone,
+    Tok: gs::types::Hashable+fmt::Debug+Clone,
   {
-    let arena = grammar.allocator_handoff();
     let gi::PreprocessedGrammar {
       cyclic_graph_decomposition:
         gi::CyclicGraphDecomposition {
@@ -459,14 +368,8 @@ where Arena: Allocator+Clone
       token_states_mapping,
     } = grammar;
     Ok(ParseableGrammar {
-      input_as_states: Self::get_possible_states_for_input(
-        &token_states_mapping,
-        input,
-      )?,
-      pairwise_state_transition_table: Self::connect_stack_diffs(
-        &pairwise_state_transitions,
-        arena,
-      ),
+      input_as_states: Self::get_possible_states_for_input(&token_states_mapping, input)?,
+      pairwise_state_transition_table: Self::connect_stack_diffs(&pairwise_state_transitions),
       anon_step_mapping,
     })
   }
@@ -490,38 +393,16 @@ pub enum ParsingFailure {
 }
 
 #[derive(Debug, Clone)]
-pub struct Parse<Arena>
-where Arena: Allocator+Clone
-{
-  pub spans: PriorityQueue<SpanningSubtree<Arena>, usize, Arena, DefaultHasher>,
-  pub grammar: ParseableGrammar<Arena>,
+pub struct Parse {
+  pub spans: PriorityQueue<SpanningSubtree, usize>,
+  pub grammar: ParseableGrammar,
   /* TODO: lexicographically sort these! */
-  pub finishes_at_left: IndexMap<
-    InputTokenIndex,
-    IndexSet<SpanningSubtree<Arena>, Arena, DefaultHasher>,
-    Arena,
-    DefaultHasher,
-  >,
-  pub finishes_at_right: IndexMap<
-    InputTokenIndex,
-    IndexSet<SpanningSubtree<Arena>, Arena, DefaultHasher>,
-    Arena,
-    DefaultHasher,
-  >,
-  pub spanning_subtree_table: Vec<SpanningSubtree<Arena>, Arena>,
+  pub finishes_at_left: IndexMap<InputTokenIndex, IndexSet<SpanningSubtree>>,
+  pub finishes_at_right: IndexMap<InputTokenIndex, IndexSet<SpanningSubtree>>,
+  pub spanning_subtree_table: Vec<SpanningSubtree>,
 }
 
-impl<Arena> HandoffAllocable for Parse<Arena>
-where Arena: Allocator+Clone
-{
-  type Arena = Arena;
-
-  fn allocator_handoff(&self) -> Arena { self.grammar.allocator_handoff() }
-}
-
-impl<Arena> Parse<Arena>
-where Arena: Allocator+Clone
-{
+impl Parse {
   #[cfg(test)]
   pub fn get_next_parse(&mut self) -> SpanningSubtreeRef {
     loop {
@@ -536,19 +417,17 @@ where Arena: Allocator+Clone
   }
 
   /* NB: Intentionally private! */
-  fn new(grammar: ParseableGrammar<Arena>) -> Self {
-    let arena = grammar.allocator_handoff();
+  fn new(grammar: ParseableGrammar) -> Self {
     Parse {
-      spans: PriorityQueue::new_in(arena.clone()),
+      spans: PriorityQueue::new(),
       grammar,
-      finishes_at_left: IndexMap::new_in(arena.clone()),
-      finishes_at_right: IndexMap::new_in(arena.clone()),
-      spanning_subtree_table: Vec::new_in(arena),
+      finishes_at_left: IndexMap::new(),
+      finishes_at_right: IndexMap::new(),
+      spanning_subtree_table: Vec::new(),
     }
   }
 
-  fn add_spanning_subtree(&mut self, span: &SpanningSubtreeToCreate<Arena>) {
-    let arena = span.allocator_handoff();
+  fn add_spanning_subtree(&mut self, span: &SpanningSubtreeToCreate) {
     let SpanningSubtreeToCreate {
       input_span:
         FlattenedSpanInfo {
@@ -572,12 +451,12 @@ where Arena: Allocator+Clone
     let left_entry = self
       .finishes_at_left
       .entry(left_index)
-      .or_insert_with(|| IndexSet::new_in(arena.clone()));
+      .or_insert_with(|| IndexSet::new());
     (*left_entry).insert(new_span.clone());
     let right_entry = self
       .finishes_at_right
       .entry(right_index)
-      .or_insert_with(|| IndexSet::new_in(arena.clone()));
+      .or_insert_with(|| IndexSet::new());
     (*right_entry).insert(new_span.clone());
 
     self.spans.push(new_span.clone(), new_span.range().width());
@@ -587,12 +466,10 @@ where Arena: Allocator+Clone
     pair: &gi::StatePair,
     left_index: InputTokenIndex,
     right_index: InputTokenIndex,
-    diffs: Vec<gi::StackDiffSegment<Arena>, Arena>,
-  ) -> IndexSet<SpanningSubtreeToCreate<Arena>, Arena, DefaultHasher> {
-    let arena = diffs.allocator().clone();
+    diffs: Vec<gi::StackDiffSegment>,
+  ) -> IndexSet<SpanningSubtreeToCreate> {
     let gi::StatePair { left, right } = pair;
-    let mut ret: IndexSet<SpanningSubtreeToCreate<Arena>, Arena, DefaultHasher> =
-      IndexSet::with_capacity_in(diffs.len(), arena);
+    let mut ret: IndexSet<SpanningSubtreeToCreate> = IndexSet::with_capacity(diffs.len());
     ret.extend(diffs.into_iter().map(|stack_diff| SpanningSubtreeToCreate {
       input_span: FlattenedSpanInfo {
         state_pair: gi::StatePair {
@@ -608,9 +485,7 @@ where Arena: Allocator+Clone
     ret
   }
 
-  pub fn initialize_with_trees_for_adjacent_pairs(grammar: ParseableGrammar<Arena>) -> Self {
-    let arena = grammar.allocator_handoff();
-
+  pub fn initialize_with_trees_for_adjacent_pairs(grammar: ParseableGrammar) -> Self {
     let mut parse = Self::new(grammar.clone());
 
     let ParseableGrammar {
@@ -632,7 +507,7 @@ where Arena: Allocator+Clone
           let stack_diffs = pairwise_state_transition_table
             .get(&pair)
             .cloned()
-            .unwrap_or_else(|| Vec::new_in(arena.clone()));
+            .unwrap_or_else(|| Vec::new());
 
           for new_tree in Self::generate_subtrees_for_pair(
             &pair,
@@ -654,11 +529,9 @@ where Arena: Allocator+Clone
   /* Given two adjacent stack diffs, check whether they are compatible, and if
    * so, return the resulting stack diff from joining them. */
   fn stack_diff_pair_zipper(
-    left_diff: gi::StackDiffSegment<Arena>,
-    right_diff: gi::StackDiffSegment<Arena>,
-  ) -> Option<gi::StackDiffSegment<Arena>> {
-    let arena = left_diff.allocator_handoff();
-
+    left_diff: gi::StackDiffSegment,
+    right_diff: gi::StackDiffSegment,
+  ) -> Option<gi::StackDiffSegment> {
     let gi::StackDiffSegment(left_steps) = left_diff;
     let gi::StackDiffSegment(right_steps) = right_diff;
 
@@ -669,29 +542,26 @@ where Arena: Allocator+Clone
 
     /* To get the same number of elements in both left and right, we reverse the
      * left, take off some elements, then reverse it back. */
-    let mut rev_left: Vec<gi::NamedOrAnonStep, Arena> =
-      Vec::with_capacity_in(left_steps.len(), arena.clone());
+    let mut rev_left: Vec<gi::NamedOrAnonStep> = Vec::with_capacity(left_steps.len());
     rev_left.extend(left_steps.into_iter().rev());
 
     /* NB: We keep the left zippered elements reversed so that we compare stack
      * elements outward from the center along both the left and right
      * sides. */
-    let mut cmp_left: Vec<gi::NamedOrAnonStep, Arena> =
-      Vec::with_capacity_in(min_length, arena.clone());
+    let mut cmp_left: Vec<gi::NamedOrAnonStep> = Vec::with_capacity(min_length);
     cmp_left.extend(rev_left.iter().cloned().take(min_length));
 
-    let mut cmp_right: Vec<gi::NamedOrAnonStep, Arena> =
-      Vec::with_capacity_in(min_length, arena.clone());
+    let mut cmp_right: Vec<gi::NamedOrAnonStep> = Vec::with_capacity(min_length);
     cmp_right.extend(right_steps.iter().cloned().take(min_length));
 
-    let mut leftover_left: Vec<gi::NamedOrAnonStep, Arena> = Vec::new_in(arena.clone());
+    let mut leftover_left: Vec<gi::NamedOrAnonStep> = Vec::new();
     leftover_left.extend(rev_left.iter().cloned().skip(min_length).rev());
 
-    let mut leftover_right: Vec<gi::NamedOrAnonStep, Arena> = Vec::new_in(arena.clone());
+    let mut leftover_right: Vec<gi::NamedOrAnonStep> = Vec::new();
     leftover_right.extend(right_steps.iter().cloned().skip(min_length));
     assert!(leftover_left.is_empty() || leftover_right.is_empty());
 
-    let mut connected: Vec<gi::NamedOrAnonStep, Arena> = Vec::new_in(arena.clone());
+    let mut connected: Vec<gi::NamedOrAnonStep> = Vec::new();
     for i in 0..min_length {
       match cmp_left[i].sequence(cmp_right[i]) {
         Ok(None) => (),
@@ -712,10 +582,8 @@ where Arena: Allocator+Clone
 
     /* Put the leftover left and right on the left and right of the resulting
      * stack steps! */
-    let mut all_steps: Vec<gi::NamedOrAnonStep, Arena> = Vec::with_capacity_in(
-      leftover_left.len() + connected.len() + leftover_right.len(),
-      arena,
-    );
+    let mut all_steps: Vec<gi::NamedOrAnonStep> =
+      Vec::with_capacity(leftover_left.len() + connected.len() + leftover_right.len());
     all_steps.extend(
       leftover_left
         .into_iter()
@@ -726,10 +594,7 @@ where Arena: Allocator+Clone
     Some(gi::StackDiffSegment(all_steps))
   }
 
-  pub fn get_spanning_subtree(
-    &self,
-    span_ref: SpanningSubtreeRef,
-  ) -> Option<&SpanningSubtree<Arena>> {
+  pub fn get_spanning_subtree(&self, span_ref: SpanningSubtreeRef) -> Option<&SpanningSubtree> {
     self.spanning_subtree_table.get(span_ref.0)
   }
 
@@ -737,7 +602,6 @@ where Arena: Allocator+Clone
     /* dbg!(&self.spans); */
     /* dbg!(&self.finishes_at_left); */
     /* dbg!(&self.finishes_at_right); */
-    let arena = self.allocator_handoff();
     let maybe_front = self.spans.pop();
     if let Some((cur_span, _priority)) = maybe_front {
       let SpanningSubtree {
@@ -767,7 +631,7 @@ where Arena: Allocator+Clone
         .finishes_at_left
         .get(&InputTokenIndex(cur_right_index))
         .cloned()
-        .unwrap_or_else(|| IndexSet::new_in(arena.clone()))
+        .unwrap_or_else(|| IndexSet::new())
         .iter()
       {
         /* dbg!(&right_neighbor); */
@@ -821,11 +685,7 @@ where Arena: Allocator+Clone
       } else {
         self.finishes_at_right.get(&InputTokenIndex(cur_left_index))
       };
-      for left_neighbor in maybe_set
-        .cloned()
-        .unwrap_or_else(|| IndexSet::new_in(arena.clone()))
-        .iter()
-      {
+      for left_neighbor in maybe_set.cloned().unwrap_or_else(|| IndexSet::new()).iter() {
         /* dbg!(&left_neighbor); */
         let SpanningSubtree {
           input_span:
@@ -894,20 +754,17 @@ mod tests {
   use crate::{
     grammar_indexing as gi, state,
     test_framework::{new_token_position, non_cyclic_productions},
-    types::Global,
   };
 
   #[test]
   fn dynamic_parse_state() {
     let prods = non_cyclic_productions();
 
-    let detokenized = state::preprocessing::Init(prods)
-      .try_index_with_allocator(Global)
-      .unwrap();
+    let detokenized = state::preprocessing::Init(prods).try_index().unwrap();
     let indexed = detokenized.index();
     let string_input = "ab";
     let input = Input(string_input.chars().collect());
-    let parseable_grammar: ParseableGrammar<Global> = indexed.attach_input(&input).unwrap().0;
+    let parseable_grammar: ParseableGrammar = indexed.attach_input(&input).unwrap().0;
 
     assert_eq!(
       parseable_grammar.input_as_states.clone(),
@@ -1085,7 +942,7 @@ mod tests {
       .as_ref()
       .to_vec()
       .into_iter()
-      .collect::<IndexMap<gi::StatePair, Vec<gi::StackDiffSegment<Global>>>>()
+      .collect::<IndexMap<gi::StatePair, Vec<gi::StackDiffSegment>>>()
     );
 
     let mut parse = state::active::Ready::new(parseable_grammar.clone())
@@ -1277,17 +1134,16 @@ mod tests {
       .as_ref()
       .to_vec()
     );
-    let all_spans: Vec<SpanningSubtree<Global>> =
-      spans.into_iter().map(|(x, _)| x.clone()).collect();
+    let all_spans: Vec<SpanningSubtree> = spans.into_iter().map(|(x, _)| x.clone()).collect();
 
-    fn get_span(all_spans: &Vec<SpanningSubtree<Global>>, index: usize) -> SpanningSubtree<Global> {
+    fn get_span(all_spans: &Vec<SpanningSubtree>, index: usize) -> SpanningSubtree {
       all_spans.get(index).unwrap().clone()
     }
 
     fn collect_spans(
-      all_spans: &Vec<SpanningSubtree<Global>>,
+      all_spans: &Vec<SpanningSubtree>,
       indices: Vec<usize>,
-    ) -> IndexSet<SpanningSubtree<Global>, Global, DefaultHasher> {
+    ) -> IndexSet<SpanningSubtree> {
       indices
         .into_iter()
         .map(|x| get_span(all_spans, x))
@@ -1295,12 +1151,7 @@ mod tests {
     }
 
     /* NB: These explicit type ascriptions are necessary for some reason... */
-    let expected_at_left: IndexMap<
-      InputTokenIndex,
-      IndexSet<SpanningSubtree<Global>, Global, DefaultHasher>,
-      Global,
-      DefaultHasher,
-    > = [
+    let expected_at_left: IndexMap<InputTokenIndex, IndexSet<SpanningSubtree>> = [
       (
         InputTokenIndex(0),
         collect_spans(&all_spans, [0, 1, 2].as_ref().to_vec()),
@@ -1319,12 +1170,7 @@ mod tests {
     .collect();
     assert_eq!(finishes_at_left, expected_at_left);
 
-    let expected_at_right: IndexMap<
-      InputTokenIndex,
-      IndexSet<SpanningSubtree<Global>, Global, DefaultHasher>,
-      Global,
-      DefaultHasher,
-    > = [
+    let expected_at_right: IndexMap<InputTokenIndex, IndexSet<SpanningSubtree>> = [
       (
         InputTokenIndex(1),
         collect_spans(&all_spans, [0, 1, 2].as_ref().to_vec()),

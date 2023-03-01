@@ -1,7 +1,7 @@
 /*
  * Description: Allocate objects within an arena and give them names.
  *
- * Copyright (C) 2021-2022 Danny McClanahan <dmcC2@hypnicjerk.ai>
+ * Copyright (C) 2021-2023 Danny McClanahan <dmcC2@hypnicjerk.ai>
  * SPDX-License-Identifier: AGPL-3.0
  *
  * This program is free software: you can redistribute it and/or modify
@@ -18,52 +18,33 @@
  * along with this program.  If not, see <https://www.gnu.org/licenses/>.
  */
 
-use crate::{allocation::HandoffAllocable, types::Vec};
+use core::{fmt, marker::PhantomData};
 
-use core::{alloc::Allocator, fmt, marker::PhantomData};
-
-pub struct InternArena<T, R, Arena>
-where Arena: Allocator
-{
-  obarray: Vec<T, Arena>,
+pub struct InternArena<T, R> {
+  obarray: Vec<T>,
   #[doc(hidden)]
   _x: PhantomData<R>,
 }
 
-impl<T, R, Arena> fmt::Debug for InternArena<T, R, Arena>
-where
-  T: fmt::Debug,
-  Arena: Allocator,
+impl<T, R> fmt::Debug for InternArena<T, R>
+where T: fmt::Debug
 {
   fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
     write!(f, "InternArena({:?})", &self.obarray)
   }
 }
 
-impl<T, R, Arena> InternArena<T, R, Arena>
-where Arena: Allocator
-{
-  pub fn new(arena: Arena) -> Self {
+impl<T, R> InternArena<T, R> {
+  pub fn new() -> Self {
     Self {
-      obarray: Vec::new_in(arena),
+      obarray: Vec::new(),
       _x: PhantomData,
     }
   }
 }
 
-impl<T, R, Arena> HandoffAllocable for InternArena<T, R, Arena>
-where Arena: Allocator+Clone
-{
-  type Arena = Arena;
-
-  fn allocator_handoff(&self) -> Arena { self.obarray.allocator().clone() }
-}
-
-
-impl<T, R, Arena> Clone for InternArena<T, R, Arena>
-where
-  T: Clone,
-  Arena: Allocator+Clone,
+impl<T, R> Clone for InternArena<T, R>
+where T: Clone
 {
   fn clone(&self) -> Self {
     Self {
@@ -73,10 +54,8 @@ where
   }
 }
 
-impl<T, R, Arena> InternArena<T, R, Arena>
-where
-  R: From<usize>,
-  Arena: Allocator,
+impl<T, R> InternArena<T, R>
+where R: From<usize>
 {
   pub fn intern_always_new_increasing(&mut self, x: T) -> R {
     self.obarray.push(x);
@@ -85,13 +64,11 @@ where
   }
 }
 
-impl<T, R, Arena> InternArena<T, R, Arena>
-where
-  R: From<usize>,
-  Arena: Allocator+Clone,
+impl<T, R> InternArena<T, R>
+where R: From<usize>
 {
-  pub fn into_vec(self) -> Vec<(R, T), Arena> {
-    let mut ret: Vec<(R, T), Arena> = Vec::new_in(self.allocator_handoff());
+  pub fn into_vec(self) -> Vec<(R, T)> {
+    let mut ret: Vec<(R, T)> = Vec::new();
     let pairs = self
       .obarray
       .into_iter()
@@ -102,12 +79,10 @@ where
   }
 }
 
-impl<T, R, Arena> From<Vec<T, Arena>> for InternArena<T, R, Arena>
-where
-  R: From<usize>,
-  Arena: Allocator,
+impl<T, R> From<Vec<T>> for InternArena<T, R>
+where R: From<usize>
 {
-  fn from(value: Vec<T, Arena>) -> Self {
+  fn from(value: Vec<T>) -> Self {
     Self {
       obarray: value,
       _x: PhantomData,
@@ -115,11 +90,10 @@ where
   }
 }
 
-impl<T, R, Arena> InternArena<T, R, Arena>
+impl<T, R> InternArena<T, R>
 where
   T: Eq,
   R: From<usize>,
-  Arena: Allocator,
 {
   fn key_for(&self, x: &T) -> Option<R> { self.obarray.iter().position(|y| y == x).map(R::from) }
 
@@ -132,17 +106,10 @@ where
   }
 }
 
-impl<T, R, Arena> PartialEq for InternArena<T, R, Arena>
-where
-  T: Eq,
-  Arena: Allocator,
+impl<T, R> PartialEq for InternArena<T, R>
+where T: Eq
 {
   fn eq(&self, other: &Self) -> bool { self.obarray == other.obarray }
 }
 
-impl<T, R, Arena> Eq for InternArena<T, R, Arena>
-where
-  T: Eq,
-  Arena: Allocator,
-{
-}
+impl<T, R> Eq for InternArena<T, R> where T: Eq {}

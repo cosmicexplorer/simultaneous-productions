@@ -5,30 +5,12 @@ authors = ["Danny McClanahan <1305167+cosmicexplorer@users.noreply.github.com>"]
 edition = "2021"
 
 [dependencies]
-# frunk = "0.1.9"
-# gensym = "0.1.0"
 sp-core = { path = "./core/" }
-# typename = "0.1.1"
-
-[dependencies.sp-generator-api]
-path = "./generator-api/"
-optional = true
-
-[dependencies.sp-stream-api]
-path = "./stream-api"
-optional = true
-
-[features]
-nightly = ["sp-core/nightly", "sp-generator-api/nightly", "sp-stream-api/nightly"]
-generator-api = ["sp-generator-api"]
-stream-api = ["sp-stream-api"]
 
 [workspace]
 members = [
     # ".", (not compilable yet)
     "core",
-    "generator-api",
-    "stream-api",
 ]
 default-members = [
     "core",

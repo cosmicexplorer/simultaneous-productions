@@ -2,7 +2,7 @@
  * Description: Reconstruct the segments of the input corresponding to
  * successfully-matched parse trees.
  *
- * Copyright (C) 2021-2022 Danny McClanahan <dmcC2@hypnicjerk.ai>
+ * Copyright (C) 2021-2023 Danny McClanahan <dmcC2@hypnicjerk.ai>
  * SPDX-License-Identifier: AGPL-3.0
  *
  * This program is free software: you can redistribute it and/or modify
@@ -19,11 +19,7 @@
  * along with this program.  If not, see <https://www.gnu.org/licenses/>.
  */
 
-use crate::{
-  types::Allocator,
-  allocation::HandoffAllocable, grammar_indexing as gi,
-  lowering_to_indices::graph_coordinates as gc, parsing as p, types::Vec,
-};
+use crate::{grammar_indexing as gi, lowering_to_indices::graph_coordinates as gc, parsing as p};
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum ReconstructionError {}
@@ -32,59 +28,30 @@ pub enum ReconstructionError {}
 /// TODO: why is this the appropriate representation for an intermediate
 /// reconstruction?
 #[derive(Clone)]
-pub struct IntermediateReconstruction<Arena>
-where Arena: Allocator
-{
+pub struct IntermediateReconstruction {
   pub prod_case: gc::ProdCaseRef,
-  pub args: Vec<CompleteSubReconstruction<Arena>, Arena>,
+  pub args: Vec<CompleteSubReconstruction>,
 }
 
-impl<Arena> IntermediateReconstruction<Arena>
-where Arena: Allocator
-{
-  pub fn empty_for_case(prod_case: gc::ProdCaseRef, arena: Arena) -> Self {
+impl IntermediateReconstruction {
+  pub fn empty_for_case(prod_case: gc::ProdCaseRef) -> Self {
     IntermediateReconstruction {
       prod_case,
-      args: Vec::new_in(arena),
+      args: Vec::new(),
     }
   }
-}
-
-impl<Arena> HandoffAllocable for IntermediateReconstruction<Arena>
-where Arena: Allocator+Clone
-{
-  type Arena = Arena;
-
-  fn allocator_handoff(&self) -> Arena { self.args.allocator().clone() }
 }
 
 #[derive(Clone)]
-pub enum DirectionalIntermediateReconstruction<Arena>
-where Arena: Allocator
-{
-  Rightwards(IntermediateReconstruction<Arena>),
-  Leftwards(IntermediateReconstruction<Arena>),
+pub enum DirectionalIntermediateReconstruction {
+  Rightwards(IntermediateReconstruction),
+  Leftwards(IntermediateReconstruction),
 }
 
-impl<Arena> HandoffAllocable for DirectionalIntermediateReconstruction<Arena>
-where Arena: Allocator+Clone
-{
-  type Arena = Arena;
 
-  fn allocator_handoff(&self) -> Arena {
-    match self {
-      Self::Rightwards(x) => x.allocator_handoff(),
-      Self::Leftwards(x) => x.allocator_handoff(),
-    }
-  }
-}
-
-impl<Arena> DirectionalIntermediateReconstruction<Arena>
-where Arena: Allocator+Clone
-{
-  pub fn add_completed(self, sub: CompleteSubReconstruction<Arena>) -> Self {
-    let mut ret: Vec<CompleteSubReconstruction<Arena>, Arena> =
-      Vec::new_in(self.allocator_handoff());
+impl DirectionalIntermediateReconstruction {
+  pub fn add_completed(self, sub: CompleteSubReconstruction) -> Self {
+    let mut ret: Vec<CompleteSubReconstruction> = Vec::new();
     match self {
       Self::Rightwards(IntermediateReconstruction { prod_case, args }) => {
         ret.extend(args.into_iter());
@@ -107,43 +74,28 @@ where Arena: Allocator+Clone
 }
 
 #[derive(Clone)]
-pub enum ReconstructionElement<Arena>
-where Arena: Allocator
-{
-  Intermediate(DirectionalIntermediateReconstruction<Arena>),
-  CompletedSub(CompleteSubReconstruction<Arena>),
+pub enum ReconstructionElement {
+  Intermediate(DirectionalIntermediateReconstruction),
+  CompletedSub(CompleteSubReconstruction),
 }
 
 #[derive(Clone)]
-pub struct InProgressReconstruction<Arena>
-where Arena: Allocator
-{
-  pub elements: Vec<ReconstructionElement<Arena>, Arena>,
+pub struct InProgressReconstruction {
+  pub elements: Vec<ReconstructionElement>,
 }
 
-impl<Arena> HandoffAllocable for InProgressReconstruction<Arena>
-where Arena: Allocator+Clone
-{
-  type Arena = Arena;
 
-  fn allocator_handoff(&self) -> Arena { self.elements.allocator().clone() }
-}
-
-impl<Arena> InProgressReconstruction<Arena>
-where Arena: Allocator+Clone
-{
-  pub fn joined(sub_reconstructions: Vec<Self, Arena>) -> Self {
-    let arena = sub_reconstructions.allocator().clone();
+impl InProgressReconstruction {
+  pub fn joined(sub_reconstructions: Vec<Self>) -> Self {
     sub_reconstructions.into_iter().fold(
       InProgressReconstruction {
-        elements: Vec::new_in(arena),
+        elements: Vec::new(),
       },
       |acc, next| acc.join(next),
     )
   }
 
   pub fn join(self, other: Self) -> Self {
-    let arena = self.allocator_handoff();
     /* dbg!(&self); */
     /* dbg!(&other); */
     let InProgressReconstruction {
@@ -155,14 +107,12 @@ where Arena: Allocator+Clone
 
     /* Initialize two queues, with the left empty, and the right containing the
      * concatenation of both objects. */
-    let mut right_side: Vec<ReconstructionElement<Arena>, Arena> = Vec::with_capacity_in(
-      left_initial_elements.len() + right_initial_elements.len(),
-      arena.clone(),
-    );
+    let mut right_side: Vec<ReconstructionElement> =
+      Vec::with_capacity(left_initial_elements.len() + right_initial_elements.len());
     right_side.extend(left_initial_elements.into_iter());
     right_side.extend(right_initial_elements.into_iter());
 
-    let mut left_side: Vec<ReconstructionElement<Arena>, Arena> = Vec::new_in(arena.clone());
+    let mut left_side: Vec<ReconstructionElement> = Vec::new();
     /* TODO: document how this zippering works with two queues! */
     while !right_side.is_empty() {
       if left_side.is_empty() {
@@ -213,8 +163,7 @@ where Arena: Allocator+Clone
           if left_prod_case == right_prod_case {
             /* Complete the paired group, and push it back onto the left stack. Left was
              * chosen arbitrarily here. */
-            let mut all_args: Vec<_, Arena> =
-              Vec::with_capacity_in(left_args.len() + right_args.len(), arena.clone());
+            let mut all_args: Vec<_> = Vec::with_capacity(left_args.len() + right_args.len());
             all_args.extend(left_args.into_iter());
             all_args.extend(right_args.into_iter());
             let inner_element = ReconstructionElement::CompletedSub(
@@ -268,12 +217,9 @@ where Arena: Allocator+Clone
   }
 }
 
-impl<Arena> InProgressReconstruction<Arena>
-where Arena: Allocator+Clone
-{
+impl InProgressReconstruction {
   #[allow(dead_code)]
-  pub fn new(tree: p::SpanningSubtreeRef, parse: &p::Parse<Arena>) -> Self {
-    let arena = parse.allocator_handoff();
+  pub fn new(tree: p::SpanningSubtreeRef, parse: &p::Parse) -> Self {
     let &p::Parse {
       grammar: p::ParseableGrammar {
         ref anon_step_mapping,
@@ -296,11 +242,11 @@ where Arena: Allocator+Clone
 
     let (prologue, epilogue) = match parents {
       None => {
-        let mut left_ret: Vec<_, Arena> = Vec::with_capacity_in(1, arena.clone());
+        let mut left_ret: Vec<_> = Vec::with_capacity(1);
         left_ret.push(ReconstructionElement::CompletedSub(
           CompleteSubReconstruction::State(*left),
         ));
-        let mut right_ret: Vec<_, Arena> = Vec::with_capacity_in(1, arena.clone());
+        let mut right_ret: Vec<_> = Vec::with_capacity(1);
         right_ret.push(ReconstructionElement::CompletedSub(
           CompleteSubReconstruction::State(*right),
         ));
@@ -323,8 +269,7 @@ where Arena: Allocator+Clone
     /* dbg!(&prologue); */
     /* dbg!(&epilogue); */
     /* dbg!(&stack_diff); */
-    let mut middle_elements: Vec<InProgressReconstruction<Arena>, Arena> =
-      Vec::new_in(arena.clone());
+    let mut middle_elements: Vec<InProgressReconstruction> = Vec::new();
     /* The `stack_diff` is just a flattened version of the parents' diffs -- we
      * don't add it twice! */
     if parents.is_none() {
@@ -343,10 +288,10 @@ where Arena: Allocator+Clone
             match maybe_ref {
               &gi::UnflattenedProdCaseRef::PassThrough => None,
               &gi::UnflattenedProdCaseRef::Case(ref x) => {
-                let mut elements: Vec<_, Arena> = Vec::with_capacity_in(1, arena.clone());
+                let mut elements: Vec<_> = Vec::with_capacity(1);
                 elements.push(ReconstructionElement::Intermediate(
                   DirectionalIntermediateReconstruction::Rightwards(
-                    IntermediateReconstruction::empty_for_case(*x, arena.clone()),
+                    IntermediateReconstruction::empty_for_case(*x),
                   ),
                 ));
                 Some(InProgressReconstruction { elements })
@@ -360,10 +305,10 @@ where Arena: Allocator+Clone
             match maybe_ref {
               &gi::UnflattenedProdCaseRef::PassThrough => None,
               &gi::UnflattenedProdCaseRef::Case(ref x) => {
-                let mut elements: Vec<_, Arena> = Vec::with_capacity_in(1, arena.clone());
+                let mut elements: Vec<_> = Vec::with_capacity(1);
                 elements.push(ReconstructionElement::Intermediate(
                   DirectionalIntermediateReconstruction::Leftwards(
-                    IntermediateReconstruction::empty_for_case(*x, arena.clone()),
+                    IntermediateReconstruction::empty_for_case(*x),
                   ),
                 ));
                 Some(InProgressReconstruction { elements })
@@ -375,7 +320,7 @@ where Arena: Allocator+Clone
     };
     /* eprintln!("middle_elements: {:?}", middle_elements); */
 
-    let mut ret: Vec<_, Arena> = Vec::with_capacity_in(middle_elements.len() + 2, arena);
+    let mut ret: Vec<_> = Vec::with_capacity(middle_elements.len() + 2);
     ret.push(prologue);
     ret.extend(middle_elements.into_iter());
     ret.push(epilogue);
@@ -384,34 +329,26 @@ where Arena: Allocator+Clone
 }
 
 #[derive(Debug, Clone)]
-pub struct CompletedCaseReconstruction<Arena>
-where Arena: Allocator
-{
+pub struct CompletedCaseReconstruction {
   pub prod_case: gc::ProdCaseRef,
-  pub args: Vec<CompleteSubReconstruction<Arena>, Arena>,
+  pub args: Vec<CompleteSubReconstruction>,
 }
 
-impl<Arena> PartialEq for CompletedCaseReconstruction<Arena>
-where Arena: Allocator
-{
+impl PartialEq for CompletedCaseReconstruction {
   fn eq(&self, other: &Self) -> bool {
     self.prod_case == other.prod_case && self.args == other.args
   }
 }
 
-impl<Arena> Eq for CompletedCaseReconstruction<Arena> where Arena: Allocator {}
+impl Eq for CompletedCaseReconstruction {}
 
 #[derive(Debug, Clone)]
-pub enum CompleteSubReconstruction<Arena>
-where Arena: Allocator
-{
+pub enum CompleteSubReconstruction {
   State(gi::LoweredState),
-  Completed(CompletedCaseReconstruction<Arena>),
+  Completed(CompletedCaseReconstruction),
 }
 
-impl<Arena> PartialEq for CompleteSubReconstruction<Arena>
-where Arena: Allocator
-{
+impl PartialEq for CompleteSubReconstruction {
   fn eq(&self, other: &Self) -> bool {
     match (self, other) {
       (Self::State(x), Self::State(y)) if x == y => true,
@@ -421,20 +358,16 @@ where Arena: Allocator
   }
 }
 
-impl<Arena> Eq for CompleteSubReconstruction<Arena> where Arena: Allocator {}
+impl Eq for CompleteSubReconstruction {}
 
 #[derive(Debug, Clone)]
-pub struct CompletedWholeReconstruction<Arena>(pub Vec<CompleteSubReconstruction<Arena>, Arena>)
-where Arena: Allocator;
+pub struct CompletedWholeReconstruction(pub Vec<CompleteSubReconstruction>);
 
-impl<Arena> CompletedWholeReconstruction<Arena>
-where Arena: Allocator+Clone
-{
+impl CompletedWholeReconstruction {
   #[allow(dead_code)]
-  pub fn new(maybe_completed_constructions: InProgressReconstruction<Arena>) -> Self {
-    let arena = maybe_completed_constructions.allocator_handoff();
-    let mut sub_constructions: Vec<_, Arena> =
-      Vec::with_capacity_in(maybe_completed_constructions.elements.len(), arena);
+  pub fn new(maybe_completed_constructions: InProgressReconstruction) -> Self {
+    let mut sub_constructions: Vec<_> =
+      Vec::with_capacity(maybe_completed_constructions.elements.len());
     sub_constructions.extend(maybe_completed_constructions.elements.into_iter().map(
       |el| match el {
         ReconstructionElement::Intermediate(_) => {
@@ -447,13 +380,11 @@ where Arena: Allocator+Clone
   }
 }
 
-impl<Arena> PartialEq for CompletedWholeReconstruction<Arena>
-where Arena: Allocator
-{
+impl PartialEq for CompletedWholeReconstruction {
   fn eq(&self, other: &Self) -> bool { self.0 == other.0 }
 }
 
-impl<Arena> Eq for CompletedWholeReconstruction<Arena> where Arena: Allocator {}
+impl Eq for CompletedWholeReconstruction {}
 
 #[cfg(test)]
 mod tests {
@@ -463,15 +394,12 @@ mod tests {
     lowering_to_indices::graph_coordinates as gc,
     parsing as p, state,
     test_framework::{new_token_position, non_cyclic_productions},
-    types::Global,
   };
 
   #[test]
   fn reconstructs_from_parse() {
     let prods = non_cyclic_productions();
-    let detokenized = state::preprocessing::Init(prods)
-      .try_index_with_allocator(Global)
-      .unwrap();
+    let detokenized = state::preprocessing::Init(prods).try_index().unwrap();
     let indexed = detokenized.index();
     let string_input = "ab";
     let input = p::Input(string_input.chars().collect());

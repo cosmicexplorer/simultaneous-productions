@@ -2,7 +2,7 @@
  * Description: Wrap the Simultaneous Productions general parsing method from
  *              the "sp_core" crate.
  *
- * Copyright (C) 2019-2021 Danny McClanahan <dmcC2@hypnicjerk.ai>
+ * Copyright (C) 2019-2023 Danny McClanahan <dmcC2@hypnicjerk.ai>
  * SPDX-License-Identifier: AGPL-3.0
  *
  * This program is free software: you can redistribute it and/or modify
@@ -20,16 +20,6 @@
  */
 
 //! Wrap the Simultaneous Productions general parsing method from [`sp_core`].
-//!
-//! This crate relies on the rust standard library and does not support
-//! `no_std` environments. Please see the [`sp_core`] crate, which is written
-//! for `no_std` environments.
-//!
-//! ### Unstable Features
-//! Currently, this crate does not support being built on stable rust, due to
-//! the use of the following unstable features:
-//! 1. [ ] `#![feature(generators, generator_trait)]`: see [`sp_generator_api`].
-//! 2. [ ] `#![feature(async_stream)]`: see [`sp_stream_api`].
 
 #![feature(fn_traits)]
 #![feature(trace_macros)]

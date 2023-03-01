@@ -2,7 +2,7 @@
  * Description: Implement the Simultaneous Productions general parsing
  * method.
  *
- * Copyright (C) 2019-2022 Danny McClanahan <dmcC2@hypnicjerk.ai>
+ * Copyright (C) 2019-2023 Danny McClanahan <dmcC2@hypnicjerk.ai>
  * SPDX-License-Identifier: AGPL-3.0
  *
  * This program is free software: you can redistribute it and/or modify
@@ -20,16 +20,7 @@
  */
 
 //! Implement the Simultaneous Productions general parsing method.
-//!
-//! ### Unstable Features
-//! Currently, this crate does not support being built on stable rust, due to
-//! the use of the following unstable features:
-//! 1. [ ] `#![feature(allocator_api)]`: see [`allocation`].
 
-#![no_std]
-#![allow(incomplete_features)]
-#![feature(allocator_api)]
-#![feature(trait_alias)]
 /* These clippy lint descriptions are purely non-functional and do not affect the functionality
  * or correctness of the code.
  * TODO: rustfmt breaks multiline comments when used one on top of another! (each with its own
@@ -73,49 +64,6 @@ mod lowering_to_indices;
 mod parsing;
 mod reconstruction;
 
-mod types {
-  pub use indexmap::alloc_inner::{Allocator, Global, Vec};
-  use twox_hash::XxHash64;
-
-  use core::hash::BuildHasherDefault;
-
-  pub type DefaultHasher = BuildHasherDefault<XxHash64>;
-}
-
-/// Bridge to the unstable [`allocator_api` module].
-///
-/// ### TODO
-/// Currently, this crate does not support being built on stable rust, due to
-/// the use of the unstable `#![feature(allocator_api)]`.
-/// - [ ] Use the (old, but maybe ok?) [`allocator_api` crate] to enable this?
-///
-/// [`allocator_api` module]: https://doc.rust-lang.org/unstable-book/library-features/allocator-api.html
-/// [`allocator_api` crate]: https://docs.rs/allocator_api/0.6.0/allocator_api/
-pub mod allocation {
-  use super::types::Allocator;
-
-  /// Allows an [Allocator]-based collection to generate a reference to its
-  /// allocator.
-  ///
-  /// Implementing this trait allows a [prototypal] mechanism of copying
-  /// references to the allocator used for some some originally-allocated
-  /// collection. It is used in this crate to re-use a parameterized allocator
-  /// for the whole of the `preprocessing` regime **(TODO: cite!)**.
-  ///
-  /// [prototypal]: https://en.wikipedia.org/wiki/Prototype_pattern
-  pub trait HandoffAllocable {
-    /// The type of allocator to use, for both the original collection and the
-    /// one being "handed off" to.
-    type Arena: Allocator;
-    /// Produce a new instance of an [Allocator].
-    ///
-    /// **Note:** Implementing this trait typically requires using the
-    /// `impl<..., Arena> ... where Arena: Allocator+[Clone]` trait bound in
-    /// order to produce a new instance from a reference `&self`.
-    fn allocator_handoff(&self) -> Self::Arena;
-  }
-}
-
 /// The basic traits which define an input *grammar* (TODO: link to paper!).
 ///
 /// *Implementation Note: While macros may be able to streamline the process of
@@ -125,9 +73,10 @@ pub mod grammar_specification {
   /// Aliases used in the grammar specification.
   pub mod types {
     use core::hash::Hash;
+
     /// Necessary requirement to hash an object, but not e.g. to
     /// lexicographically sort it.
-    pub trait Hashable = Hash+Eq;
+    pub trait Hashable: Hash+Eq {}
   }
 
   /// Grammar components which expand into exactly one specific token.
@@ -330,7 +279,7 @@ pub mod state {
       lowering_to_indices::grammar_building as gb, parsing as p,
     };
 
-    use core::{alloc::Allocator, fmt, iter::IntoIterator};
+    use core::{fmt, iter::IntoIterator};
 
     /// Container for an implementor of
     /// [gs::synthesis::SimultaneousProductions].
@@ -349,47 +298,35 @@ pub mod state {
     {
       /// Create a [`gb::TokenGrammar`] and convert it to [`Detokenized`] for
       /// further preprocessing.
-      pub fn try_index_with_allocator<Arena>(
-        self,
-        arena: Arena,
-      ) -> Result<Detokenized<Tok, Arena>, gb::GrammarConstructionError<ID>>
-      where
-        Arena: Allocator+Clone,
-      {
-        Ok(Detokenized(gb::TokenGrammar::new(self.0, arena)?))
+      pub fn try_index(self) -> Result<Detokenized<Tok>, gb::GrammarConstructionError<ID>> {
+        Ok(Detokenized(gb::TokenGrammar::new(self.0)?))
       }
     }
 
     /// Container after converting the tokens into [gc::TokenPosition]s.
     #[derive(Debug, Clone)]
-    pub struct Detokenized<Tok, Arena>(pub gb::TokenGrammar<Tok, Arena>)
-    where Arena: Allocator+Clone;
+    pub struct Detokenized<Tok>(pub gb::TokenGrammar<Tok>);
 
-    impl<Tok, Arena> Detokenized<Tok, Arena>
-    where Arena: Allocator+Clone
-    {
+    impl<Tok> Detokenized<Tok> {
       /// Create a [`gi::PreprocessedGrammar`] and convert it to [`Indexed`] for
       /// further preprocessing.
-      pub fn index(self) -> Indexed<Tok, Arena> { Indexed(gi::PreprocessedGrammar::new(self.0)) }
+      pub fn index(self) -> Indexed<Tok> { Indexed(gi::PreprocessedGrammar::new(self.0)) }
     }
 
     /// Container for an immediately executable grammar.
     #[derive(Debug, Clone)]
-    pub struct Indexed<Tok, Arena>(pub gi::PreprocessedGrammar<Tok, Arena>)
-    where Arena: Allocator+Clone;
+    pub struct Indexed<Tok>(pub gi::PreprocessedGrammar<Tok>);
 
-    impl<Tok, Arena> Indexed<Tok, Arena>
-    where
-      Tok: gs::types::Hashable+fmt::Debug+Clone,
-      Arena: Allocator+Clone,
+    impl<Tok> Indexed<Tok>
+    where Tok: gs::types::Hashable+fmt::Debug+Clone
     {
       /// Create a [`p::ParseableGrammar`] and convert to a parseable state.
       ///
       /// **FIXME: `input` should be a [crate::execution::Input]!!**
       pub fn attach_input(
         &self,
-        input: &p::Input<Tok, Arena>,
-      ) -> Result<super::active::Ready<'_, Arena>, p::ParsingInputFailure<Tok>> {
+        input: &p::Input<Tok>,
+      ) -> Result<super::active::Ready<'_>, p::ParsingInputFailure<Tok>> {
         Ok(super::active::Ready::new(p::ParseableGrammar::new(
           self.0.clone(),
           input,
@@ -404,37 +341,31 @@ pub mod state {
   pub mod active {
     use crate::parsing as p;
 
-    use core::{alloc::Allocator, marker::PhantomData};
+    use core::marker::PhantomData;
 
     /// Container for a parseable grammar that propagates the lifetime of an
     /// input.
     #[derive(Debug, Clone)]
-    pub struct Ready<'a, Arena>(pub p::ParseableGrammar<Arena>, PhantomData<&'a u8>)
-    where Arena: Allocator+Clone;
+    pub struct Ready<'a>(pub p::ParseableGrammar, PhantomData<&'a u8>);
 
-    impl<'a, Arena> Ready<'a, Arena>
-    where Arena: Allocator+Clone
-    {
+    impl<'a> Ready<'a> {
       #[allow(missing_docs)]
-      pub fn new(grammar: p::ParseableGrammar<Arena>) -> Self { Self(grammar, PhantomData) }
+      pub fn new(grammar: p::ParseableGrammar) -> Self { Self(grammar, PhantomData) }
 
       /// "Detokenize" *(TODO: cite!)* the input and produce a [`p::Parse`]
       /// instance!
-      pub fn initialize_parse(self) -> InProgress<'a, Arena> {
+      pub fn initialize_parse(self) -> InProgress<'a> {
         InProgress::new(p::Parse::initialize_with_trees_for_adjacent_pairs(self.0))
       }
     }
 
     /// The final form of an initialized parse, ready to iterate over the input!
     #[derive(Debug, Clone)]
-    pub struct InProgress<'a, Arena>(pub p::Parse<Arena>, PhantomData<&'a u8>)
-    where Arena: Allocator+Clone;
+    pub struct InProgress<'a>(pub p::Parse, PhantomData<&'a u8>);
 
-    impl<'a, Arena> InProgress<'a, Arena>
-    where Arena: Allocator+Clone
-    {
+    impl<'a> InProgress<'a> {
       #[allow(missing_docs)]
-      pub fn new(parse: p::Parse<Arena>) -> Self { Self(parse, PhantomData) }
+      pub fn new(parse: p::Parse) -> Self { Self(parse, PhantomData) }
     }
   }
 }
@@ -446,7 +377,7 @@ pub mod state {
 #[cfg(test)]
 pub mod test_framework {
   use super::grammar_specification as gs;
-  use crate::{lowering_to_indices::graph_coordinates as gc, types::Vec};
+  use crate::lowering_to_indices::graph_coordinates as gc;
 
   use core::{
     hash::{Hash, Hasher},
@@ -524,12 +455,16 @@ pub mod test_framework {
 
   string_iter![Lit];
 
+  impl gs::types::Hashable for char {}
+
   impl gs::direct::Literal for Lit {
     type Item = char;
     type Tok = char;
   }
 
   string_iter![ProductionReference];
+
+  impl gs::types::Hashable for ProductionReference {}
 
   impl gs::indirect::ProductionReference for ProductionReference {
     type ID = Self;
