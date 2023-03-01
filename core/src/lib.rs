@@ -80,18 +80,24 @@ pub mod grammar_specification {
   }
 
   pub mod graphviz {
-    use displaydoc::Display;
+    use dot;
 
-    /// <node: {0}>
-    #[derive(Debug, Display, Hash, PartialEq, Eq, Clone)]
+    use std::borrow::Cow;
+
+    #[derive(Debug, Hash, PartialEq, Eq, Clone)]
     pub struct Id(pub String);
+
+    impl Id {
+      pub fn to_dot_id<'a>(&self) -> dot::Id<'a> {
+        dot::Id::new(self.0.clone()).expect("dot vertex id construction failed")
+      }
+    }
 
     pub trait Vertex {
       fn id(&self) -> Id;
     }
 
-    /// {{source: {source}, target: {target}}}
-    #[derive(Debug, Display, Hash, PartialEq, Eq, Clone)]
+    #[derive(Debug, Hash, PartialEq, Eq, Clone)]
     pub struct Edge {
       pub source: Id,
       pub target: Id,
@@ -99,6 +105,104 @@ pub mod grammar_specification {
 
     pub trait Edges {
       fn edges(&self) -> Vec<Edge> { Vec::new() }
+    }
+
+    pub struct GraphBuilder {
+      graph_id: String,
+      vertices: Vec<Id>,
+      edges: Vec<Edge>,
+    }
+
+    impl GraphBuilder {
+      pub fn new(graph_id: String) -> Self {
+        Self {
+          graph_id,
+          vertices: Vec::new(),
+          edges: Vec::new(),
+        }
+      }
+
+      pub fn accept_vertex<V: Vertex>(&mut self, v: V) { self.vertices.push(v.id()); }
+
+      pub fn accept_edges<E: Edges>(&mut self, e: E) { self.edges.extend(e.edges().into_iter()); }
+    }
+
+    impl<'a> dot::Labeller<'a, Id, Edge> for GraphBuilder {
+      fn graph_id(&'a self) -> dot::Id<'a> {
+        dot::Id::new(self.graph_id.as_str()).expect("graph id construction")
+      }
+
+      fn node_id(&'a self, n: &Id) -> dot::Id<'a> { n.to_dot_id() }
+    }
+
+    impl<'a> dot::GraphWalk<'a, Id, Edge> for GraphBuilder {
+      fn nodes(&self) -> dot::Nodes<'a, Id> { Cow::Owned(self.vertices.clone()) }
+
+      fn edges(&'a self) -> dot::Edges<'a, Edge> { Cow::Borrowed(&self.edges[..]) }
+
+      fn source(&self, e: &Edge) -> Id { e.source.clone() }
+
+      fn target(&self, e: &Edge) -> Id { e.target.clone() }
+    }
+
+    #[cfg(test)]
+    mod test {
+      use super::*;
+
+      use std::str;
+
+      struct V(pub usize);
+
+      impl Vertex for V {
+        fn id(&self) -> Id { Id(format!("node_{}", self.0)) }
+      }
+
+      #[test]
+      fn render_single_vertex() {
+        let mut gb = GraphBuilder::new("test_graph".to_string());
+        gb.accept_vertex(V(0));
+
+        let mut output: Vec<u8> = Vec::new();
+        dot::render(&gb, &mut output).unwrap();
+        let output = str::from_utf8_mut(&mut output).unwrap();
+
+        assert_eq!(
+          output,
+          "digraph test_graph {\n    node_0[label=\"node_0\"];\n}\n"
+        );
+      }
+
+      struct E(pub V, pub V);
+
+      struct EdgeCollection(pub Vec<E>);
+
+      impl Edges for EdgeCollection {
+        fn edges(&self) -> Vec<Edge> {
+          self
+            .0
+            .iter()
+            .map(|E(source, target)| Edge {
+              source: source.id(),
+              target: target.id(),
+            })
+            .collect()
+        }
+      }
+
+      #[test]
+      fn render_single_edge() {
+        let mut gb = GraphBuilder::new("test_graph".to_string());
+        gb.accept_vertex(V(0));
+        gb.accept_vertex(V(1));
+        let ec = EdgeCollection(vec![E(V(0), V(1))]);
+        gb.accept_edges(ec);
+
+        let mut output: Vec<u8> = Vec::new();
+        dot::render(&gb, &mut output).unwrap();
+        let output = str::from_utf8_mut(&mut output).unwrap();
+
+        assert_eq!(output, "digraph test_graph {\n    node_0[label=\"node_0\"];\n    node_1[label=\"node_1\"];\n    node_0 -> node_1[label=\"\"];\n}\n");
+      }
     }
   }
 

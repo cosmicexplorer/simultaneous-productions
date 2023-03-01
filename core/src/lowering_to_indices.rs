@@ -35,7 +35,7 @@
 //! ]
 
 #[cfg(doc)]
-use crate::grammar_specification::{Literal, ProductionReference};
+use crate::grammar_specification::{direct::Literal, indirect::ProductionReference};
 #[cfg(doc)]
 use grammar_building::TokenGrammar;
 
@@ -247,7 +247,7 @@ pub mod grammar_building {
     #[cfg(doc)]
     use super::super::graph_coordinates::{ProdRef, TokenPosition};
     #[cfg(doc)]
-    use crate::grammar_specification::{Literal, ProductionReference};
+    use crate::grammar_specification::{direct::Literal, indirect::ProductionReference};
 
     use indexmap::IndexMap;
 
