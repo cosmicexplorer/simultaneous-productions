@@ -66,7 +66,7 @@ mod reconstruction;
 
 /// The basic traits which define an input *grammar* (TODO: link to paper!).
 ///
-/// *Implementation Note: While macros may be able to streamline the process of
+/// *Implementation note: While macros may be able to streamline the process of
 /// declaring a grammar, their stability guarantees can be much lower than the
 /// definitions in this module.*
 pub mod grammar_specification {
@@ -106,17 +106,6 @@ pub mod grammar_specification {
       /// Parameterized type to reference the identity of some particular
       /// [Production].
       type ID: super::constraints::Hashable;
-    }
-  }
-
-  pub mod context {
-    pub trait ContextName: Into<Self::N> {
-      type N: super::constraints::Hashable;
-    }
-
-    pub struct ContextDeclaration<Name: ContextName, PR: super::indirect::ProductionReference> {
-      pub name: Name,
-      pub prod_ref: PR,
     }
   }
 
