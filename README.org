@@ -8,19 +8,19 @@
   - the pitch should explain that i haven't published yet because i didn't want to get scooped on [[the real prize]]
 
 ** code TODO [0/6]
-- [ ] graphviz for every intermediate graph in grammar processing!
-- [ ] implement typed callbacks (for e.g. AST construction) by stuffing intermediate arguments in the stack symbols!
-- [ ] demonstrate a grammar generator for regex constructs!
-- [ ] implement context-sensitive and recursively-enumerable grammatical constructs!
+1. [ ] graphviz for every intermediate graph in grammar processing!
+2. [ ] implement typed callbacks (for e.g. AST construction) by stuffing intermediate arguments in the stack symbols!
+3. [ ] demonstrate a grammar generator for regex constructs!
+4. [ ] implement context-sensitive and recursively-enumerable grammatical constructs!
   - also consider backrefs (can we make these sub-exponential?)!
-- [ ] make a single iteration of parsing/resolution into a re-entrant(/lock-free?) process
+5. [ ] make a single iteration of parsing/resolution into a re-entrant(/lock-free?) process!
   - we'll probably want to explicitly separate:
     1. /selecting an adjacent pair to resolve/: pop off an adjacent pair of sub-parses from the sub-parse forest.
     2. /resolving the adjacent pair/: push the merged sub-parse back onto the sub-parse forest.
   - having a lock/atomic flag /per sub-parse/ might be the easiest way to do this?
     - atomic flag is more feasible than usual for this use case, because there are so many other sub-parses to choose from
     - *could make it: per sub-parse /greater than ~k~ tokens wide/?*
-- [ ] generate intermediate grammar graphs with proptest (maybe grammars themselves with cargo-fuzz too?)
+6. [ ] generate intermediate grammar graphs with proptest (maybe grammars themselves with cargo-fuzz too?)!
 
 * S.P. paper
 ** abstract
