@@ -7,6 +7,14 @@
 - [ ] hack up a [[P.S. prototype]] and develop a pitch
   - the pitch should explain that i haven't published yet because i didn't want to get scooped on [[the real prize]]
 
+** code TODO [0/5]
+- [ ] graphviz for every intermediate graph in grammar processing!
+- [ ] implement typed callbacks (for e.g. AST construction) by stuffing intermediate arguments in the stack symbols!
+- [ ] demonstrate a grammar generator for regex constructs!
+- [ ] generate intermediate grammar graphs with proptest (maybe grammars themselves with cargo-fuzz too?)
+- [ ] implement context-sensitive and recursively-enumerable grammatical constructs!
+  - also consider backrefs (can we make these sub-exponential?)!
+
 * S.P. paper
 ** abstract
 # this README is /the paper/ exactly!
