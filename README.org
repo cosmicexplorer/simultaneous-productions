@@ -7,13 +7,17 @@
 - [ ] hack up a [[P.S. prototype]] and develop a pitch
   - the pitch should explain that i haven't published yet because i didn't want to get scooped on [[the real prize]]
 
-** code TODO [0/5]
+** code TODO [0/6]
 - [ ] graphviz for every intermediate graph in grammar processing!
 - [ ] implement typed callbacks (for e.g. AST construction) by stuffing intermediate arguments in the stack symbols!
 - [ ] demonstrate a grammar generator for regex constructs!
 - [ ] generate intermediate grammar graphs with proptest (maybe grammars themselves with cargo-fuzz too?)
 - [ ] implement context-sensitive and recursively-enumerable grammatical constructs!
   - also consider backrefs (can we make these sub-exponential?)!
+- [ ] make a single iteration of parsing/resolution into a re-entrant/lock-free process
+  - we'll probably want to explicitly separate:
+    1. /selecting an adjacent pair to resolve/: pop off an adjacent pair of sub-parses from the sub-parse forest in a lock-free manner.
+    2. /resolving the adjacent pair/: push the merged sub-parse back onto the sub-parse forest in a lock-free manner.
 
 * S.P. paper
 ** abstract
