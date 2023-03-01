@@ -318,7 +318,7 @@ impl ParseableGrammar {
     input: &Input<Tok>,
   ) -> Result<Vec<PossibleStates>, ParsingInputFailure<Tok>>
   where
-    Tok: crate::grammar_specification::types::Hashable+fmt::Debug+Clone,
+    Tok: crate::grammar_specification::constraints::Hashable+fmt::Debug+Clone,
   {
     /* NB: Bookend the internal states with Start and End states (creating a
      * vector with 2 more entries than `input`)! */
@@ -356,7 +356,7 @@ impl ParseableGrammar {
     input: &Input<Tok>,
   ) -> Result<Self, ParsingInputFailure<Tok>>
   where
-    Tok: gs::types::Hashable+fmt::Debug+Clone,
+    Tok: gs::constraints::Hashable+fmt::Debug+Clone,
   {
     let gi::PreprocessedGrammar {
       cyclic_graph_decomposition:

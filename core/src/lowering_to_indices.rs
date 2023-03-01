@@ -344,7 +344,7 @@ pub mod grammar_building {
     impl<Tok> Eq for TokenGrammar<Tok> where Tok: Eq {}
 
     impl<Tok> TokenGrammar<Tok>
-    where Tok: gs::types::Hashable
+    where Tok: gs::constraints::Hashable
     {
       /// Walk productions and split literal strings.
       ///
@@ -357,7 +357,7 @@ pub mod grammar_building {
       pub fn new<Lit, ID, PR, C, P, SP>(sp: SP) -> Result<Self, GrammarConstructionError<ID>>
       where
         Lit: gs::direct::Literal<Tok=Tok>+IntoIterator<Item=Tok>,
-        ID: gs::types::Hashable+Clone,
+        ID: gs::constraints::Hashable+Clone,
         PR: gs::indirect::ProductionReference<ID=ID>,
         C: gs::synthesis::Case<PR=PR>+IntoIterator<Item=gs::synthesis::CaseElement<Lit, PR>>,
         P: gs::synthesis::Production<C=C>+IntoIterator<Item=C>,

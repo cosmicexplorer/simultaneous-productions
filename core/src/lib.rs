@@ -71,7 +71,7 @@ mod reconstruction;
 /// definitions in this module.*
 pub mod grammar_specification {
   /// Aliases used in the grammar specification.
-  pub mod types {
+  pub mod constraints {
     use core::hash::Hash;
 
     /// Necessary requirement to hash an object, but not e.g. to
@@ -91,7 +91,7 @@ pub mod grammar_specification {
       /// This parameter is *separate from, but may be the same as* the tokens
       /// we can actually parse with
       /// [Input::InChunk][super::execution::Input].
-      type Tok: super::types::Hashable;
+      type Tok: super::constraints::Hashable;
       /// Override [IntoIterator::Item] with this trait's parameter.
       type Item: Into<Self::Tok>;
     }
@@ -105,13 +105,13 @@ pub mod grammar_specification {
     pub trait ProductionReference: Into<Self::ID> {
       /// Parameterized type to reference the identity of some particular
       /// [Production].
-      type ID: super::types::Hashable;
+      type ID: super::constraints::Hashable;
     }
   }
 
   pub mod context {
     pub trait ContextName: Into<Self::N> {
-      type N: super::types::Hashable;
+      type N: super::constraints::Hashable;
     }
 
     pub struct ContextDeclaration<Name: ContextName, PR: super::indirect::ProductionReference> {
@@ -288,9 +288,9 @@ pub mod state {
 
     impl<Tok, Lit, ID, PR, C, P, SP> Init<SP>
     where
-      Tok: gs::types::Hashable,
+      Tok: gs::constraints::Hashable,
       Lit: gs::direct::Literal<Tok=Tok>+IntoIterator<Item=Tok>,
-      ID: gs::types::Hashable+Clone,
+      ID: gs::constraints::Hashable+Clone,
       PR: gs::indirect::ProductionReference<ID=ID>,
       C: gs::synthesis::Case<PR=PR>+IntoIterator<Item=gs::synthesis::CaseElement<Lit, PR>>,
       P: gs::synthesis::Production<C=C>+IntoIterator<Item=C>,
@@ -318,7 +318,7 @@ pub mod state {
     pub struct Indexed<Tok>(pub gi::PreprocessedGrammar<Tok>);
 
     impl<Tok> Indexed<Tok>
-    where Tok: gs::types::Hashable+fmt::Debug+Clone
+    where Tok: gs::constraints::Hashable+fmt::Debug+Clone
     {
       /// Create a [`p::ParseableGrammar`] and convert to a parseable state.
       ///
@@ -455,7 +455,7 @@ pub mod test_framework {
 
   string_iter![Lit];
 
-  impl gs::types::Hashable for char {}
+  impl gs::constraints::Hashable for char {}
 
   impl gs::direct::Literal for Lit {
     type Item = char;
@@ -464,7 +464,7 @@ pub mod test_framework {
 
   string_iter![ProductionReference];
 
-  impl gs::types::Hashable for ProductionReference {}
+  impl gs::constraints::Hashable for ProductionReference {}
 
   impl gs::indirect::ProductionReference for ProductionReference {
     type ID = Self;
