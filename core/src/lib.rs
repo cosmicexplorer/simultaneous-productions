@@ -79,6 +79,29 @@ pub mod grammar_specification {
     pub trait Hashable: Hash+Eq {}
   }
 
+  pub mod graphviz {
+    use displaydoc::Display;
+
+    /// <node: {0}>
+    #[derive(Debug, Display, Hash, PartialEq, Eq, Clone)]
+    pub struct Id(pub String);
+
+    pub trait Vertex {
+      fn id(&self) -> Id;
+    }
+
+    /// {{source: {source}, target: {target}}}
+    #[derive(Debug, Display, Hash, PartialEq, Eq, Clone)]
+    pub struct Edge {
+      pub source: Id,
+      pub target: Id,
+    }
+
+    pub trait Edges {
+      fn edges(&self) -> Vec<Edge> { Vec::new() }
+    }
+  }
+
   /// Grammar components which expand into exactly one specific token.
   pub mod direct {
     use core::iter::IntoIterator;
