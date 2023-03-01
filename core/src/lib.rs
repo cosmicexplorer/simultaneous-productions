@@ -620,41 +620,6 @@ pub mod test_framework {
 
   pub type CE = gs::synthesis::CaseElement<Lit, ProductionReference>;
 
-  /* pub struct CEGraphviz { */
-  /* pub case_element: CE, */
-  /* pub id: gv::Id, */
-  /* } */
-
-  /* impl CEGraphviz { */
-  /* pub fn new(case_element: CE) -> Self { */
-  /* Self { */
-  /* case_element, */
-  /* id: gv::Id(Uuid::new_v4().to_string()) */
-  /* } */
-  /* } */
-  /* } */
-
-  /* impl gv::Vertex for CEGraphviz { */
-  /* fn id(&self) -> gv::Id { */
-  /* self.id.clone() */
-  /* } */
-
-  /* fn label(&self) -> gv::Label { */
-  /* match self { */
-  /* CE::Lit(lit) => gv::Label(lit.into_string()), */
-  /* CE::Prod(pr) => gv::Label(pr.into_string()), */
-  /* } */
-  /* } */
-  /* } */
-
-  /* impl gv::Edges for CEGraphviz { */
-  /* fn edges(&self) -> Vec<gv::Edge> { */
-  /* match self P */
-  /* CE::Lit(lit) => Vec::new(), */
-  /* CE::Prod(pr) => vec![], */
-  /* } */
-  /* } */
-
   into_iter![Case, CE];
 
   impl gs::synthesis::Case for Case {
@@ -675,6 +640,74 @@ pub mod test_framework {
   impl gs::synthesis::SimultaneousProductions for SP {
     type Item = (ProductionReference, Self::P);
     type P = Production;
+  }
+
+  pub fn build_sp_graph(sp: SP) -> gv::GraphBuilder {
+    let mut gb = gv::GraphBuilder::new("test_sp_graph".to_string());
+    let mut vertex_id_counter: usize = 0;
+    let mut edges: Vec<gv::Edge> = Vec::new();
+
+    for (prod_ref, prod) in sp.into_iter() {
+      // (1) Add vertex corresponding to any references to this production by name.
+      let ref_id = format!("prod_{}", prod_ref.into_string());
+      let ref_vertex = gv::Vertex {
+        id: gv::Id(ref_id.clone()),
+        label: gv::Label(ref_id),
+      };
+      let this_prod_ref_id = ref_vertex.id.clone();
+      gb.accept_vertex(ref_vertex);
+
+      // (2) Traverse the productions, accumulating case elements and edges between
+      //     each other and the prod refs!
+      for case in prod.into_iter() {
+        // (2.1) Link each consecutive pair of case elements with a (directed) edge.
+        let mut prev_id = this_prod_ref_id.clone();
+
+        for case_el in case.into_iter() {
+          // (2.2) Create a new vertex for each case element.
+          let new_id = gv::Id(format!("vertex_{}", vertex_id_counter));
+          vertex_id_counter += 1;
+          /* TODO: remove clone? */
+          let label = match case_el.clone() {
+            CE::Lit(lit) => gv::Label(lit.into_string()),
+            CE::Prod(pr) => gv::Label(pr.into_string()),
+          };
+          let new_vertex = gv::Vertex { id: new_id, label };
+          let new_id = new_vertex.id.clone();
+          gb.accept_vertex(new_vertex);
+
+          // See (2.1).
+          let new_edge = gv::Edge {
+            source: prev_id,
+            target: new_id.clone(),
+            label: gv::Label("asdf".to_string()),
+          };
+          prev_id = new_id.clone();
+          edges.push(new_edge);
+          // (2.3) If this is a prod ref, then add another edge from this to the prod
+          // ref's id!
+          if let CE::Prod(pr) = case_el {
+            /* FIXME: remove duplicate format!("prod_{}", ...) calls! */
+            let target_id = gv::Id(format!("prod_{}", pr.into_string()));
+            edges.push(gv::Edge {
+              source: new_id,
+              target: target_id,
+              label: gv::Label("pr asdf".to_string()),
+            });
+          }
+        }
+
+        edges.push(gv::Edge {
+          source: prev_id,
+          target: this_prod_ref_id.clone(),
+          label: gv::Label("final asdf".to_string()),
+        });
+      }
+    }
+
+    gb.accept_edges(edges);
+
+    gb
   }
 
   pub fn non_cyclic_productions() -> SP {
