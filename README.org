@@ -7,9 +7,9 @@
 - [ ] hack up a [[P.S. prototype]] and develop a pitch
   - the pitch should explain that i haven't published yet because i didn't want to get scooped on [[the real prize]]
 
-** code TODO [1/8]
+** code TODO [2/8]
 1. [X] remove ~no_std~ impl
-2. [ ] graphviz for every intermediate graph in grammar processing!
+2. [X] graphviz for every intermediate graph in grammar processing!
 3. [ ] text-based grammar input format for generating test cases!
 4. [ ] implement typed callbacks (for e.g. AST construction) by stuffing intermediate arguments in the stack symbols!
 5. [ ] demonstrate a grammar generator for regex constructs!

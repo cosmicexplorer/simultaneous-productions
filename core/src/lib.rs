@@ -291,10 +291,10 @@ pub mod grammar_specification {
             if let Some(NodeDefaults { color, fontcolor }) = node_defaults {
               let mut modifiers: Vec<String> = Vec::new();
               if let Some(Color(color)) = color {
-                modifiers.push(format!("color=\"{}\", ", color));
+                modifiers.push(format!("color=\"{}\"", color));
               }
               if let Some(Color(fontcolor)) = fontcolor {
-                modifiers.push(format!("fontcolor=\"{}\", ", fontcolor));
+                modifiers.push(format!("fontcolor=\"{}\"", fontcolor));
               }
               if !modifiers.is_empty() {
                 Self::newline_indent(&mut output, indent);
@@ -810,6 +810,7 @@ pub mod test_framework {
     let mut gb = gv::GraphBuilder::new();
     let mut vertex_id_counter: usize = 0;
     let mut prod_vertices: Vec<gv::Vertex> = Vec::new();
+    let mut prod_entities: Vec<gv::Entity> = Vec::new();
 
     for (prod_ref, prod) in sp.into_iter() {
       // (1) Add vertex corresponding to any references to this production by name.
@@ -842,6 +843,7 @@ pub mod test_framework {
       for (case_index, case) in prod.into_iter().enumerate() {
         // (2.1) Link each consecutive pair of case elements with a (directed) edge.
         let mut prev_id = this_prod_ref_id.clone();
+        let mut cur_edge_color = gv::Color("red".to_string());
 
         // (1.3)
         let mut cur_case_subgraph = gv::Subgraph {
@@ -902,11 +904,12 @@ pub mod test_framework {
           let new_edge = gv::Edge {
             source: prev_id,
             target: new_id.clone(),
-            color: Some(gv::Color("aqua".to_string())),
+            color: Some(cur_edge_color),
             fontcolor: None,
             label: None,
           };
           prev_id = new_id.clone();
+          cur_edge_color = gv::Color("aqua".to_string());
           edges.push(new_edge);
         }
 
@@ -923,10 +926,10 @@ pub mod test_framework {
           .entities
           .push(gv::Entity::Subgraph(cur_case_subgraph));
       }
-      gb.accept_entity(gv::Entity::Subgraph(cur_prod_subgraph));
+      prod_entities.push(gv::Entity::Subgraph(cur_prod_subgraph));
 
       for edge in edges.into_iter() {
-        gb.accept_entity(gv::Entity::Edge(edge));
+        prod_entities.push(gv::Entity::Edge(edge));
       }
     }
 
@@ -942,6 +945,11 @@ pub mod test_framework {
       }),
       entities: prod_vertices.into_iter().map(gv::Entity::Vertex).collect(),
     }));
+
+    for entity in prod_entities.into_iter() {
+      gb.accept_entity(entity);
+    }
+
     gb
   }
 
@@ -985,7 +993,10 @@ pub mod test_framework {
     let gb = build_sp_graph(sp);
     let gv::DotOutput(output) = gb.build(gv::Id("test_sp_graph".to_string()));
 
-    assert_eq!(output, "asdf");
+    assert_eq!(
+      output,
+      "digraph test_sp_graph {\n  compound = true;\n\n  subgraph prods {\n    label = \"Productions\";\n    cluster = true;\n    rank = same;\n\n    color = \"blue\";\n    fontcolor = \"blue\";\n    node [color=\"blue\", fontcolor=\"blue\", ];\n\n    prod_A[label=\"A\", ];\n    prod_B[label=\"B\", ];\n  }\n\n  subgraph A_prod {\n    label = \"Cases: A\";\n    cluster = true;\n    rank = same;\n\n    color = \"purple\";\n    fontcolor = \"purple\";\n\n    subgraph A_case_0 {\n      label = \"0\";\n      cluster = true;\n      rank = same;\n\n      color = \"green4\";\n      fontcolor = \"green4\";\n\n      vertex_0[label=\"<ab>\", color=\"brown\", fontcolor=\"brown\", ];\n    }\n  }\n\n  prod_A -> vertex_0[color=\"red\", ];\n\n  vertex_0 -> prod_A[color=\"black\", ];\n\n  subgraph B_prod {\n    label = \"Cases: B\";\n    cluster = true;\n    rank = same;\n\n    color = \"purple\";\n    fontcolor = \"purple\";\n\n    subgraph B_case_0 {\n      label = \"0\";\n      cluster = true;\n      rank = same;\n\n      color = \"green4\";\n      fontcolor = \"green4\";\n\n      vertex_1[label=\"<ab>\", color=\"brown\", fontcolor=\"brown\", ];\n      vertex_2[label=\"ref: A\", color=\"darkgoldenrod\", fontcolor=\"darkgoldenrod\", ];\n    }\n    subgraph B_case_1 {\n      label = \"1\";\n      cluster = true;\n      rank = same;\n\n      color = \"green4\";\n      fontcolor = \"green4\";\n\n      vertex_3[label=\"ref: A\", color=\"darkgoldenrod\", fontcolor=\"darkgoldenrod\", ];\n      vertex_4[label=\"<a>\", color=\"brown\", fontcolor=\"brown\", ];\n    }\n  }\n\n  prod_B -> vertex_1[color=\"red\", ];\n\n  vertex_2 -> prod_A[color=\"darkgoldenrod\", ];\n\n  vertex_1 -> vertex_2[color=\"aqua\", ];\n\n  vertex_2 -> prod_B[color=\"black\", ];\n\n  vertex_3 -> prod_A[color=\"darkgoldenrod\", ];\n\n  prod_B -> vertex_3[color=\"red\", ];\n\n  vertex_3 -> vertex_4[color=\"aqua\", ];\n\n  vertex_4 -> prod_B[color=\"black\", ];\n}\n"
+    );
   }
 
   pub fn basic_productions() -> SP {
@@ -1035,5 +1046,14 @@ pub mod test_framework {
       ]
       .as_ref(),
     )
+  }
+
+  #[test]
+  fn basic_graphvis() {
+    let sp = basic_productions();
+    let gb = build_sp_graph(sp);
+    let gv::DotOutput(output) = gb.build(gv::Id("test_sp_graph".to_string()));
+
+    assert_eq!(output, "digraph test_sp_graph {\n  compound = true;\n\n  subgraph prods {\n    label = \"Productions\";\n    cluster = true;\n    rank = same;\n\n    color = \"blue\";\n    fontcolor = \"blue\";\n    node [color=\"blue\", fontcolor=\"blue\", ];\n\n    prod_P_1[label=\"P_1\", ];\n    prod_P_2[label=\"P_2\", ];\n  }\n\n  subgraph P_1_prod {\n    label = \"Cases: P_1\";\n    cluster = true;\n    rank = same;\n\n    color = \"purple\";\n    fontcolor = \"purple\";\n\n    subgraph P_1_case_0 {\n      label = \"0\";\n      cluster = true;\n      rank = same;\n\n      color = \"green4\";\n      fontcolor = \"green4\";\n\n      vertex_0[label=\"<abc>\", color=\"brown\", fontcolor=\"brown\", ];\n    }\n    subgraph P_1_case_1 {\n      label = \"1\";\n      cluster = true;\n      rank = same;\n\n      color = \"green4\";\n      fontcolor = \"green4\";\n\n      vertex_1[label=\"<a>\", color=\"brown\", fontcolor=\"brown\", ];\n      vertex_2[label=\"ref: P_1\", color=\"darkgoldenrod\", fontcolor=\"darkgoldenrod\", ];\n      vertex_3[label=\"<c>\", color=\"brown\", fontcolor=\"brown\", ];\n    }\n    subgraph P_1_case_2 {\n      label = \"2\";\n      cluster = true;\n      rank = same;\n\n      color = \"green4\";\n      fontcolor = \"green4\";\n\n      vertex_4[label=\"<bc>\", color=\"brown\", fontcolor=\"brown\", ];\n      vertex_5[label=\"ref: P_2\", color=\"darkgoldenrod\", fontcolor=\"darkgoldenrod\", ];\n    }\n  }\n\n  prod_P_1 -> vertex_0[color=\"red\", ];\n\n  vertex_0 -> prod_P_1[color=\"black\", ];\n\n  prod_P_1 -> vertex_1[color=\"red\", ];\n\n  vertex_2 -> prod_P_1[color=\"darkgoldenrod\", ];\n\n  vertex_1 -> vertex_2[color=\"aqua\", ];\n\n  vertex_2 -> vertex_3[color=\"aqua\", ];\n\n  vertex_3 -> prod_P_1[color=\"black\", ];\n\n  prod_P_1 -> vertex_4[color=\"red\", ];\n\n  vertex_5 -> prod_P_2[color=\"darkgoldenrod\", ];\n\n  vertex_4 -> vertex_5[color=\"aqua\", ];\n\n  vertex_5 -> prod_P_1[color=\"black\", ];\n\n  subgraph P_2_prod {\n    label = \"Cases: P_2\";\n    cluster = true;\n    rank = same;\n\n    color = \"purple\";\n    fontcolor = \"purple\";\n\n    subgraph P_2_case_0 {\n      label = \"0\";\n      cluster = true;\n      rank = same;\n\n      color = \"green4\";\n      fontcolor = \"green4\";\n\n      vertex_6[label=\"ref: P_1\", color=\"darkgoldenrod\", fontcolor=\"darkgoldenrod\", ];\n    }\n    subgraph P_2_case_1 {\n      label = \"1\";\n      cluster = true;\n      rank = same;\n\n      color = \"green4\";\n      fontcolor = \"green4\";\n\n      vertex_7[label=\"ref: P_2\", color=\"darkgoldenrod\", fontcolor=\"darkgoldenrod\", ];\n    }\n    subgraph P_2_case_2 {\n      label = \"2\";\n      cluster = true;\n      rank = same;\n\n      color = \"green4\";\n      fontcolor = \"green4\";\n\n      vertex_8[label=\"ref: P_1\", color=\"darkgoldenrod\", fontcolor=\"darkgoldenrod\", ];\n      vertex_9[label=\"<bc>\", color=\"brown\", fontcolor=\"brown\", ];\n    }\n  }\n\n  vertex_6 -> prod_P_1[color=\"darkgoldenrod\", ];\n\n  prod_P_2 -> vertex_6[color=\"red\", ];\n\n  vertex_6 -> prod_P_2[color=\"black\", ];\n\n  vertex_7 -> prod_P_2[color=\"darkgoldenrod\", ];\n\n  prod_P_2 -> vertex_7[color=\"red\", ];\n\n  vertex_7 -> prod_P_2[color=\"black\", ];\n\n  vertex_8 -> prod_P_1[color=\"darkgoldenrod\", ];\n\n  prod_P_2 -> vertex_8[color=\"red\", ];\n\n  vertex_8 -> vertex_9[color=\"aqua\", ];\n\n  vertex_9 -> prod_P_2[color=\"black\", ];\n}\n");
   }
 }

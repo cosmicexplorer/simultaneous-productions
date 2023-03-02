@@ -1,0 +1,143 @@
+digraph test_sp_graph {
+  compound = true;
+
+  subgraph prods {
+    label = "Productions";
+    cluster = true;
+    rank = same;
+
+    color = "blue";
+    fontcolor = "blue";
+    node [color="blue", fontcolor="blue", ];
+
+    prod_P_1[label="P_1", ];
+    prod_P_2[label="P_2", ];
+  }
+
+  subgraph P_1_prod {
+    label = "Cases: P_1";
+    cluster = true;
+    rank = same;
+
+    color = "purple";
+    fontcolor = "purple";
+
+    subgraph P_1_case_0 {
+      label = "0";
+      cluster = true;
+      rank = same;
+
+      color = "green4";
+      fontcolor = "green4";
+
+      vertex_0[label="<abc>", color="brown", fontcolor="brown", ];
+    }
+    subgraph P_1_case_1 {
+      label = "1";
+      cluster = true;
+      rank = same;
+
+      color = "green4";
+      fontcolor = "green4";
+
+      vertex_1[label="<a>", color="brown", fontcolor="brown", ];
+      vertex_2[label="ref: P_1", color="darkgoldenrod", fontcolor="darkgoldenrod", ];
+      vertex_3[label="<c>", color="brown", fontcolor="brown", ];
+    }
+    subgraph P_1_case_2 {
+      label = "2";
+      cluster = true;
+      rank = same;
+
+      color = "green4";
+      fontcolor = "green4";
+
+      vertex_4[label="<bc>", color="brown", fontcolor="brown", ];
+      vertex_5[label="ref: P_2", color="darkgoldenrod", fontcolor="darkgoldenrod", ];
+    }
+  }
+
+  prod_P_1 -> vertex_0[color="red", ];
+
+  vertex_0 -> prod_P_1[color="black", ];
+
+  prod_P_1 -> vertex_1[color="red", ];
+
+  vertex_2 -> prod_P_1[color="darkgoldenrod", ];
+
+  vertex_1 -> vertex_2[color="aqua", ];
+
+  vertex_2 -> vertex_3[color="aqua", ];
+
+  vertex_3 -> prod_P_1[color="black", ];
+
+  prod_P_1 -> vertex_4[color="red", ];
+
+  vertex_5 -> prod_P_2[color="darkgoldenrod", ];
+
+  vertex_4 -> vertex_5[color="aqua", ];
+
+  vertex_5 -> prod_P_1[color="black", ];
+
+  subgraph P_2_prod {
+    label = "Cases: P_2";
+    cluster = true;
+    rank = same;
+
+    color = "purple";
+    fontcolor = "purple";
+
+    subgraph P_2_case_0 {
+      label = "0";
+      cluster = true;
+      rank = same;
+
+      color = "green4";
+      fontcolor = "green4";
+
+      vertex_6[label="ref: P_1", color="darkgoldenrod", fontcolor="darkgoldenrod", ];
+    }
+    subgraph P_2_case_1 {
+      label = "1";
+      cluster = true;
+      rank = same;
+
+      color = "green4";
+      fontcolor = "green4";
+
+      vertex_7[label="ref: P_2", color="darkgoldenrod", fontcolor="darkgoldenrod", ];
+    }
+    subgraph P_2_case_2 {
+      label = "2";
+      cluster = true;
+      rank = same;
+
+      color = "green4";
+      fontcolor = "green4";
+
+      vertex_8[label="ref: P_1", color="darkgoldenrod", fontcolor="darkgoldenrod", ];
+      vertex_9[label="<bc>", color="brown", fontcolor="brown", ];
+    }
+  }
+
+  vertex_6 -> prod_P_1[color="darkgoldenrod", ];
+
+  prod_P_2 -> vertex_6[color="red", ];
+
+  vertex_6 -> prod_P_2[color="black", ];
+
+  vertex_7 -> prod_P_2[color="darkgoldenrod", ];
+
+  prod_P_2 -> vertex_7[color="red", ];
+
+  vertex_7 -> prod_P_2[color="black", ];
+
+  vertex_8 -> prod_P_1[color="darkgoldenrod", ];
+
+  prod_P_2 -> vertex_8[color="red", ];
+
+  vertex_8 -> vertex_9[color="aqua", ];
+
+  vertex_9 -> prod_P_2[color="black", ];
+}
+
