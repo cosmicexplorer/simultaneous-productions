@@ -218,29 +218,13 @@ impl NamedOrAnonStep {
   }
 }
 
-#[derive(Clone)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct StackDiffSegment(pub Vec<NamedOrAnonStep>);
-
-impl PartialEq for StackDiffSegment {
-  fn eq(&self, other: &Self) -> bool { self.0 == other.0 }
-}
-
-impl Eq for StackDiffSegment {}
-
-impl fmt::Debug for StackDiffSegment {
-  fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-    write!(f, "StackDiffSegment({:?})", &self.0)
-  }
-}
-
-impl Hash for StackDiffSegment {
-  fn hash<H: Hasher>(&self, state: &mut H) { self.0.hash(state) }
-}
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq, Hash)]
 pub struct TrieNodeRef(pub usize);
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct StackTrieNode {
   pub stack_diff: StackDiffSegment,
   /* During parsing, the top of the stack will be a named or anonymous symbol. We can negate
@@ -255,17 +239,6 @@ pub struct StackTrieNode {
    * to parallelism in parsing! */
   pub prev_nodes: IndexSet<StackTrieNextEntry>,
 }
-
-
-impl PartialEq for StackTrieNode {
-  fn eq(&self, other: &Self) -> bool {
-    self.stack_diff == other.stack_diff
-      && self.next_nodes == other.next_nodes
-      && self.prev_nodes == other.prev_nodes
-  }
-}
-
-impl Eq for StackTrieNode {}
 
 impl StackTrieNode {
   fn bare(vtx: EpsilonGraphVertex) -> Self {
@@ -290,21 +263,11 @@ pub enum StackTrieNextEntry {
   Incomplete(TrieNodeRef),
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct EpsilonNodeStateSubgraph {
   pub vertex_mapping: IndexMap<EpsilonGraphVertex, TrieNodeRef>,
   pub trie_node_universe: Vec<StackTrieNode>,
 }
-
-
-impl PartialEq for EpsilonNodeStateSubgraph {
-  fn eq(&self, other: &Self) -> bool {
-    self.vertex_mapping == other.vertex_mapping
-      && self.trie_node_universe == other.trie_node_universe
-  }
-}
-
-impl Eq for EpsilonNodeStateSubgraph {}
 
 impl EpsilonNodeStateSubgraph {
   fn new() -> Self {
@@ -342,33 +305,17 @@ impl EpsilonNodeStateSubgraph {
   }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ContiguousNonterminalInterval {
   pub interval: Vec<EpsilonGraphVertex>,
 }
 
-impl PartialEq for ContiguousNonterminalInterval {
-  fn eq(&self, other: &Self) -> bool { self.interval == other.interval }
-}
-
-impl Eq for ContiguousNonterminalInterval {}
-
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct CyclicGraphDecomposition {
   pub cyclic_subgraph: EpsilonNodeStateSubgraph,
   pub pairwise_state_transitions: Vec<CompletedStatePairWithVertices>,
   pub anon_step_mapping: IndexMap<AnonSym, UnflattenedProdCaseRef>,
 }
-
-impl PartialEq for CyclicGraphDecomposition {
-  fn eq(&self, other: &Self) -> bool {
-    self.cyclic_subgraph == other.cyclic_subgraph
-      && self.pairwise_state_transitions == other.pairwise_state_transitions
-      && self.anon_step_mapping == other.anon_step_mapping
-  }
-}
-
-impl Eq for CyclicGraphDecomposition {}
 
 /* Pointers to the appropriate "forests" of stack transitions
  * starting/completing at each state. "starting" and "completing" are
@@ -378,20 +325,11 @@ impl Eq for CyclicGraphDecomposition {}
  * grammars (CFGs and below, I think? Unclear if the Chomsky hierarchy
  * still applies). */
 // TODO: fix the above incorrect docstring!
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct EpsilonIntervalGraph {
   pub all_intervals: Vec<ContiguousNonterminalInterval>,
   pub anon_step_mapping: IndexMap<AnonSym, UnflattenedProdCaseRef>,
 }
-
-
-impl PartialEq for EpsilonIntervalGraph {
-  fn eq(&self, other: &Self) -> bool {
-    self.all_intervals == other.all_intervals && self.anon_step_mapping == other.anon_step_mapping
-  }
-}
-
-impl Eq for EpsilonIntervalGraph {}
 
 impl EpsilonIntervalGraph {
   pub fn find_start_end_indices(&self) -> IndexMap<gc::ProdRef, StartEndEpsilonIntervals> {
@@ -506,20 +444,11 @@ impl EpsilonIntervalGraph {
 /// This is only a concept in the interval graph and is flattened to a single
 /// epsilon/epsilon prime when the PreprocessedGrammar is finally
 /// constructed.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct StartEndEpsilonIntervals {
   pub start_epsilons: Vec<ContiguousNonterminalInterval>,
   pub end_epsilons: Vec<ContiguousNonterminalInterval>,
 }
-
-
-impl PartialEq for StartEndEpsilonIntervals {
-  fn eq(&self, other: &Self) -> bool {
-    self.start_epsilons == other.start_epsilons && self.end_epsilons == other.end_epsilons
-  }
-}
-
-impl Eq for StartEndEpsilonIntervals {}
 
 impl StartEndEpsilonIntervals {
   fn new() -> Self {
@@ -530,19 +459,11 @@ impl StartEndEpsilonIntervals {
   }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct CompletedStatePairWithVertices {
   pub state_pair: StatePair,
   pub interval: ContiguousNonterminalInterval,
 }
-
-impl PartialEq for CompletedStatePairWithVertices {
-  fn eq(&self, other: &Self) -> bool {
-    self.state_pair == other.state_pair && self.interval == other.interval
-  }
-}
-
-impl Eq for CompletedStatePairWithVertices {}
 
 #[derive(Debug, Clone)]
 pub struct SingleStackCycle(pub Vec<EpsilonGraphVertex>);
@@ -554,33 +475,10 @@ struct TransitionIterationResult {
   pub cycles: Vec<SingleStackCycle>,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
 struct IntermediateTokenTransition {
   cur_traversal_intermediate_nonterminals: Vec<EpsilonGraphVertex>,
   rest_of_interval: Vec<EpsilonGraphVertex>,
-}
-
-
-impl PartialEq for IntermediateTokenTransition {
-  fn eq(&self, other: &Self) -> bool {
-    self.cur_traversal_intermediate_nonterminals == other.cur_traversal_intermediate_nonterminals
-      && self.rest_of_interval == other.rest_of_interval
-  }
-}
-
-impl Eq for IntermediateTokenTransition {}
-
-/// This [Hash] implementation is stable because the collection types in this
-/// struct have a specific ordering.
-impl Hash for IntermediateTokenTransition {
-  fn hash<H: Hasher>(&self, state: &mut H) {
-    for intermediate_vertex in self.cur_traversal_intermediate_nonterminals.iter() {
-      intermediate_vertex.hash(state);
-    }
-    for subsequent_vertex in self.rest_of_interval.iter() {
-      subsequent_vertex.hash(state);
-    }
-  }
 }
 
 impl IntermediateTokenTransition {
