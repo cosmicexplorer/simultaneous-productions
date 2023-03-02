@@ -2,65 +2,79 @@ digraph test_sp_graph {
     compound = true;
 
     subgraph prods {
-        cluster = true;
         label = "Productions";
+        cluster = true;
+        rank  = same;
+
         color = blue;
         fontcolor = blue;
         node [color="blue", fontcolor="blue"];
-        rank  = same;
+
         prod_a[label="A"];
         prod_b[label="B"];
     }
 
     subgraph a_prod {
-        cluster = true;
         label = "Cases: A";
+        cluster = true;
+        rank = same;
+
         color = purple;
         fontcolor = purple;
-        rank = same;
+
         subgraph a_case_0 {
-            cluster = true;
             label = "0";
+            cluster = true;
+            rank = same;
+
             color = green4;
             fontcolor = green4;
-            rank = same;
+
             vertex_0[label="<ab>", color="brown", fontcolor="brown"];
         }
     }
-    prod_a -> vertex_0[label="", color="red"];
-    vertex_0 -> prod_a[label="", color="black"];
+
+    prod_a -> vertex_0[label="A", color="red", fontcolor="red"];
+    vertex_0 -> prod_a[color="black"];
 
     subgraph b_prod {
-        cluster = true;
         label = "Cases: B";
+        cluster = true;
+        rank = same;
+
         color = purple;
         fontcolor = purple;
-        rank = same;
+
         subgraph b_case_0 {
-            cluster = true;
             label = "0";
+            cluster = true;
+            rank = same;
+
             color = green4;
             fontcolor = green4;
-            rank = same;
+
             vertex_1[label="<ab>", color="brown", fontcolor="brown"];
             vertex_2[label="ref: A", color="darkgoldenrod", fontcolor="darkgoldenrod"];
         }
         subgraph b_case_1 {
-            cluster = true;
             label = "1";
+            cluster = true;
+            rank = same;
+
             color = green4;
             fontcolor = green4;
-            rank = same;
+
             vertex_3[label="ref: A", color="darkgoldenrod", fontcolor="darkgoldenrod"];
             vertex_4[label="<a>", color="brown", fontcolor="brown"];
         }
     }
-    prod_b -> vertex_1[label="", color="red"];
-    vertex_1 -> vertex_2[label="", color="aqua"];
-    vertex_2 -> prod_a[label="", color="darkgoldenrod"];
-    vertex_2 -> prod_b[label="", color="black"];
-    prod_b -> vertex_3[label="", color="red"];
-    vertex_3 -> prod_a[label="", color="darkgoldenrod"];
-    vertex_3 -> vertex_4[label="", color="aqua"];
-    vertex_4 -> prod_b[label="", color="black"];
+
+    prod_b -> vertex_1[color="red"];
+    vertex_1 -> vertex_2[color="aqua"];
+    vertex_2 -> prod_a[color="darkgoldenrod"];
+    vertex_2 -> prod_b[color="black"];
+    prod_b -> vertex_3[color="red"];
+    vertex_3 -> prod_a[color="darkgoldenrod"];
+    vertex_3 -> vertex_4[color="aqua"];
+    vertex_4 -> prod_b[color="black"];
 }

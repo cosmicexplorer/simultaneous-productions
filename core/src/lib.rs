@@ -80,33 +80,23 @@ pub mod grammar_specification {
   }
 
   pub mod graphviz {
-    use dot;
-    use indexmap::IndexMap;
-
-    use std::borrow::Cow;
+    use uuid::Uuid;
 
     #[derive(Debug, Hash, PartialEq, Eq, Clone)]
     pub struct Id(pub String);
 
-    impl Id {
-      pub fn to_dot_id<'a>(&self) -> dot::Id<'a> {
-        dot::Id::new(self.0.clone()).expect("dot vertex id construction failed")
-      }
-    }
-
     #[derive(Debug, Clone)]
     pub struct Label(pub String);
 
-    impl Label {
-      pub fn to_dot_label<'a>(&self) -> dot::LabelText<'a> {
-        dot::LabelText::LabelStr(self.0.clone().into())
-      }
-    }
+    #[derive(Debug, Clone)]
+    pub struct Color(pub String);
 
     #[derive(Debug, Clone)]
     pub struct Vertex {
       pub id: Id,
-      pub label: Label,
+      pub label: Option<Label>,
+      pub color: Option<Color>,
+      pub fontcolor: Option<Color>,
     }
 
     #[cfg(test)]
@@ -115,7 +105,46 @@ pub mod grammar_specification {
         let key = format!("node_{}", index);
         Self {
           id: Id(key.clone()),
-          label: Label(key),
+          label: Some(Label(key)),
+          color: None,
+          fontcolor: None,
+        }
+      }
+    }
+
+    #[derive(Debug, Clone, Default)]
+    pub struct NodeDefaults {
+      pub color: Option<Color>,
+      pub fontcolor: Option<Color>,
+    }
+
+    #[derive(Debug, Clone)]
+    pub enum Entity {
+      Subgraph(Subgraph),
+      Vertex(Vertex),
+      Edge(Edge),
+    }
+
+    #[derive(Debug, Clone)]
+    pub struct Subgraph {
+      pub id: Id,
+      pub label: Option<Label>,
+      pub color: Option<Color>,
+      pub fontcolor: Option<Color>,
+      pub node_defaults: Option<NodeDefaults>,
+      pub entities: Vec<Entity>,
+    }
+
+    impl Default for Subgraph {
+      fn default() -> Self {
+        let id = Id(Uuid::new_v4().to_string());
+        Self {
+          id,
+          label: None,
+          color: None,
+          fontcolor: None,
+          node_defaults: None,
+          entities: Vec::new(),
         }
       }
     }
@@ -124,109 +153,244 @@ pub mod grammar_specification {
     pub struct Edge {
       pub source: Id,
       pub target: Id,
-      pub label: Label,
+      pub label: Option<Label>,
+      pub color: Option<Color>,
+      pub fontcolor: Option<Color>,
     }
 
+    #[derive(Debug, Hash, PartialEq, Eq, Clone)]
+    pub struct DotOutput(pub String);
+
     pub struct GraphBuilder {
-      graph_id: String,
-      vertices: Vec<Id>,
-      vertex_labels: IndexMap<Id, Label>,
-      edges: Vec<Edge>,
+      entities: Vec<Entity>,
     }
 
     impl GraphBuilder {
-      pub fn new(graph_id: String) -> Self {
+      pub fn new() -> Self {
         Self {
-          graph_id,
-          vertices: Vec::new(),
-          vertex_labels: IndexMap::new(),
-          edges: Vec::new(),
+          entities: Vec::new(),
         }
       }
 
-      pub fn accept_vertex(&mut self, v: Vertex) {
-        self.vertices.push(v.id.clone());
-        assert!(
-          self.vertex_labels.insert(v.id, v.label).is_none(),
-          "vertex already registered"
-        );
+      pub fn accept_entity(&mut self, e: Entity) { self.entities.push(e); }
+
+      fn newline(output: &mut String) { output.push('\n'); }
+
+      fn newline_indent(output: &mut String, indent: usize) {
+        Self::newline(output);
+        for _ in 0..indent {
+          output.push(' ');
+        }
       }
 
-      pub fn accept_edges(&mut self, e: Vec<Edge>) { self.edges.extend(e.into_iter()); }
-    }
+      fn bump_indent(indent: &mut usize) { *indent += 2; }
 
-    impl<'a> dot::Labeller<'a, Id, Edge> for GraphBuilder {
-      fn graph_id(&'a self) -> dot::Id<'a> {
-        dot::Id::new(self.graph_id.as_str()).expect("graph id construction failed")
+      fn unbump_indent(indent: &mut usize) {
+        assert!(*indent >= 2);
+        *indent -= 2;
       }
 
-      fn node_id(&'a self, v: &Id) -> dot::Id<'a> { v.to_dot_id() }
+      fn print_entity(entity: Entity, mut indent: usize) -> String {
+        match entity {
+          Entity::Vertex(Vertex {
+            id,
+            label,
+            color,
+            fontcolor,
+          }) => {
+            let mut output = id.0;
 
-      fn node_label<'b>(&'b self, v: &Id) -> dot::LabelText<'b> {
-        self
-          .vertex_labels
-          .get(v)
-          .expect("missing node label")
-          .to_dot_label()
+            let mut modifiers: Vec<String> = Vec::new();
+            if let Some(Label(label)) = label {
+              modifiers.push(format!("label=\"{}\"", label));
+            }
+            if let Some(Color(color)) = color {
+              modifiers.push(format!("color=\"{}\"", color));
+            }
+            if let Some(Color(fontcolor)) = fontcolor {
+              modifiers.push(format!("fontcolor=\"{}\"", fontcolor));
+            }
+
+            if !modifiers.is_empty() {
+              output.push('[');
+
+              for m in modifiers.into_iter() {
+                output.push_str(format!("{}, ", m).as_str());
+              }
+
+              output.push(']');
+            }
+
+            output.push(';');
+
+            output
+          },
+          Entity::Edge(Edge {
+            source,
+            target,
+            label,
+            color,
+            fontcolor,
+          }) => {
+            let mut output = format!("{} -> {}", source.0, target.0);
+
+            let mut modifiers: Vec<String> = Vec::new();
+            if let Some(Label(label)) = label {
+              modifiers.push(format!("label=\"{}\"", label));
+            }
+            if let Some(Color(color)) = color {
+              modifiers.push(format!("color=\"{}\"", color));
+            }
+            if let Some(Color(fontcolor)) = fontcolor {
+              modifiers.push(format!("fontcolor=\"{}\"", fontcolor));
+            }
+
+            if !modifiers.is_empty() {
+              output.push('[');
+
+              for m in modifiers.into_iter() {
+                output.push_str(format!("{}, ", m).as_str());
+              }
+
+              output.push(']');
+            }
+
+            output.push(';');
+
+            output
+          },
+          Entity::Subgraph(Subgraph {
+            id,
+            label,
+            color,
+            fontcolor,
+            node_defaults,
+            entities,
+          }) => {
+            let mut output = format!("subgraph {} {{", id.0);
+            Self::bump_indent(&mut indent);
+
+            Self::newline_indent(&mut output, indent);
+            if let Some(Label(label)) = label {
+              output.push_str(format!("label = \"{}\";", label).as_str());
+              Self::newline_indent(&mut output, indent);
+            }
+            output.push_str("cluster = true;");
+            Self::newline_indent(&mut output, indent);
+            output.push_str("rank = same;");
+            Self::newline(&mut output);
+
+            if let Some(Color(color)) = color {
+              Self::newline_indent(&mut output, indent);
+              output.push_str(format!("color = \"{}\";", color).as_str());
+            }
+            if let Some(Color(fontcolor)) = fontcolor {
+              Self::newline_indent(&mut output, indent);
+              output.push_str(format!("fontcolor = \"{}\";", fontcolor).as_str());
+            }
+            if let Some(NodeDefaults { color, fontcolor }) = node_defaults {
+              let mut modifiers: Vec<String> = Vec::new();
+              if let Some(Color(color)) = color {
+                modifiers.push(format!("color=\"{}\", ", color));
+              }
+              if let Some(Color(fontcolor)) = fontcolor {
+                modifiers.push(format!("fontcolor=\"{}\", ", fontcolor));
+              }
+              if !modifiers.is_empty() {
+                Self::newline_indent(&mut output, indent);
+                output.push_str("node [");
+                for m in modifiers.into_iter() {
+                  output.push_str(format!("{}, ", m).as_str());
+                }
+                output.push_str("];")
+              }
+            }
+            Self::newline(&mut output);
+
+            for e in entities.into_iter() {
+              Self::newline_indent(&mut output, indent);
+              let expr = Self::print_entity(e, indent);
+              output.push_str(expr.as_str());
+            }
+
+            Self::unbump_indent(&mut indent);
+            Self::newline_indent(&mut output, indent);
+            output.push('}');
+
+            output
+          },
+        }
       }
 
-      fn edge_label<'b>(&'b self, e: &Edge) -> dot::LabelText<'b> { e.label.to_dot_label() }
-    }
+      pub fn build(self, graph_name: Id) -> DotOutput {
+        let mut output: String = String::new();
+        let mut indent: usize = 0;
 
-    impl<'a> dot::GraphWalk<'a, Id, Edge> for GraphBuilder {
-      fn nodes(&self) -> dot::Nodes<'a, Id> { Cow::Owned(self.vertices.clone()) }
+        output.push_str(format!("digraph {} {{", graph_name.0).as_str());
+        Self::bump_indent(&mut indent);
 
-      fn edges(&'a self) -> dot::Edges<'a, Edge> { Cow::Borrowed(&self.edges[..]) }
+        Self::newline_indent(&mut output, indent);
+        output.push_str("compound = true;");
 
-      fn source(&self, e: &Edge) -> Id { e.source.clone() }
+        for entity in self.entities.into_iter() {
+          Self::newline(&mut output);
+          Self::newline_indent(&mut output, indent);
 
-      fn target(&self, e: &Edge) -> Id { e.target.clone() }
+          let expr = Self::print_entity(entity, indent);
+          output.push_str(expr.as_str());
+        }
+
+        Self::unbump_indent(&mut indent);
+        assert_eq!(indent, 0);
+        Self::newline_indent(&mut output, indent);
+        output.push('}');
+        Self::newline(&mut output);
+
+        DotOutput(output)
+      }
     }
 
     #[cfg(test)]
     mod test {
       use super::*;
 
-      use std::str;
-
       #[test]
       fn render_single_vertex() {
-        let mut gb = GraphBuilder::new("test_graph".to_string());
-        gb.accept_vertex(Vertex::numeric(0));
-
-        let mut output: Vec<u8> = Vec::new();
-        dot::render(&gb, &mut output).unwrap();
-        let output = str::from_utf8_mut(&mut output).unwrap();
+        let mut gb = GraphBuilder::new();
+        gb.accept_entity(Entity::Vertex(Vertex::numeric(0)));
+        let DotOutput(output) = gb.build(Id("test_graph".to_string()));
 
         assert_eq!(
           output,
-          "digraph test_graph {\n    \
-             node_0[label=\"node_0\"];\n\
+          "digraph test_graph {\n  \
+             compound = true;\n\n  \
+             node_0[label=\"node_0\", ];\n\
            }\n"
         );
       }
 
       #[test]
       fn render_single_edge() {
-        let mut gb = GraphBuilder::new("test_graph".to_string());
-        gb.accept_vertex(Vertex::numeric(0));
-        gb.accept_vertex(Vertex::numeric(1));
-        gb.accept_edges(vec![Edge {
+        let mut gb = GraphBuilder::new();
+        gb.accept_entity(Entity::Vertex(Vertex::numeric(0)));
+        gb.accept_entity(Entity::Vertex(Vertex::numeric(1)));
+        gb.accept_entity(Entity::Edge(Edge {
           source: Vertex::numeric(0).id,
           target: Vertex::numeric(1).id,
-          label: Label("asdf".to_string()),
-        }]);
+          label: Some(Label("asdf".to_string())),
+          color: None,
+          fontcolor: None,
+        }));
 
-        let mut output: Vec<u8> = Vec::new();
-        dot::render(&gb, &mut output).unwrap();
-        let output = str::from_utf8_mut(&mut output).unwrap();
+        let DotOutput(output) = gb.build(Id("test_graph".to_string()));
 
         assert_eq!(
           output,
-          "digraph test_graph {\n    \
-             node_0[label=\"node_0\"];\n    \
-             node_1[label=\"node_1\"];\n    \
-             node_0 -> node_1[label=\"asdf\"];\n\
+          "digraph test_graph {\n  \
+             compound = true;\n\n  \
+             node_0[label=\"node_0\", ];\n\n  \
+             node_1[label=\"node_1\", ];\n\n  \
+             node_0 -> node_1[label=\"asdf\", ];\n\
            }\n"
         );
       }
@@ -643,75 +807,141 @@ pub mod test_framework {
   }
 
   pub fn build_sp_graph(sp: SP) -> gv::GraphBuilder {
-    let mut gb = gv::GraphBuilder::new("test_sp_graph".to_string());
+    let mut gb = gv::GraphBuilder::new();
     let mut vertex_id_counter: usize = 0;
-    let mut edges: Vec<gv::Edge> = Vec::new();
+    let mut prod_vertices: Vec<gv::Vertex> = Vec::new();
 
     for (prod_ref, prod) in sp.into_iter() {
       // (1) Add vertex corresponding to any references to this production by name.
       let ref_id = format!("prod_{}", prod_ref.into_string());
       let ref_vertex = gv::Vertex {
         id: gv::Id(ref_id.clone()),
-        label: gv::Label(ref_id),
+        label: Some(gv::Label(prod_ref.into_string())),
+        color: None,
+        fontcolor: None,
       };
       let this_prod_ref_id = ref_vertex.id.clone();
-      gb.accept_vertex(ref_vertex);
+      // (1.1) Record a vertex for each production for their own subgraph at the end
+      // of this loop.
+      prod_vertices.push(ref_vertex);
+
+      // (1.2) Accumulate edges and add them after each production's subgraph.
+      let mut edges: Vec<gv::Edge> = Vec::new();
+
+      // (1.3) Create a subgraph for each production!
+      let mut cur_prod_subgraph = gv::Subgraph {
+        id: gv::Id(format!("{}_prod", prod_ref.into_string())),
+        label: Some(gv::Label(format!("Cases: {}", prod_ref.into_string()))),
+        color: Some(gv::Color("purple".to_string())),
+        fontcolor: Some(gv::Color("purple".to_string())),
+        ..Default::default()
+      };
 
       // (2) Traverse the productions, accumulating case elements and edges between
       //     each other and the prod refs!
-      for case in prod.into_iter() {
+      for (case_index, case) in prod.into_iter().enumerate() {
         // (2.1) Link each consecutive pair of case elements with a (directed) edge.
         let mut prev_id = this_prod_ref_id.clone();
+
+        // (1.3)
+        let mut cur_case_subgraph = gv::Subgraph {
+          id: gv::Id(format!("{}_case_{}", prod_ref.into_string(), case_index)),
+          label: Some(gv::Label(format!("{}", case_index))),
+          color: Some(gv::Color("green4".to_string())),
+          fontcolor: Some(gv::Color("green4".to_string())),
+          ..Default::default()
+        };
 
         for case_el in case.into_iter() {
           // (2.2) Create a new vertex for each case element.
           let new_id = gv::Id(format!("vertex_{}", vertex_id_counter));
           vertex_id_counter += 1;
-          /* TODO: remove clone? */
-          let label = match case_el.clone() {
-            CE::Lit(lit) => gv::Label(lit.into_string()),
-            CE::Prod(pr) => gv::Label(pr.into_string()),
-          };
-          let new_vertex = gv::Vertex { id: new_id, label };
-          let new_id = new_vertex.id.clone();
-          gb.accept_vertex(new_vertex);
+
+          match case_el {
+            CE::Lit(lit) => {
+              let label = gv::Label(format!("<{}>", lit.into_string()));
+              let new_vertex = gv::Vertex {
+                id: new_id.clone(),
+                label: Some(label),
+                color: Some(gv::Color("brown".to_string())),
+                fontcolor: Some(gv::Color("brown".to_string())),
+              };
+
+              cur_case_subgraph
+                .entities
+                .push(gv::Entity::Vertex(new_vertex));
+            },
+            CE::Prod(pr) => {
+              let label = gv::Label(format!("ref: {}", pr.into_string()));
+              let new_vertex = gv::Vertex {
+                id: new_id.clone(),
+                label: Some(label),
+                color: Some(gv::Color("darkgoldenrod".to_string())),
+                fontcolor: Some(gv::Color("darkgoldenrod".to_string())),
+              };
+
+              cur_case_subgraph
+                .entities
+                .push(gv::Entity::Vertex(new_vertex));
+
+              // (2.3) If this is a prod ref, then add another edge from this to the prod
+              // ref's id!
+              /* FIXME: remove duplicate format!("prod_{}", ...) calls! */
+              let target_id = gv::Id(format!("prod_{}", pr.into_string()));
+              edges.push(gv::Edge {
+                source: new_id.clone(),
+                target: target_id,
+                color: Some(gv::Color("darkgoldenrod".to_string())),
+                fontcolor: None,
+                label: None,
+              });
+            },
+          }
 
           // See (2.1).
           let new_edge = gv::Edge {
             source: prev_id,
             target: new_id.clone(),
-            /* label: gv::Label("asdf".to_string()), */
-            label: gv::Label("".to_string()),
+            color: Some(gv::Color("aqua".to_string())),
+            fontcolor: None,
+            label: None,
           };
           prev_id = new_id.clone();
           edges.push(new_edge);
-
-          // (2.3) If this is a prod ref, then add another edge from this to the prod
-          // ref's id!
-          if let CE::Prod(pr) = case_el {
-            /* FIXME: remove duplicate format!("prod_{}", ...) calls! */
-            let target_id = gv::Id(format!("prod_{}", pr.into_string()));
-            edges.push(gv::Edge {
-              source: new_id,
-              target: target_id,
-              /* label: gv::Label("pr asdf".to_string()), */
-              label: gv::Label("".to_string()),
-            });
-          }
         }
 
         // (2.4) Link this final case element back with the production!
         edges.push(gv::Edge {
           source: prev_id,
           target: this_prod_ref_id.clone(),
-          /* label: gv::Label("final asdf".to_string()), */
-          label: gv::Label("".to_string()),
+          color: Some(gv::Color("black".to_string())),
+          fontcolor: None,
+          label: None,
         });
+
+        cur_prod_subgraph
+          .entities
+          .push(gv::Entity::Subgraph(cur_case_subgraph));
+      }
+      gb.accept_entity(gv::Entity::Subgraph(cur_prod_subgraph));
+
+      for edge in edges.into_iter() {
+        gb.accept_entity(gv::Entity::Edge(edge));
       }
     }
 
-    gb.accept_edges(edges);
-
+    // See (1.1).
+    gb.accept_entity(gv::Entity::Subgraph(gv::Subgraph {
+      id: gv::Id("prods".to_string()),
+      label: Some(gv::Label("Productions".to_string())),
+      color: Some(gv::Color("blue".to_string())),
+      fontcolor: Some(gv::Color("blue".to_string())),
+      node_defaults: Some(gv::NodeDefaults {
+        color: Some(gv::Color("blue".to_string())),
+        fontcolor: Some(gv::Color("blue".to_string())),
+      }),
+      entities: prod_vertices.into_iter().map(gv::Entity::Vertex).collect(),
+    }));
     gb
   }
 
@@ -719,23 +949,23 @@ pub mod test_framework {
     SP::from(
       [
         (
-          ProductionReference::from("a"),
+          ProductionReference::from("A"),
           Production::from([Case::from([CE::Lit(Lit::from("ab"))].as_ref())].as_ref()),
         ),
         (
-          ProductionReference::from("b"),
+          ProductionReference::from("B"),
           Production::from(
             [
               Case::from(
                 [
                   CE::Lit(Lit::from("ab")),
-                  CE::Prod(ProductionReference::from("a")),
+                  CE::Prod(ProductionReference::from("A")),
                 ]
                 .as_ref(),
               ),
               Case::from(
                 [
-                  CE::Prod(ProductionReference::from("a")),
+                  CE::Prod(ProductionReference::from("A")),
                   CE::Lit(Lit::from("a")),
                 ]
                 .as_ref(),
@@ -751,16 +981,9 @@ pub mod test_framework {
 
   #[test]
   fn non_cyclic_graphviz() {
-    use dot;
-
-    use std::str;
-
     let sp = non_cyclic_productions();
     let gb = build_sp_graph(sp);
-
-    let mut output: Vec<u8> = Vec::new();
-    dot::render(&gb, &mut output).unwrap();
-    let output = str::from_utf8_mut(&mut output).unwrap();
+    let gv::DotOutput(output) = gb.build(gv::Id("test_sp_graph".to_string()));
 
     assert_eq!(output, "asdf");
   }
