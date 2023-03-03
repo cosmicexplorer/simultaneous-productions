@@ -1,117 +1,75 @@
 digraph test_graph {
   compound = true;
 
+  epsilon_graph_vertex_phase_2_1[label="+!0!", color="blue", fontcolor="blue", ];
+
+  epsilon_graph_vertex_phase_2_4[label="+!1!", color="blue", fontcolor="blue", ];
+
+  epsilon_graph_vertex_phase_2_9[label="-!3!", color="blue", fontcolor="blue", ];
+
+  epsilon_graph_vertex_phase_2_11[label="-!0!", color="blue", fontcolor="blue", ];
+
+  epsilon_graph_vertex_phase_2_13[label="+!3!", color="blue", fontcolor="blue", ];
+
+  epsilon_graph_vertex_phase_2_14[label="+!4!", color="blue", fontcolor="blue", ];
+
+  epsilon_graph_vertex_phase_2_15[label="-!4!", color="blue", fontcolor="blue", ];
+
+  epsilon_graph_vertex_phase_2_16[label="+!2!", color="blue", fontcolor="blue", ];
+
+  epsilon_graph_vertex_phase_2_17[label="-!2!", color="blue", fontcolor="blue", ];
+
+  epsilon_graph_vertex_phase_2_18[label="-!1!", color="blue", fontcolor="blue", ];
+
+  subgraph border_vertices {
+    label = "Borders";
+    cluster = true;
+    rank = same;
+
+    color = "purple";
+    fontcolor = "purple";
+
+    epsilon_graph_vertex_phase_2_0[label="Start(0)", color="brown", fontcolor="brown", ];
+    epsilon_graph_vertex_phase_2_3[label="Start(1)", color="brown", fontcolor="brown", ];
+    epsilon_graph_vertex_phase_2_10[label="End(1)", color="darkgoldenrod", fontcolor="darkgoldenrod", ];
+    epsilon_graph_vertex_phase_2_12[label="End(0)", color="darkgoldenrod", fontcolor="darkgoldenrod", ];
+  }
+
   subgraph state_vertices {
-    label = "LoweredState";
+    label = "States";
     cluster = true;
     rank = same;
 
-    color = "darkgoldenrod";
-    fontcolor = "darkgoldenrod";
-    node [color="darkgoldenrod", fontcolor="darkgoldenrod", ];
+    color = "green4";
+    fontcolor = "green4";
+    node [color="green4", fontcolor="green4", ];
 
-    subgraph border_states {
-      label = "Borders";
-      cluster = true;
-      rank = same;
-
-      color = "brown4";
-      fontcolor = "brown4";
-
-      lowered_state_0[label="Start", ];
-      lowered_state_6[label="End", ];
-    }
-    lowered_state_1[label="0/0/0", ];
-    lowered_state_2[label="1/0/0", ];
-    lowered_state_3[label="0/0/1", ];
-    lowered_state_4[label="1/0/1", ];
-    lowered_state_5[label="1/1/1", ];
+    epsilon_graph_vertex_phase_2_2[label="0/0/0", ];
+    epsilon_graph_vertex_phase_2_5[label="1/0/0", ];
+    epsilon_graph_vertex_phase_2_6[label="0/0/1", ];
+    epsilon_graph_vertex_phase_2_7[label="1/0/1", ];
+    epsilon_graph_vertex_phase_2_8[label="1/1/1", ];
   }
-
-  subgraph cyclic_vertices {
-    label = "cyclic epsilon graph vertices";
-    cluster = true;
-    rank = same;
-
-    color = "blue4";
-    fontcolor = "blue4";
-
-  }
-
-  subgraph direct_vertices {
-    label = "direct epsilon graph vertices";
-    cluster = true;
-    rank = same;
-
-    color = "blue2";
-    fontcolor = "blue2";
-
-    epsilon_graph_vertex_phase_2_0[label="Start(0)", ];
-    epsilon_graph_vertex_phase_2_1[label="Anon(+!0!)", ];
-    epsilon_graph_vertex_phase_2_2[label="State(0/0/0)", ];
-    epsilon_graph_vertex_phase_2_3[label="Start(1)", ];
-    epsilon_graph_vertex_phase_2_4[label="Anon(+!1!)", ];
-    epsilon_graph_vertex_phase_2_5[label="State(1/0/0)", ];
-    epsilon_graph_vertex_phase_2_6[label="State(0/0/1)", ];
-    epsilon_graph_vertex_phase_2_7[label="State(1/0/1)", ];
-    epsilon_graph_vertex_phase_2_8[label="State(1/1/1)", ];
-    epsilon_graph_vertex_phase_2_9[label="Anon(-!3!)", ];
-    epsilon_graph_vertex_phase_2_10[label="End(1)", ];
-    epsilon_graph_vertex_phase_2_11[label="Anon(-!0!)", ];
-    epsilon_graph_vertex_phase_2_12[label="End(0)", ];
-    epsilon_graph_vertex_phase_2_13[label="Anon(+!3!)", ];
-    epsilon_graph_vertex_phase_2_14[label="Anon(+!4!)", ];
-    epsilon_graph_vertex_phase_2_15[label="Anon(-!4!)", ];
-    epsilon_graph_vertex_phase_2_16[label="Anon(+!2!)", ];
-    epsilon_graph_vertex_phase_2_17[label="Anon(-!2!)", ];
-    epsilon_graph_vertex_phase_2_18[label="Anon(-!1!)", ];
-  }
-
-  lowered_state_0 -> epsilon_graph_vertex_phase_2_0[color="red", ];
 
   epsilon_graph_vertex_phase_2_0 -> epsilon_graph_vertex_phase_2_1[color="aqua", ];
 
   epsilon_graph_vertex_phase_2_1 -> epsilon_graph_vertex_phase_2_2[color="aqua", ];
 
-  epsilon_graph_vertex_phase_2_2 -> lowered_state_1[color="yellow3", ];
-
-  lowered_state_0 -> epsilon_graph_vertex_phase_2_3[color="red", ];
-
   epsilon_graph_vertex_phase_2_3 -> epsilon_graph_vertex_phase_2_4[color="aqua", ];
 
   epsilon_graph_vertex_phase_2_4 -> epsilon_graph_vertex_phase_2_5[color="aqua", ];
 
-  epsilon_graph_vertex_phase_2_5 -> lowered_state_2[color="yellow3", ];
-
-  lowered_state_1 -> epsilon_graph_vertex_phase_2_2[color="red", ];
-
   epsilon_graph_vertex_phase_2_2 -> epsilon_graph_vertex_phase_2_6[color="aqua", ];
 
-  epsilon_graph_vertex_phase_2_6 -> lowered_state_3[color="yellow3", ];
-
-  lowered_state_2 -> epsilon_graph_vertex_phase_2_5[color="red", ];
-
   epsilon_graph_vertex_phase_2_5 -> epsilon_graph_vertex_phase_2_7[color="aqua", ];
-
-  epsilon_graph_vertex_phase_2_7 -> lowered_state_4[color="yellow3", ];
-
-  lowered_state_5 -> epsilon_graph_vertex_phase_2_8[color="red", ];
 
   epsilon_graph_vertex_phase_2_8 -> epsilon_graph_vertex_phase_2_9[color="aqua", ];
 
   epsilon_graph_vertex_phase_2_9 -> epsilon_graph_vertex_phase_2_10[color="aqua", ];
 
-  epsilon_graph_vertex_phase_2_10 -> lowered_state_6[color="yellow3", ];
-
-  lowered_state_3 -> epsilon_graph_vertex_phase_2_6[color="red", ];
-
   epsilon_graph_vertex_phase_2_6 -> epsilon_graph_vertex_phase_2_11[color="aqua", ];
 
   epsilon_graph_vertex_phase_2_11 -> epsilon_graph_vertex_phase_2_12[color="aqua", ];
-
-  epsilon_graph_vertex_phase_2_12 -> lowered_state_6[color="yellow3", ];
-
-  lowered_state_0 -> epsilon_graph_vertex_phase_2_3[color="red", ];
 
   epsilon_graph_vertex_phase_2_3 -> epsilon_graph_vertex_phase_2_13[color="aqua", ];
 
@@ -119,48 +77,18 @@ digraph test_graph {
 
   epsilon_graph_vertex_phase_2_14 -> epsilon_graph_vertex_phase_2_0[color="aqua", ];
 
-  epsilon_graph_vertex_phase_2_0 -> epsilon_graph_vertex_phase_2_1[color="aqua", ];
-
-  epsilon_graph_vertex_phase_2_1 -> epsilon_graph_vertex_phase_2_2[color="aqua", ];
-
-  epsilon_graph_vertex_phase_2_2 -> lowered_state_1[color="yellow3", ];
-
-  lowered_state_3 -> epsilon_graph_vertex_phase_2_6[color="red", ];
-
-  epsilon_graph_vertex_phase_2_6 -> epsilon_graph_vertex_phase_2_11[color="aqua", ];
-
-  epsilon_graph_vertex_phase_2_11 -> epsilon_graph_vertex_phase_2_12[color="aqua", ];
-
   epsilon_graph_vertex_phase_2_12 -> epsilon_graph_vertex_phase_2_15[color="aqua", ];
 
   epsilon_graph_vertex_phase_2_15 -> epsilon_graph_vertex_phase_2_8[color="aqua", ];
 
-  epsilon_graph_vertex_phase_2_8 -> lowered_state_5[color="yellow3", ];
-
-  lowered_state_4 -> epsilon_graph_vertex_phase_2_7[color="red", ];
-
   epsilon_graph_vertex_phase_2_7 -> epsilon_graph_vertex_phase_2_16[color="aqua", ];
 
   epsilon_graph_vertex_phase_2_16 -> epsilon_graph_vertex_phase_2_0[color="aqua", ];
-
-  epsilon_graph_vertex_phase_2_0 -> epsilon_graph_vertex_phase_2_1[color="aqua", ];
-
-  epsilon_graph_vertex_phase_2_1 -> epsilon_graph_vertex_phase_2_2[color="aqua", ];
-
-  epsilon_graph_vertex_phase_2_2 -> lowered_state_1[color="yellow3", ];
-
-  lowered_state_3 -> epsilon_graph_vertex_phase_2_6[color="red", ];
-
-  epsilon_graph_vertex_phase_2_6 -> epsilon_graph_vertex_phase_2_11[color="aqua", ];
-
-  epsilon_graph_vertex_phase_2_11 -> epsilon_graph_vertex_phase_2_12[color="aqua", ];
 
   epsilon_graph_vertex_phase_2_12 -> epsilon_graph_vertex_phase_2_17[color="aqua", ];
 
   epsilon_graph_vertex_phase_2_17 -> epsilon_graph_vertex_phase_2_18[color="aqua", ];
 
   epsilon_graph_vertex_phase_2_18 -> epsilon_graph_vertex_phase_2_10[color="aqua", ];
-
-  epsilon_graph_vertex_phase_2_10 -> lowered_state_6[color="yellow3", ];
 }
 

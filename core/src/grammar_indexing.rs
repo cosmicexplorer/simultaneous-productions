@@ -36,6 +36,8 @@ use crate::{
 use displaydoc::Display;
 use indexmap::{IndexMap, IndexSet};
 
+use core::fmt;
+
 /* TODO: what does "unflattened" mean? PassThrough appears relevant for
  * post-parse reconstruction? */
 #[derive(Debug, Copy, Clone, PartialEq, Eq, Hash)]
@@ -44,7 +46,8 @@ pub enum UnflattenedProdCaseRef {
   Case(gc::ProdCaseRef),
 }
 
-#[derive(Debug, Copy, Clone, PartialEq, Eq, Hash)]
+/// ~{0}~
+#[derive(Debug, Display, Copy, Clone, PartialEq, Eq, Hash)]
 pub struct StackSym(pub gc::ProdRef);
 
 /* TODO: is this used? */
@@ -68,9 +71,11 @@ trait Polar {
   fn polarity(&self) -> Polarity;
 }
 
-#[derive(Debug, Copy, Clone, PartialEq, Eq, Hash)]
+#[derive(Debug, Display, Copy, Clone, PartialEq, Eq, Hash)]
 pub enum StackStep {
+  /// +{0}
   Positive(StackSym),
+  /// -{0}
   Negative(StackSym),
 }
 
@@ -165,9 +170,9 @@ pub enum EpsilonGraphVertex {
   Start(gc::ProdRef),
   /// End({0})
   End(gc::ProdRef),
-  /// Anon({0})
+  /// {0}
   Anon(AnonStep),
-  /// State({0})
+  /// {0}
   State(gc::TokenPosition),
 }
 
@@ -192,9 +197,11 @@ pub enum StackStepError {
   StepConcatenationError(NamedOrAnonStep, NamedOrAnonStep),
 }
 
-#[derive(Debug, Copy, Clone, PartialEq, Eq, Hash)]
+#[derive(Debug, Display, Copy, Clone, PartialEq, Eq, Hash)]
 pub enum NamedOrAnonStep {
+  /// {0}
   Named(StackStep),
+  /// {0}
   Anon(AnonStep),
 }
 
@@ -233,6 +240,18 @@ impl NamedOrAnonStep {
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct StackDiffSegment(pub Vec<NamedOrAnonStep>);
+
+impl fmt::Display for StackDiffSegment {
+  fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+    let mut s = String::new();
+    s.push('[');
+    for step in self.0.iter() {
+      s.push_str(format!("{}", step).as_str());
+    }
+    s.push(']');
+    write!(f, "{}", s)
+  }
+}
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq, Hash)]
 pub struct TrieNodeRef(pub usize);
@@ -805,26 +824,9 @@ impl<Tok> PreprocessedGrammar<Tok> {
       ..
     } = self;
 
-    let mut state_vertices: IndexMap<LoweredState, gv::Vertex> = IndexMap::new();
     let mut epsilon_graph_vertices: IndexMap<EpsilonGraphVertex, gv::Vertex> = IndexMap::new();
 
-    let mut vertex_id_counter: usize = 0;
-
-    let mut ensure_id_for_state = |s: &LoweredState| -> gv::Id {
-      let gv::Vertex { id, .. } = state_vertices.entry(s.clone()).or_insert_with(|| {
-        let id = gv::Id(format!("lowered_state_{}", vertex_id_counter));
-        vertex_id_counter += 1;
-        gv::Vertex {
-          id,
-          label: Some(gv::Label(format!("{}", s))),
-          ..Default::default()
-        }
-      });
-      id.clone()
-    };
-
     let mut cyclic_edges: Vec<gv::Edge> = Vec::new();
-    let mut vertex_trie_node_shadowing_edges: Vec<gv::Edge> = Vec::new();
     let mut stack_trie_vertices: IndexMap<TrieNodeRef, (StackTrieNode, gv::Vertex)> =
       IndexMap::new();
 
@@ -840,7 +842,7 @@ impl<Tok> PreprocessedGrammar<Tok> {
       for (this_ref, node) in trie_node_universe.into_iter().enumerate() {
         let this_vertex = gv::Vertex {
           id: gv::Id(format!("stack_trie_node_{}", this_ref)),
-          label: Some(gv::Label("asdf-stack-trie-node".to_string())),
+          label: Some(gv::Label(format!("{}", node.stack_diff))),
           ..Default::default()
         };
         /* NB: Nodes are referenced by their index in the trie_node_universe vector. */
@@ -849,72 +851,14 @@ impl<Tok> PreprocessedGrammar<Tok> {
         let entry = (node, this_vertex);
         assert!(stack_trie_vertices.insert(this_ref, entry).is_none());
       }
-      /* (1.1) Add edges between all stack trie nodes! */
-      for (
-        StackTrieNode {
-          next_nodes,
-          prev_nodes,
-          ..
-        },
-        gv::Vertex { id: this_id, .. },
-      ) in stack_trie_vertices.values()
-      {
-        /* (1.1.1) Add "next" edges. */
-        for next_node in next_nodes.iter() {
-          let edge = match next_node {
-            StackTrieNextEntry::Incomplete(next_ref) => {
-              let (_, vtx) = stack_trie_vertices.get(next_ref).unwrap();
-              gv::Edge {
-                source: this_id.clone(),
-                target: vtx.id.clone(),
-                label: Some(gv::Label("next-asdf".to_string())),
-                ..Default::default()
-              }
-            },
-            StackTrieNextEntry::Completed(state) => {
-              let target = ensure_id_for_state(state);
-              gv::Edge {
-                source: this_id.clone(),
-                target,
-                label: Some(gv::Label("next-state-asdf".to_string())),
-                ..Default::default()
-              }
-            },
-          };
-          cyclic_edges.push(edge);
-        }
-        /* (1.1.1) Add "prev" edges. */
-        for prev_node in prev_nodes.iter() {
-          let edge = match prev_node {
-            StackTrieNextEntry::Incomplete(prev_ref) => {
-              let (_, vtx) = stack_trie_vertices.get(prev_ref).unwrap();
-              gv::Edge {
-                source: this_id.clone(),
-                target: vtx.id.clone(),
-                label: Some(gv::Label("prev-asdf".to_string())),
-                ..Default::default()
-              }
-            },
-            StackTrieNextEntry::Completed(state) => {
-              let target = ensure_id_for_state(state);
-              gv::Edge {
-                source: this_id.clone(),
-                target,
-                label: Some(gv::Label("prev-state-asdf".to_string())),
-                ..Default::default()
-              }
-            },
-          };
-          cyclic_edges.push(edge);
-        }
-      }
 
       /* (2) Generate a gv::Vertex for each EpsilonGraphVertex. */
+      let mut trie_node_vertex_mapping: IndexMap<gv::Id, gv::Id> = IndexMap::new();
       for (this_id, (vtx, node_ref)) in vertex_mapping.into_iter().enumerate() {
         let this_id = gv::Id(format!("cyclic_epsilon_graph_vertex_{}", this_id));
         let this_vertex = gv::Vertex {
           id: this_id.clone(),
-          label: Some(gv::Label("asdf-epsilon-graph-vertex".to_string())),
+          label: Some(gv::Label(format!("{}", vtx))),
           ..Default::default()
         };
 
@@ -922,13 +866,33 @@ impl<Tok> PreprocessedGrammar<Tok> {
 
         /* (2.1) Generate an edge to the trie node this vertex shadows! */
         let (_, vtx) = stack_trie_vertices.get(&node_ref).unwrap();
-        let shadow_edge = gv::Edge {
-          source: this_id,
-          target: vtx.id.clone(),
-          label: Some(gv::Label("shadow-asdf".to_string())),
-          ..Default::default()
-        };
-        vertex_trie_node_shadowing_edges.push(shadow_edge);
+        assert!(trie_node_vertex_mapping
+          .insert(vtx.id.clone(), this_id.clone())
+          .is_none());
+      }
+      /* (1.1) Add edges between all stack trie nodes! */
+      for (StackTrieNode { next_nodes, .. }, gv::Vertex { id: this_id, .. }) in
+        stack_trie_vertices.values()
+      {
+        /* (1.1.1) Add "next" edges. */
+        for next_node in next_nodes.iter() {
+          let edge = match next_node {
+            StackTrieNextEntry::Incomplete(next_ref) => {
+              let (_, vtx) = stack_trie_vertices.get(next_ref).unwrap();
+              gv::Edge {
+                source: trie_node_vertex_mapping.get(this_id).unwrap().clone(),
+                target: trie_node_vertex_mapping.get(&vtx.id).unwrap().clone(),
+                color: Some(gv::Color("red".to_string())),
+                ..Default::default()
+              }
+            },
+            _ => unreachable!(),
+          };
+          cyclic_edges.push(edge);
+        }
+        /* (1.1.1) Add "prev" edges. */
+        /* NB: these are always a mirror of the "next" edges, so we don't
+         * need them for visualization. */
       }
     }
 
@@ -938,14 +902,11 @@ impl<Tok> PreprocessedGrammar<Tok> {
       let mut vertex_id_counter_phase_2: usize = 0;
       for transition in pairwise_state_transitions.into_iter() {
         let CompletedStatePairWithVertices {
-          state_pair: StatePair { left, right },
           interval: ContiguousNonterminalInterval { interval },
+          ..
         } = transition;
-        let start_state = ensure_id_for_state(&left);
-        let end_state = ensure_id_for_state(&right);
 
-        let mut prev_id = start_state;
-        let mut cur_edge_color = gv::Color("red".to_string());
+        let mut prev_id: Option<gv::Id> = None;
 
         for vtx in interval.into_iter() {
           let next_id = epsilon_graph_vertices
@@ -964,115 +925,86 @@ impl<Tok> PreprocessedGrammar<Tok> {
             })
             .id
             .clone();
-          let edge = gv::Edge {
-            source: prev_id,
-            target: next_id.clone(),
-            color: Some(cur_edge_color),
-            ..Default::default()
-          };
-          prev_id = next_id;
-          cur_edge_color = gv::Color("aqua".to_string());
-          non_cyclic_edges.push(edge);
-        }
-        let final_edge = gv::Edge {
-          source: prev_id,
-          target: end_state,
-          color: Some(gv::Color("yellow3".to_string())),
-          ..Default::default()
-        };
-        non_cyclic_edges.push(final_edge);
-      }
-    };
-
-    /* Plot LoweredState instances. */
-    let (border_states, token_states) = {
-      let mut border_states = Vec::new();
-      let mut token_states = Vec::new();
-      for (state, vtx) in state_vertices.into_iter() {
-        match state {
-          LoweredState::Start | LoweredState::End => {
-            border_states.push(vtx);
-          },
-          _ => {
-            token_states.push(vtx);
-          },
+          if let Some(prev_id) = prev_id {
+            let edge = gv::Edge {
+              source: prev_id,
+              target: next_id.clone(),
+              color: Some(gv::Color("aqua".to_string())),
+              ..Default::default()
+            };
+            non_cyclic_edges.push(edge);
+          }
+          prev_id = Some(next_id);
         }
       }
-      (border_states, token_states)
     };
-    let border_states = gv::Subgraph {
-      id: gv::Id("border_states".to_string()),
-      label: Some(gv::Label("Borders".to_string())),
-      color: Some(gv::Color("brown4".to_string())),
-      fontcolor: Some(gv::Color("brown4".to_string())),
-      entities: border_states.into_iter().map(gv::Entity::Vertex).collect(),
-      ..Default::default()
-    };
-    let mut state_entities = vec![gv::Entity::Subgraph(border_states)];
-    state_entities.extend(token_states.into_iter().map(gv::Entity::Vertex));
-    let state_subgraph = gv::Subgraph {
-      id: gv::Id("state_vertices".to_string()),
-      label: Some(gv::Label("LoweredState".to_string())),
-      color: Some(gv::Color("darkgoldenrod".to_string())),
-      fontcolor: Some(gv::Color("darkgoldenrod".to_string())),
-      node_defaults: Some(gv::NodeDefaults {
-        color: Some(gv::Color("darkgoldenrod".to_string())),
-        fontcolor: Some(gv::Color("darkgoldenrod".to_string())),
-      }),
-      entities: state_entities,
-      ..Default::default()
-    };
-    gb.accept_entity(gv::Entity::Subgraph(state_subgraph));
 
     /* Plot EpsilonGraphVertex instances. */
-    let (cyclic_vertices, direct_vertices) = {
-      let mut cyclic_vertices = Vec::new();
-      let mut direct_vertices = Vec::new();
-      for vtx in epsilon_graph_vertices.into_values() {
-        if vtx.id.0.starts_with("cyclic_") {
-          cyclic_vertices.push(vtx);
-        } else {
-          direct_vertices.push(vtx);
-        }
+    let mut border_vertices: Vec<gv::Vertex> = Vec::new();
+    let mut state_vertices: Vec<gv::Vertex> = Vec::new();
+    for (eg_vtx, mut gv_vtx) in epsilon_graph_vertices.into_iter() {
+      match eg_vtx {
+        EpsilonGraphVertex::Start(_) => {
+          gv_vtx.color = Some(gv::Color("brown".to_string()));
+          gv_vtx.fontcolor = Some(gv::Color("brown".to_string()));
+          border_vertices.push(gv_vtx);
+        },
+        EpsilonGraphVertex::End(_) => {
+          gv_vtx.color = Some(gv::Color("darkgoldenrod".to_string()));
+          gv_vtx.fontcolor = Some(gv::Color("darkgoldenrod".to_string()));
+          border_vertices.push(gv_vtx);
+        },
+        EpsilonGraphVertex::State(_) => {
+          state_vertices.push(gv_vtx);
+        },
+        EpsilonGraphVertex::Anon(_) => {
+          gv_vtx.color = Some(gv::Color("blue".to_string()));
+          gv_vtx.fontcolor = Some(gv::Color("blue".to_string()));
+          gb.accept_entity(gv::Entity::Vertex(gv_vtx));
+        },
       }
-      (cyclic_vertices, direct_vertices)
-    };
-    let cyclic_vertices = gv::Subgraph {
-      id: gv::Id("cyclic_vertices".to_string()),
-      label: Some(gv::Label("cyclic epsilon graph vertices".to_string())),
-      color: Some(gv::Color("blue4".to_string())),
-      fontcolor: Some(gv::Color("blue4".to_string())),
-      entities: cyclic_vertices
+    }
+    let border_vertices = gv::Subgraph {
+      id: gv::Id("border_vertices".to_string()),
+      label: Some(gv::Label("Borders".to_string())),
+      color: Some(gv::Color("purple".to_string())),
+      fontcolor: Some(gv::Color("purple".to_string())),
+      entities: border_vertices
         .into_iter()
         .map(gv::Entity::Vertex)
         .collect(),
       ..Default::default()
     };
-    let direct_vertices = gv::Subgraph {
-      id: gv::Id("direct_vertices".to_string()),
-      label: Some(gv::Label("direct epsilon graph vertices".to_string())),
-      color: Some(gv::Color("blue2".to_string())),
-      fontcolor: Some(gv::Color("blue2".to_string())),
-      entities: direct_vertices
-        .into_iter()
-        .map(gv::Entity::Vertex)
-        .collect(),
+    gb.accept_entity(gv::Entity::Subgraph(border_vertices));
+    let state_vertices = gv::Subgraph {
+      id: gv::Id("state_vertices".to_string()),
+      label: Some(gv::Label("States".to_string())),
+      color: Some(gv::Color("green4".to_string())),
+      fontcolor: Some(gv::Color("green4".to_string())),
+      node_defaults: Some(gv::NodeDefaults {
+        color: Some(gv::Color("green4".to_string())),
+        fontcolor: Some(gv::Color("green4".to_string())),
+      }),
+      entities: state_vertices.into_iter().map(gv::Entity::Vertex).collect(),
       ..Default::default()
     };
-    gb.accept_entity(gv::Entity::Subgraph(cyclic_vertices));
-    gb.accept_entity(gv::Entity::Subgraph(direct_vertices));
+    gb.accept_entity(gv::Entity::Subgraph(state_vertices));
 
-    for edge in cyclic_edges.into_iter() {
-      gb.accept_entity(gv::Entity::Edge(edge));
-    }
-    for edge in vertex_trie_node_shadowing_edges.into_iter() {
-      gb.accept_entity(gv::Entity::Edge(edge));
-    }
-    for (_, vtx) in stack_trie_vertices.into_values() {
-      gb.accept_entity(gv::Entity::Vertex(vtx));
-    }
+    let mut seen: IndexSet<(gv::Id, gv::Id)> = IndexSet::new();
     for edge in non_cyclic_edges.into_iter() {
-      gb.accept_entity(gv::Entity::Edge(edge));
+      let key = (edge.source.clone(), edge.target.clone());
+      if !seen.contains(&key) {
+        seen.insert(key);
+        gb.accept_entity(gv::Entity::Edge(edge));
+      }
+    }
+    for edge in cyclic_edges.into_iter() {
+      /* If any cyclic edges overlap non-cyclic, don't print them! */
+      let key = (edge.source.clone(), edge.target.clone());
+      if !seen.contains(&key) {
+        seen.insert(key);
+        gb.accept_entity(gv::Entity::Edge(edge));
+      }
     }
 
     gb
@@ -2460,20 +2392,18 @@ mod tests {
     let gb = preprocessed_grammar.build_dot_graph();
     let gv::DotOutput(output) = gb.build(gv::Id("test_graph".to_string()));
 
-    assert_eq!(output, "asdf")
+    assert_eq!(output, "digraph test_graph {\n  compound = true;\n\n  epsilon_graph_vertex_phase_2_1[label=\"+!0!\", color=\"blue\", fontcolor=\"blue\", ];\n\n  epsilon_graph_vertex_phase_2_4[label=\"+!1!\", color=\"blue\", fontcolor=\"blue\", ];\n\n  epsilon_graph_vertex_phase_2_9[label=\"-!3!\", color=\"blue\", fontcolor=\"blue\", ];\n\n  epsilon_graph_vertex_phase_2_11[label=\"-!0!\", color=\"blue\", fontcolor=\"blue\", ];\n\n  epsilon_graph_vertex_phase_2_13[label=\"+!3!\", color=\"blue\", fontcolor=\"blue\", ];\n\n  epsilon_graph_vertex_phase_2_14[label=\"+!4!\", color=\"blue\", fontcolor=\"blue\", ];\n\n  epsilon_graph_vertex_phase_2_15[label=\"-!4!\", color=\"blue\", fontcolor=\"blue\", ];\n\n  epsilon_graph_vertex_phase_2_16[label=\"+!2!\", color=\"blue\", fontcolor=\"blue\", ];\n\n  epsilon_graph_vertex_phase_2_17[label=\"-!2!\", color=\"blue\", fontcolor=\"blue\", ];\n\n  epsilon_graph_vertex_phase_2_18[label=\"-!1!\", color=\"blue\", fontcolor=\"blue\", ];\n\n  subgraph border_vertices {\n    label = \"Borders\";\n    cluster = true;\n    rank = same;\n\n    color = \"purple\";\n    fontcolor = \"purple\";\n\n    epsilon_graph_vertex_phase_2_0[label=\"Start(0)\", color=\"brown\", fontcolor=\"brown\", ];\n    epsilon_graph_vertex_phase_2_3[label=\"Start(1)\", color=\"brown\", fontcolor=\"brown\", ];\n    epsilon_graph_vertex_phase_2_10[label=\"End(1)\", color=\"darkgoldenrod\", fontcolor=\"darkgoldenrod\", ];\n    epsilon_graph_vertex_phase_2_12[label=\"End(0)\", color=\"darkgoldenrod\", fontcolor=\"darkgoldenrod\", ];\n  }\n\n  subgraph state_vertices {\n    label = \"States\";\n    cluster = true;\n    rank = same;\n\n    color = \"green4\";\n    fontcolor = \"green4\";\n    node [color=\"green4\", fontcolor=\"green4\", ];\n\n    epsilon_graph_vertex_phase_2_2[label=\"0/0/0\", ];\n    epsilon_graph_vertex_phase_2_5[label=\"1/0/0\", ];\n    epsilon_graph_vertex_phase_2_6[label=\"0/0/1\", ];\n    epsilon_graph_vertex_phase_2_7[label=\"1/0/1\", ];\n    epsilon_graph_vertex_phase_2_8[label=\"1/1/1\", ];\n  }\n\n  epsilon_graph_vertex_phase_2_0 -> epsilon_graph_vertex_phase_2_1[color=\"aqua\", ];\n\n  epsilon_graph_vertex_phase_2_1 -> epsilon_graph_vertex_phase_2_2[color=\"aqua\", ];\n\n  epsilon_graph_vertex_phase_2_3 -> epsilon_graph_vertex_phase_2_4[color=\"aqua\", ];\n\n  epsilon_graph_vertex_phase_2_4 -> epsilon_graph_vertex_phase_2_5[color=\"aqua\", ];\n\n  epsilon_graph_vertex_phase_2_2 -> epsilon_graph_vertex_phase_2_6[color=\"aqua\", ];\n\n  epsilon_graph_vertex_phase_2_5 -> epsilon_graph_vertex_phase_2_7[color=\"aqua\", ];\n\n  epsilon_graph_vertex_phase_2_8 -> epsilon_graph_vertex_phase_2_9[color=\"aqua\", ];\n\n  epsilon_graph_vertex_phase_2_9 -> epsilon_graph_vertex_phase_2_10[color=\"aqua\", ];\n\n  epsilon_graph_vertex_phase_2_6 -> epsilon_graph_vertex_phase_2_11[color=\"aqua\", ];\n\n  epsilon_graph_vertex_phase_2_11 -> epsilon_graph_vertex_phase_2_12[color=\"aqua\", ];\n\n  epsilon_graph_vertex_phase_2_3 -> epsilon_graph_vertex_phase_2_13[color=\"aqua\", ];\n\n  epsilon_graph_vertex_phase_2_13 -> epsilon_graph_vertex_phase_2_14[color=\"aqua\", ];\n\n  epsilon_graph_vertex_phase_2_14 -> epsilon_graph_vertex_phase_2_0[color=\"aqua\", ];\n\n  epsilon_graph_vertex_phase_2_12 -> epsilon_graph_vertex_phase_2_15[color=\"aqua\", ];\n\n  epsilon_graph_vertex_phase_2_15 -> epsilon_graph_vertex_phase_2_8[color=\"aqua\", ];\n\n  epsilon_graph_vertex_phase_2_7 -> epsilon_graph_vertex_phase_2_16[color=\"aqua\", ];\n\n  epsilon_graph_vertex_phase_2_16 -> epsilon_graph_vertex_phase_2_0[color=\"aqua\", ];\n\n  epsilon_graph_vertex_phase_2_12 -> epsilon_graph_vertex_phase_2_17[color=\"aqua\", ];\n\n  epsilon_graph_vertex_phase_2_17 -> epsilon_graph_vertex_phase_2_18[color=\"aqua\", ];\n\n  epsilon_graph_vertex_phase_2_18 -> epsilon_graph_vertex_phase_2_10[color=\"aqua\", ];\n}\n")
   }
 
-  /* #[test] */
-  /* fn basic_preprocessed_graphviz() { */
-  /* let prods = basic_productions(); */
-  /* let detokenized =
-   * state::preprocessing::Init(prods).try_index().unwrap(); */
-  /* let state::preprocessing::Indexed(preprocessed_grammar) =
-   * detokenized.index(); */
+  #[test]
+  fn basic_preprocessed_graphviz() {
+    let prods = basic_productions();
+    let detokenized = state::preprocessing::Init(prods).try_index().unwrap();
+    let state::preprocessing::Indexed(preprocessed_grammar) = detokenized.index();
 
-  /* let gb = preprocessed_grammar.build_dot_graph(); */
-  /* let gv::DotOutput(output) = gb.build(gv::Id("test_graph".to_string())); */
+    let gb = preprocessed_grammar.build_dot_graph();
+    let gv::DotOutput(output) = gb.build(gv::Id("test_graph".to_string()));
 
-  /* assert_eq!(output, "asdf") */
-  /* } */
+    assert_eq!(output, "digraph test_graph {\n  compound = true;\n\n  cyclic_epsilon_graph_vertex_1[label=\"+!7!\", color=\"blue\", fontcolor=\"blue\", ];\n\n  cyclic_epsilon_graph_vertex_2[label=\"+!8!\", color=\"blue\", fontcolor=\"blue\", ];\n\n  cyclic_epsilon_graph_vertex_4[label=\"-!8!\", color=\"blue\", fontcolor=\"blue\", ];\n\n  cyclic_epsilon_graph_vertex_5[label=\"-!7!\", color=\"blue\", fontcolor=\"blue\", ];\n\n  cyclic_epsilon_graph_vertex_7[label=\"+!2!\", color=\"blue\", fontcolor=\"blue\", ];\n\n  cyclic_epsilon_graph_vertex_9[label=\"+!1!\", color=\"blue\", fontcolor=\"blue\", ];\n\n  cyclic_epsilon_graph_vertex_11[label=\"-!1!\", color=\"blue\", fontcolor=\"blue\", ];\n\n  cyclic_epsilon_graph_vertex_13[label=\"-!2!\", color=\"blue\", fontcolor=\"blue\", ];\n\n  cyclic_epsilon_graph_vertex_14[label=\"-!4!\", color=\"blue\", fontcolor=\"blue\", ];\n\n  cyclic_epsilon_graph_vertex_15[label=\"-!3!\", color=\"blue\", fontcolor=\"blue\", ];\n\n  cyclic_epsilon_graph_vertex_16[label=\"-!6!\", color=\"blue\", fontcolor=\"blue\", ];\n\n  cyclic_epsilon_graph_vertex_17[label=\"-!5!\", color=\"blue\", fontcolor=\"blue\", ];\n\n  epsilon_graph_vertex_phase_2_0[label=\"+!0!\", color=\"blue\", fontcolor=\"blue\", ];\n\n  epsilon_graph_vertex_phase_2_2[label=\"+!3!\", color=\"blue\", fontcolor=\"blue\", ];\n\n  epsilon_graph_vertex_phase_2_9[label=\"+!5!\", color=\"blue\", fontcolor=\"blue\", ];\n\n  epsilon_graph_vertex_phase_2_10[label=\"+!6!\", color=\"blue\", fontcolor=\"blue\", ];\n\n  epsilon_graph_vertex_phase_2_11[label=\"+!9!\", color=\"blue\", fontcolor=\"blue\", ];\n\n  epsilon_graph_vertex_phase_2_12[label=\"+!10!\", color=\"blue\", fontcolor=\"blue\", ];\n\n  epsilon_graph_vertex_phase_2_13[label=\"-!9!\", color=\"blue\", fontcolor=\"blue\", ];\n\n  epsilon_graph_vertex_phase_2_14[label=\"-!0!\", color=\"blue\", fontcolor=\"blue\", ];\n\n  epsilon_graph_vertex_phase_2_15[label=\"-!10!\", color=\"blue\", fontcolor=\"blue\", ];\n\n  epsilon_graph_vertex_phase_2_16[label=\"+!4!\", color=\"blue\", fontcolor=\"blue\", ];\n\n  subgraph border_vertices {\n    label = \"Borders\";\n    cluster = true;\n    rank = same;\n\n    color = \"purple\";\n    fontcolor = \"purple\";\n\n    cyclic_epsilon_graph_vertex_0[label=\"Start(1)\", color=\"brown\", fontcolor=\"brown\", ];\n    cyclic_epsilon_graph_vertex_3[label=\"End(1)\", color=\"darkgoldenrod\", fontcolor=\"darkgoldenrod\", ];\n    cyclic_epsilon_graph_vertex_8[label=\"Start(0)\", color=\"brown\", fontcolor=\"brown\", ];\n    cyclic_epsilon_graph_vertex_12[label=\"End(0)\", color=\"darkgoldenrod\", fontcolor=\"darkgoldenrod\", ];\n  }\n\n  subgraph state_vertices {\n    label = \"States\";\n    cluster = true;\n    rank = same;\n\n    color = \"green4\";\n    fontcolor = \"green4\";\n    node [color=\"green4\", fontcolor=\"green4\", ];\n\n    cyclic_epsilon_graph_vertex_6[label=\"0/1/0\", ];\n    cyclic_epsilon_graph_vertex_10[label=\"0/1/2\", ];\n    epsilon_graph_vertex_phase_2_1[label=\"0/0/0\", ];\n    epsilon_graph_vertex_phase_2_3[label=\"0/2/0\", ];\n    epsilon_graph_vertex_phase_2_4[label=\"0/0/1\", ];\n    epsilon_graph_vertex_phase_2_5[label=\"0/2/1\", ];\n    epsilon_graph_vertex_phase_2_6[label=\"1/2/1\", ];\n    epsilon_graph_vertex_phase_2_7[label=\"1/2/2\", ];\n    epsilon_graph_vertex_phase_2_8[label=\"0/0/2\", ];\n  }\n\n  cyclic_epsilon_graph_vertex_8 -> epsilon_graph_vertex_phase_2_0[color=\"aqua\", ];\n\n  epsilon_graph_vertex_phase_2_0 -> epsilon_graph_vertex_phase_2_1[color=\"aqua\", ];\n\n  cyclic_epsilon_graph_vertex_8 -> cyclic_epsilon_graph_vertex_9[color=\"aqua\", ];\n\n  cyclic_epsilon_graph_vertex_9 -> cyclic_epsilon_graph_vertex_6[color=\"aqua\", ];\n\n  cyclic_epsilon_graph_vertex_8 -> epsilon_graph_vertex_phase_2_2[color=\"aqua\", ];\n\n  epsilon_graph_vertex_phase_2_2 -> epsilon_graph_vertex_phase_2_3[color=\"aqua\", ];\n\n  epsilon_graph_vertex_phase_2_1 -> epsilon_graph_vertex_phase_2_4[color=\"aqua\", ];\n\n  epsilon_graph_vertex_phase_2_3 -> epsilon_graph_vertex_phase_2_5[color=\"aqua\", ];\n\n  epsilon_graph_vertex_phase_2_6 -> epsilon_graph_vertex_phase_2_7[color=\"aqua\", ];\n\n  epsilon_graph_vertex_phase_2_4 -> epsilon_graph_vertex_phase_2_8[color=\"aqua\", ];\n\n  cyclic_epsilon_graph_vertex_10 -> cyclic_epsilon_graph_vertex_11[color=\"aqua\", ];\n\n  cyclic_epsilon_graph_vertex_11 -> cyclic_epsilon_graph_vertex_12[color=\"aqua\", ];\n\n  cyclic_epsilon_graph_vertex_0 -> epsilon_graph_vertex_phase_2_9[color=\"aqua\", ];\n\n  epsilon_graph_vertex_phase_2_9 -> epsilon_graph_vertex_phase_2_10[color=\"aqua\", ];\n\n  epsilon_graph_vertex_phase_2_10 -> cyclic_epsilon_graph_vertex_8[color=\"aqua\", ];\n\n  cyclic_epsilon_graph_vertex_0 -> epsilon_graph_vertex_phase_2_11[color=\"aqua\", ];\n\n  epsilon_graph_vertex_phase_2_11 -> epsilon_graph_vertex_phase_2_12[color=\"aqua\", ];\n\n  epsilon_graph_vertex_phase_2_12 -> cyclic_epsilon_graph_vertex_8[color=\"aqua\", ];\n\n  epsilon_graph_vertex_phase_2_7 -> epsilon_graph_vertex_phase_2_13[color=\"aqua\", ];\n\n  epsilon_graph_vertex_phase_2_13 -> cyclic_epsilon_graph_vertex_3[color=\"aqua\", ];\n\n  epsilon_graph_vertex_phase_2_8 -> epsilon_graph_vertex_phase_2_14[color=\"aqua\", ];\n\n  epsilon_graph_vertex_phase_2_14 -> cyclic_epsilon_graph_vertex_12[color=\"aqua\", ];\n\n  cyclic_epsilon_graph_vertex_6 -> cyclic_epsilon_graph_vertex_7[color=\"aqua\", ];\n\n  cyclic_epsilon_graph_vertex_7 -> cyclic_epsilon_graph_vertex_8[color=\"aqua\", ];\n\n  cyclic_epsilon_graph_vertex_12 -> epsilon_graph_vertex_phase_2_15[color=\"aqua\", ];\n\n  epsilon_graph_vertex_phase_2_15 -> epsilon_graph_vertex_phase_2_6[color=\"aqua\", ];\n\n  cyclic_epsilon_graph_vertex_12 -> cyclic_epsilon_graph_vertex_16[color=\"aqua\", ];\n\n  cyclic_epsilon_graph_vertex_16 -> cyclic_epsilon_graph_vertex_17[color=\"aqua\", ];\n\n  cyclic_epsilon_graph_vertex_17 -> cyclic_epsilon_graph_vertex_3[color=\"aqua\", ];\n\n  cyclic_epsilon_graph_vertex_12 -> cyclic_epsilon_graph_vertex_13[color=\"aqua\", ];\n\n  cyclic_epsilon_graph_vertex_13 -> cyclic_epsilon_graph_vertex_10[color=\"aqua\", ];\n\n  cyclic_epsilon_graph_vertex_3 -> cyclic_epsilon_graph_vertex_14[color=\"aqua\", ];\n\n  cyclic_epsilon_graph_vertex_14 -> cyclic_epsilon_graph_vertex_15[color=\"aqua\", ];\n\n  cyclic_epsilon_graph_vertex_15 -> cyclic_epsilon_graph_vertex_12[color=\"aqua\", ];\n\n  epsilon_graph_vertex_phase_2_5 -> epsilon_graph_vertex_phase_2_16[color=\"aqua\", ];\n\n  epsilon_graph_vertex_phase_2_16 -> cyclic_epsilon_graph_vertex_0[color=\"aqua\", ];\n\n  cyclic_epsilon_graph_vertex_0 -> cyclic_epsilon_graph_vertex_1[color=\"red\", ];\n\n  cyclic_epsilon_graph_vertex_1 -> cyclic_epsilon_graph_vertex_2[color=\"red\", ];\n\n  cyclic_epsilon_graph_vertex_2 -> cyclic_epsilon_graph_vertex_0[color=\"red\", ];\n\n  cyclic_epsilon_graph_vertex_3 -> cyclic_epsilon_graph_vertex_4[color=\"red\", ];\n\n  cyclic_epsilon_graph_vertex_4 -> cyclic_epsilon_graph_vertex_5[color=\"red\", ];\n\n  cyclic_epsilon_graph_vertex_5 -> cyclic_epsilon_graph_vertex_3[color=\"red\", ];\n}\n")
+  }
 }
