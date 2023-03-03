@@ -33,6 +33,7 @@ use crate::{
   lowering_to_indices::{grammar_building as gb, graph_coordinates as gc},
 };
 
+use displaydoc::Display;
 use indexmap::{IndexMap, IndexSet};
 
 /* TODO: what does "unflattened" mean? PassThrough appears relevant for
@@ -91,12 +92,15 @@ impl AsUnsignedStep for StackStep {
   }
 }
 
-#[derive(Debug, Copy, Clone, PartialEq, Eq, Hash)]
+/// !{0}!
+#[derive(Debug, Display, Copy, Clone, PartialEq, Eq, Hash)]
 pub struct AnonSym(pub usize);
 
-#[derive(Debug, Copy, Clone, PartialEq, Eq, Hash)]
+#[derive(Debug, Display, Copy, Clone, PartialEq, Eq, Hash)]
 pub enum AnonStep {
+  /// +{0}
   Positive(AnonSym),
+  /// -{0}
   Negative(AnonSym),
 }
 
@@ -119,10 +123,13 @@ impl AsUnsignedStep for AnonStep {
 }
 
 /* TODO: omfg document this vvv useful concept!!! */
-#[derive(Debug, Copy, Clone, PartialEq, Eq, Hash)]
+#[derive(Debug, Display, Copy, Clone, PartialEq, Eq, Hash)]
 pub enum LoweredState {
+  /// Start
   Start,
+  /// End
   End,
+  /// {0}
   Within(gc::TokenPosition),
 }
 
@@ -152,11 +159,15 @@ pub struct StatePair {
 
 /* Fun fact: I'm pretty sure this /is/ actually an interval graph,
  * describing the continuous strings of terminals in a TokenGrammar! */
-#[derive(Debug, Copy, Clone, PartialEq, Eq, Hash)]
+#[derive(Debug, Display, Copy, Clone, PartialEq, Eq, Hash)]
 pub enum EpsilonGraphVertex {
+  /// Start({0})
   Start(gc::ProdRef),
+  /// End({0})
   End(gc::ProdRef),
+  /// Anon({0})
   Anon(AnonStep),
+  /// State({0})
   State(gc::TokenPosition),
 }
 
@@ -789,7 +800,7 @@ impl<Tok> PreprocessedGrammar<Tok> {
         CyclicGraphDecomposition {
           cyclic_subgraph,
           pairwise_state_transitions,
-          anon_step_mapping,
+          ..
         },
       ..
     } = self;
@@ -805,7 +816,7 @@ impl<Tok> PreprocessedGrammar<Tok> {
         vertex_id_counter += 1;
         gv::Vertex {
           id,
-          label: Some(gv::Label("asdf-lowered-state".to_string())),
+          label: Some(gv::Label(format!("{}", s))),
           ..Default::default()
         }
       });
@@ -900,7 +911,7 @@ impl<Tok> PreprocessedGrammar<Tok> {
 
       /* (2) Generate a gv::Vertex for each EpsilonGraphVertex. */
       for (this_id, (vtx, node_ref)) in vertex_mapping.into_iter().enumerate() {
-        let this_id = gv::Id(format!("epsilon_graph_vertex_{}", this_id));
+        let this_id = gv::Id(format!("cyclic_epsilon_graph_vertex_{}", this_id));
         let this_vertex = gv::Vertex {
           id: this_id.clone(),
           label: Some(gv::Label("asdf-epsilon-graph-vertex".to_string())),
@@ -947,7 +958,7 @@ impl<Tok> PreprocessedGrammar<Tok> {
               vertex_id_counter_phase_2 += 1;
               gv::Vertex {
                 id,
-                label: Some(gv::Label("asdf-epsilon-graph-vertex-phase-2".to_string())),
+                label: Some(gv::Label(format!("{}", vtx))),
                 ..Default::default()
               }
             })
@@ -973,17 +984,84 @@ impl<Tok> PreprocessedGrammar<Tok> {
       }
     };
 
-    /* let anon_steps = { */
-    /* let m = anon_step_mapping; */
-    /* m */
-    /* }; */
+    /* Plot LoweredState instances. */
+    let (border_states, token_states) = {
+      let mut border_states = Vec::new();
+      let mut token_states = Vec::new();
+      for (state, vtx) in state_vertices.into_iter() {
+        match state {
+          LoweredState::Start | LoweredState::End => {
+            border_states.push(vtx);
+          },
+          _ => {
+            token_states.push(vtx);
+          },
+        }
+      }
+      (border_states, token_states)
+    };
+    let border_states = gv::Subgraph {
+      id: gv::Id("border_states".to_string()),
+      label: Some(gv::Label("Borders".to_string())),
+      color: Some(gv::Color("brown4".to_string())),
+      fontcolor: Some(gv::Color("brown4".to_string())),
+      entities: border_states.into_iter().map(gv::Entity::Vertex).collect(),
+      ..Default::default()
+    };
+    let mut state_entities = vec![gv::Entity::Subgraph(border_states)];
+    state_entities.extend(token_states.into_iter().map(gv::Entity::Vertex));
+    let state_subgraph = gv::Subgraph {
+      id: gv::Id("state_vertices".to_string()),
+      label: Some(gv::Label("LoweredState".to_string())),
+      color: Some(gv::Color("darkgoldenrod".to_string())),
+      fontcolor: Some(gv::Color("darkgoldenrod".to_string())),
+      node_defaults: Some(gv::NodeDefaults {
+        color: Some(gv::Color("darkgoldenrod".to_string())),
+        fontcolor: Some(gv::Color("darkgoldenrod".to_string())),
+      }),
+      entities: state_entities,
+      ..Default::default()
+    };
+    gb.accept_entity(gv::Entity::Subgraph(state_subgraph));
 
-    for vtx in state_vertices.into_values() {
-      gb.accept_entity(gv::Entity::Vertex(vtx));
-    }
-    for vtx in epsilon_graph_vertices.into_values() {
-      gb.accept_entity(gv::Entity::Vertex(vtx));
-    }
+    /* Plot EpsilonGraphVertex instances. */
+    let (cyclic_vertices, direct_vertices) = {
+      let mut cyclic_vertices = Vec::new();
+      let mut direct_vertices = Vec::new();
+      for vtx in epsilon_graph_vertices.into_values() {
+        if vtx.id.0.starts_with("cyclic_") {
+          cyclic_vertices.push(vtx);
+        } else {
+          direct_vertices.push(vtx);
+        }
+      }
+      (cyclic_vertices, direct_vertices)
+    };
+    let cyclic_vertices = gv::Subgraph {
+      id: gv::Id("cyclic_vertices".to_string()),
+      label: Some(gv::Label("cyclic epsilon graph vertices".to_string())),
+      color: Some(gv::Color("blue4".to_string())),
+      fontcolor: Some(gv::Color("blue4".to_string())),
+      entities: cyclic_vertices
+        .into_iter()
+        .map(gv::Entity::Vertex)
+        .collect(),
+      ..Default::default()
+    };
+    let direct_vertices = gv::Subgraph {
+      id: gv::Id("direct_vertices".to_string()),
+      label: Some(gv::Label("direct epsilon graph vertices".to_string())),
+      color: Some(gv::Color("blue2".to_string())),
+      fontcolor: Some(gv::Color("blue2".to_string())),
+      entities: direct_vertices
+        .into_iter()
+        .map(gv::Entity::Vertex)
+        .collect(),
+      ..Default::default()
+    };
+    gb.accept_entity(gv::Entity::Subgraph(cyclic_vertices));
+    gb.accept_entity(gv::Entity::Subgraph(direct_vertices));
+
     for edge in cyclic_edges.into_iter() {
       gb.accept_entity(gv::Entity::Edge(edge));
     }
@@ -2384,4 +2462,18 @@ mod tests {
 
     assert_eq!(output, "asdf")
   }
+
+  /* #[test] */
+  /* fn basic_preprocessed_graphviz() { */
+  /* let prods = basic_productions(); */
+  /* let detokenized =
+   * state::preprocessing::Init(prods).try_index().unwrap(); */
+  /* let state::preprocessing::Indexed(preprocessed_grammar) =
+   * detokenized.index(); */
+
+  /* let gb = preprocessed_grammar.build_dot_graph(); */
+  /* let gv::DotOutput(output) = gb.build(gv::Id("test_graph".to_string())); */
+
+  /* assert_eq!(output, "asdf") */
+  /* } */
 }

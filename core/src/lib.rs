@@ -82,6 +82,7 @@ pub mod grammar_specification {
   pub mod graphviz {
     use uuid::Uuid;
 
+    /* FIXME: make this validate the string! only [a-zA-Z0-9_]! */
     #[derive(Debug, Hash, PartialEq, Eq, Clone)]
     pub struct Id(pub String);
 

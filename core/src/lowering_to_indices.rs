@@ -51,6 +51,8 @@ pub mod graph_coordinates {
   #[cfg(doc)]
   use crate::grammar_specification as gs;
 
+  use displaydoc::Display;
+
   macro_rules! via_primitive {
     ($type_name:ident, $primitive:ident) => {
       /* #[doc = $doc] */
@@ -63,6 +65,12 @@ pub mod graph_coordinates {
 
       impl From<$type_name> for $primitive {
         fn from(value: $type_name) -> Self { value.0 }
+      }
+
+      impl ::core::fmt::Display for $type_name {
+        fn fmt(&self, f: &mut ::core::fmt::Formatter) -> ::core::fmt::Result {
+          write!(f, "{}", self.0)
+        }
       }
     };
   }
@@ -86,7 +94,8 @@ pub mod graph_coordinates {
     pub case: CaseRef,
   }
 
-  #[derive(Debug, Copy, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
+  /// {prod}/{case}/{el}
+  #[derive(Debug, Display, Copy, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
   pub struct TokenPosition {
     pub prod: ProdRef,
     pub case: CaseRef,
