@@ -67,12 +67,13 @@ pub mod graph_coordinates {
     };
   }
 
-  /* FIXME: make doc comment apply to the macro expansion!! */
+  /* FIXME: make doc comment apply to the macro expansion!!
   /// Points to a particular Production within a sequence of
   /// [gs::synthesis::Production]s.
   ///
   /// A version of [gs::synthesis::ProductionReference] which uses a [usize] for
   /// speed.
+  */
   via_primitive![ProdRef, usize];
 
   via_primitive![CaseRef, usize];
@@ -92,11 +93,12 @@ pub mod graph_coordinates {
     pub el: CaseElRef,
   }
 
-  /* FIXME: make doc comment apply to the macro expansion!! */
+  /* FIXME: make doc comment apply to the macro expansion!!
   /// Points to a particular token value within an alphabet.
   ///
   /// Differs from [TokenPosition], which points to an individual *state* in
   /// the graph (which may be satisfied by exactly one token *value*).
+  */
   via_primitive![TokRef, usize];
 
   via_primitive![SMRef, usize];

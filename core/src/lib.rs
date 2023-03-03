@@ -99,6 +99,18 @@ pub mod grammar_specification {
       pub fontcolor: Option<Color>,
     }
 
+    impl Default for Vertex {
+      fn default() -> Self {
+        let id = Id(Uuid::new_v4().to_string());
+        Self {
+          id,
+          label: None,
+          color: None,
+          fontcolor: None,
+        }
+      }
+    }
+
     #[cfg(test)]
     impl Vertex {
       fn numeric(index: usize) -> Self {
@@ -156,6 +168,18 @@ pub mod grammar_specification {
       pub label: Option<Label>,
       pub color: Option<Color>,
       pub fontcolor: Option<Color>,
+    }
+
+    impl Default for Edge {
+      fn default() -> Self {
+        Self {
+          source: Id("".to_string()),
+          target: Id("".to_string()),
+          label: None,
+          color: None,
+          fontcolor: None,
+        }
+      }
     }
 
     #[derive(Debug, Hash, PartialEq, Eq, Clone)]
@@ -378,8 +402,7 @@ pub mod grammar_specification {
           source: Vertex::numeric(0).id,
           target: Vertex::numeric(1).id,
           label: Some(Label("asdf".to_string())),
-          color: None,
-          fontcolor: None,
+          ..Default::default()
         }));
 
         let DotOutput(output) = gb.build(Id("test_graph".to_string()));
@@ -859,7 +882,10 @@ pub mod test_framework {
         case_els.push(cur_ce);
       }
 
-      cases.entry(prod.to_string()).or_insert_with(Vec::new).push(case_els);
+      cases
+        .entry(prod.to_string())
+        .or_insert_with(Vec::new)
+        .push(case_els);
     }
 
     let cases: Vec<(ProductionReference, Production)> = cases
@@ -869,12 +895,17 @@ pub mod test_framework {
           .into_iter()
           .map(|case_els| Case::from(&case_els[..]))
           .collect();
-        (ProductionReference::from(pr.as_str()), Production::from(&cases[..]))
+        (
+          ProductionReference::from(pr.as_str()),
+          Production::from(&cases[..]),
+        )
       })
       .collect();
     SP::from(&cases[..])
   }
 
+  /* FIXME: provide this as a generic method for any implementor of the SP
+   * trait! */
   pub fn build_sp_graph(sp: SP) -> gv::GraphBuilder {
     let mut gb = gv::GraphBuilder::new();
     let mut vertex_id_counter: usize = 0;
@@ -963,8 +994,7 @@ pub mod test_framework {
                 source: new_id.clone(),
                 target: target_id,
                 color: Some(gv::Color("darkgoldenrod".to_string())),
-                fontcolor: None,
-                label: None,
+                ..Default::default()
               });
             },
           }
@@ -974,8 +1004,7 @@ pub mod test_framework {
             source: prev_id,
             target: new_id.clone(),
             color: Some(cur_edge_color),
-            fontcolor: None,
-            label: None,
+            ..Default::default()
           };
           prev_id = new_id.clone();
           cur_edge_color = gv::Color("aqua".to_string());
@@ -987,8 +1016,7 @@ pub mod test_framework {
           source: prev_id,
           target: this_prod_ref_id.clone(),
           color: Some(gv::Color("black".to_string())),
-          fontcolor: None,
-          label: None,
+          ..Default::default()
         });
 
         cur_prod_subgraph
@@ -1132,14 +1160,16 @@ B: $A -> <a>
 
   #[test]
   fn basic_parse() {
-    let sp = parse_sp_text_format("\
+    let sp = parse_sp_text_format(
+      "\
 P_1: <abc>
 P_1: <a> -> $P_1 -> <c>
 P_1: <bc> -> $P_2
 P_2: $P_1
 P_2: $P_2
 P_2: $P_1 -> <bc>
-");
+",
+    );
 
     assert_eq!(sp, basic_productions());
   }

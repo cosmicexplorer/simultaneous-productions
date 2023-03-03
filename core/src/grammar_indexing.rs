@@ -28,15 +28,15 @@
 //!
 //! *Implementation Note: Performance doesn't matter here.*
 
-use crate::lowering_to_indices::{grammar_building as gb, graph_coordinates as gc};
+use crate::{
+  grammar_specification::graphviz as gv,
+  lowering_to_indices::{grammar_building as gb, graph_coordinates as gc},
+};
 
 use indexmap::{IndexMap, IndexSet};
 
-use core::{
-  fmt,
-  hash::{Hash, Hasher},
-};
-
+/* TODO: what does "unflattened" mean? PassThrough appears relevant for
+ * post-parse reconstruction? */
 #[derive(Debug, Copy, Clone, PartialEq, Eq, Hash)]
 pub enum UnflattenedProdCaseRef {
   PassThrough,
@@ -46,6 +46,7 @@ pub enum UnflattenedProdCaseRef {
 #[derive(Debug, Copy, Clone, PartialEq, Eq, Hash)]
 pub struct StackSym(pub gc::ProdRef);
 
+/* TODO: is this used? */
 #[derive(Debug, Copy, Clone, PartialEq, Eq, Hash)]
 pub enum UnsignedStep {
   Named(StackSym),
@@ -117,6 +118,7 @@ impl AsUnsignedStep for AnonStep {
   }
 }
 
+/* TODO: omfg document this vvv useful concept!!! */
 #[derive(Debug, Copy, Clone, PartialEq, Eq, Hash)]
 pub enum LoweredState {
   Start,
@@ -312,7 +314,10 @@ pub struct ContiguousNonterminalInterval {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct CyclicGraphDecomposition {
+  /* TODO: this isn't just the "cyclic" subgraph, it's needed to interpret the value of
+   * pairwise_state_transitions! */
   pub cyclic_subgraph: EpsilonNodeStateSubgraph,
+  /* TODO: is this an optimization, or is this info not in cyclic_subgraph itself? */
   pub pairwise_state_transitions: Vec<CompletedStatePairWithVertices>,
   pub anon_step_mapping: IndexMap<AnonSym, UnflattenedProdCaseRef>,
 }
@@ -776,6 +781,225 @@ pub struct PreprocessedGrammar<Tok> {
 
 
 impl<Tok> PreprocessedGrammar<Tok> {
+  pub fn build_dot_graph(self) -> gv::GraphBuilder {
+    let mut gb = gv::GraphBuilder::new();
+
+    let Self {
+      cyclic_graph_decomposition:
+        CyclicGraphDecomposition {
+          cyclic_subgraph,
+          pairwise_state_transitions,
+          anon_step_mapping,
+        },
+      ..
+    } = self;
+
+    let mut state_vertices: IndexMap<LoweredState, gv::Vertex> = IndexMap::new();
+    let mut epsilon_graph_vertices: IndexMap<EpsilonGraphVertex, gv::Vertex> = IndexMap::new();
+
+    let mut vertex_id_counter: usize = 0;
+
+    let mut ensure_id_for_state = |s: &LoweredState| -> gv::Id {
+      let gv::Vertex { id, .. } = state_vertices.entry(s.clone()).or_insert_with(|| {
+        let id = gv::Id(format!("lowered_state_{}", vertex_id_counter));
+        vertex_id_counter += 1;
+        gv::Vertex {
+          id,
+          label: Some(gv::Label("asdf-lowered-state".to_string())),
+          ..Default::default()
+        }
+      });
+      id.clone()
+    };
+
+    let mut cyclic_edges: Vec<gv::Edge> = Vec::new();
+    let mut vertex_trie_node_shadowing_edges: Vec<gv::Edge> = Vec::new();
+    let mut stack_trie_vertices: IndexMap<TrieNodeRef, (StackTrieNode, gv::Vertex)> =
+      IndexMap::new();
+
+    /* (A) Process the stack trie node forest to get cyclic transitions between
+     * states. */
+    {
+      let EpsilonNodeStateSubgraph {
+        vertex_mapping,
+        trie_node_universe,
+      } = cyclic_subgraph;
+
+      /* (1) Generate a graphviz vertex for each stack trie node in the universe. */
+      for (this_ref, node) in trie_node_universe.into_iter().enumerate() {
+        let this_vertex = gv::Vertex {
+          id: gv::Id(format!("stack_trie_node_{}", this_ref)),
+          label: Some(gv::Label("asdf-stack-trie-node".to_string())),
+          ..Default::default()
+        };
+        /* NB: Nodes are referenced by their index in the trie_node_universe vector. */
+        let this_ref = TrieNodeRef(this_ref);
+
+        let entry = (node, this_vertex);
+        assert!(stack_trie_vertices.insert(this_ref, entry).is_none());
+      }
+      /* (1.1) Add edges between all stack trie nodes! */
+      for (
+        StackTrieNode {
+          next_nodes,
+          prev_nodes,
+          ..
+        },
+        gv::Vertex { id: this_id, .. },
+      ) in stack_trie_vertices.values()
+      {
+        /* (1.1.1) Add "next" edges. */
+        for next_node in next_nodes.iter() {
+          let edge = match next_node {
+            StackTrieNextEntry::Incomplete(next_ref) => {
+              let (_, vtx) = stack_trie_vertices.get(next_ref).unwrap();
+              gv::Edge {
+                source: this_id.clone(),
+                target: vtx.id.clone(),
+                label: Some(gv::Label("next-asdf".to_string())),
+                ..Default::default()
+              }
+            },
+            StackTrieNextEntry::Completed(state) => {
+              let target = ensure_id_for_state(state);
+              gv::Edge {
+                source: this_id.clone(),
+                target,
+                label: Some(gv::Label("next-state-asdf".to_string())),
+                ..Default::default()
+              }
+            },
+          };
+          cyclic_edges.push(edge);
+        }
+        /* (1.1.1) Add "prev" edges. */
+        for prev_node in prev_nodes.iter() {
+          let edge = match prev_node {
+            StackTrieNextEntry::Incomplete(prev_ref) => {
+              let (_, vtx) = stack_trie_vertices.get(prev_ref).unwrap();
+              gv::Edge {
+                source: this_id.clone(),
+                target: vtx.id.clone(),
+                label: Some(gv::Label("prev-asdf".to_string())),
+                ..Default::default()
+              }
+            },
+            StackTrieNextEntry::Completed(state) => {
+              let target = ensure_id_for_state(state);
+              gv::Edge {
+                source: this_id.clone(),
+                target,
+                label: Some(gv::Label("prev-state-asdf".to_string())),
+                ..Default::default()
+              }
+            },
+          };
+          cyclic_edges.push(edge);
+        }
+      }
+
+      /* (2) Generate a gv::Vertex for each EpsilonGraphVertex. */
+      for (this_id, (vtx, node_ref)) in vertex_mapping.into_iter().enumerate() {
+        let this_id = gv::Id(format!("epsilon_graph_vertex_{}", this_id));
+        let this_vertex = gv::Vertex {
+          id: this_id.clone(),
+          label: Some(gv::Label("asdf-epsilon-graph-vertex".to_string())),
+          ..Default::default()
+        };
+
+        assert!(epsilon_graph_vertices.insert(vtx, this_vertex).is_none());
+
+        /* (2.1) Generate an edge to the trie node this vertex shadows! */
+        let (_, vtx) = stack_trie_vertices.get(&node_ref).unwrap();
+        let shadow_edge = gv::Edge {
+          source: this_id,
+          target: vtx.id.clone(),
+          label: Some(gv::Label("shadow-asdf".to_string())),
+          ..Default::default()
+        };
+        vertex_trie_node_shadowing_edges.push(shadow_edge);
+      }
+    }
+
+    /* (B) Extract all finite (non-looping) paths between states. */
+    let mut non_cyclic_edges: Vec<gv::Edge> = Vec::new();
+    {
+      let mut vertex_id_counter_phase_2: usize = 0;
+      for transition in pairwise_state_transitions.into_iter() {
+        let CompletedStatePairWithVertices {
+          state_pair: StatePair { left, right },
+          interval: ContiguousNonterminalInterval { interval },
+        } = transition;
+        let start_state = ensure_id_for_state(&left);
+        let end_state = ensure_id_for_state(&right);
+
+        let mut prev_id = start_state;
+        let mut cur_edge_color = gv::Color("red".to_string());
+
+        for vtx in interval.into_iter() {
+          let next_id = epsilon_graph_vertices
+            .entry(vtx)
+            .or_insert_with(|| {
+              let id = gv::Id(format!(
+                "epsilon_graph_vertex_phase_2_{}",
+                vertex_id_counter_phase_2
+              ));
+              vertex_id_counter_phase_2 += 1;
+              gv::Vertex {
+                id,
+                label: Some(gv::Label("asdf-epsilon-graph-vertex-phase-2".to_string())),
+                ..Default::default()
+              }
+            })
+            .id
+            .clone();
+          let edge = gv::Edge {
+            source: prev_id,
+            target: next_id.clone(),
+            color: Some(cur_edge_color),
+            ..Default::default()
+          };
+          prev_id = next_id;
+          cur_edge_color = gv::Color("aqua".to_string());
+          non_cyclic_edges.push(edge);
+        }
+        let final_edge = gv::Edge {
+          source: prev_id,
+          target: end_state,
+          color: Some(gv::Color("yellow3".to_string())),
+          ..Default::default()
+        };
+        non_cyclic_edges.push(final_edge);
+      }
+    };
+
+    /* let anon_steps = { */
+    /* let m = anon_step_mapping; */
+    /* m */
+    /* }; */
+
+    for vtx in state_vertices.into_values() {
+      gb.accept_entity(gv::Entity::Vertex(vtx));
+    }
+    for vtx in epsilon_graph_vertices.into_values() {
+      gb.accept_entity(gv::Entity::Vertex(vtx));
+    }
+    for edge in cyclic_edges.into_iter() {
+      gb.accept_entity(gv::Entity::Edge(edge));
+    }
+    for edge in vertex_trie_node_shadowing_edges.into_iter() {
+      gb.accept_entity(gv::Entity::Edge(edge));
+    }
+    for (_, vtx) in stack_trie_vertices.into_values() {
+      gb.accept_entity(gv::Entity::Vertex(vtx));
+    }
+    for edge in non_cyclic_edges.into_iter() {
+      gb.accept_entity(gv::Entity::Edge(edge));
+    }
+
+    gb
+  }
+
   /// Intended to reduce visual clutter in the implementation of interval
   /// production.
   fn make_pos_neg_anon_steps(
@@ -2147,5 +2371,17 @@ mod tests {
       ]
       .as_ref()
     );
+  }
+
+  #[test]
+  fn non_cyclic_preprocessed_graphviz() {
+    let prods = non_cyclic_productions();
+    let detokenized = state::preprocessing::Init(prods).try_index().unwrap();
+    let state::preprocessing::Indexed(preprocessed_grammar) = detokenized.index();
+
+    let gb = preprocessed_grammar.build_dot_graph();
+    let gv::DotOutput(output) = gb.build(gv::Id("test_graph".to_string()));
+
+    assert_eq!(output, "asdf")
   }
 }

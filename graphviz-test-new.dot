@@ -1,143 +1,152 @@
-digraph test_sp_graph {
+digraph test_graph {
   compound = true;
 
-  subgraph prods {
-    label = "Productions";
-    cluster = true;
-    rank = same;
+  lowered_state_0[label="asdf-lowered-state", ];
 
-    color = "blue";
-    fontcolor = "blue";
-    node [color="blue", fontcolor="blue", ];
+  lowered_state_1[label="asdf-lowered-state", ];
 
-    prod_P_1[label="P_1", ];
-    prod_P_2[label="P_2", ];
-  }
+  lowered_state_2[label="asdf-lowered-state", ];
 
-  subgraph P_1_prod {
-    label = "Cases: P_1";
-    cluster = true;
-    rank = same;
+  lowered_state_3[label="asdf-lowered-state", ];
 
-    color = "purple";
-    fontcolor = "purple";
+  lowered_state_4[label="asdf-lowered-state", ];
 
-    subgraph P_1_case_0 {
-      label = "0";
-      cluster = true;
-      rank = same;
+  lowered_state_5[label="asdf-lowered-state", ];
 
-      color = "green4";
-      fontcolor = "green4";
+  lowered_state_6[label="asdf-lowered-state", ];
 
-      vertex_0[label="<abc>", color="brown", fontcolor="brown", ];
-    }
-    subgraph P_1_case_1 {
-      label = "1";
-      cluster = true;
-      rank = same;
+  epsilon_graph_vertex_phase_2_0[label="asdf-epsilon-graph-vertex-phase-2", ];
 
-      color = "green4";
-      fontcolor = "green4";
+  epsilon_graph_vertex_phase_2_1[label="asdf-epsilon-graph-vertex-phase-2", ];
 
-      vertex_1[label="<a>", color="brown", fontcolor="brown", ];
-      vertex_2[label="ref: P_1", color="darkgoldenrod", fontcolor="darkgoldenrod", ];
-      vertex_3[label="<c>", color="brown", fontcolor="brown", ];
-    }
-    subgraph P_1_case_2 {
-      label = "2";
-      cluster = true;
-      rank = same;
+  epsilon_graph_vertex_phase_2_2[label="asdf-epsilon-graph-vertex-phase-2", ];
 
-      color = "green4";
-      fontcolor = "green4";
+  epsilon_graph_vertex_phase_2_3[label="asdf-epsilon-graph-vertex-phase-2", ];
 
-      vertex_4[label="<bc>", color="brown", fontcolor="brown", ];
-      vertex_5[label="ref: P_2", color="darkgoldenrod", fontcolor="darkgoldenrod", ];
-    }
-  }
+  epsilon_graph_vertex_phase_2_4[label="asdf-epsilon-graph-vertex-phase-2", ];
 
-  prod_P_1 -> vertex_0[color="red", ];
+  epsilon_graph_vertex_phase_2_5[label="asdf-epsilon-graph-vertex-phase-2", ];
 
-  vertex_0 -> prod_P_1[color="black", ];
+  epsilon_graph_vertex_phase_2_6[label="asdf-epsilon-graph-vertex-phase-2", ];
 
-  prod_P_1 -> vertex_1[color="red", ];
+  epsilon_graph_vertex_phase_2_7[label="asdf-epsilon-graph-vertex-phase-2", ];
 
-  vertex_2 -> prod_P_1[color="darkgoldenrod", ];
+  epsilon_graph_vertex_phase_2_8[label="asdf-epsilon-graph-vertex-phase-2", ];
 
-  vertex_1 -> vertex_2[color="aqua", ];
+  epsilon_graph_vertex_phase_2_9[label="asdf-epsilon-graph-vertex-phase-2", ];
 
-  vertex_2 -> vertex_3[color="aqua", ];
+  epsilon_graph_vertex_phase_2_10[label="asdf-epsilon-graph-vertex-phase-2", ];
 
-  vertex_3 -> prod_P_1[color="black", ];
+  epsilon_graph_vertex_phase_2_11[label="asdf-epsilon-graph-vertex-phase-2", ];
 
-  prod_P_1 -> vertex_4[color="red", ];
+  epsilon_graph_vertex_phase_2_12[label="asdf-epsilon-graph-vertex-phase-2", ];
 
-  vertex_5 -> prod_P_2[color="darkgoldenrod", ];
+  epsilon_graph_vertex_phase_2_13[label="asdf-epsilon-graph-vertex-phase-2", ];
 
-  vertex_4 -> vertex_5[color="aqua", ];
+  epsilon_graph_vertex_phase_2_14[label="asdf-epsilon-graph-vertex-phase-2", ];
 
-  vertex_5 -> prod_P_1[color="black", ];
+  epsilon_graph_vertex_phase_2_15[label="asdf-epsilon-graph-vertex-phase-2", ];
 
-  subgraph P_2_prod {
-    label = "Cases: P_2";
-    cluster = true;
-    rank = same;
+  epsilon_graph_vertex_phase_2_16[label="asdf-epsilon-graph-vertex-phase-2", ];
 
-    color = "purple";
-    fontcolor = "purple";
+  epsilon_graph_vertex_phase_2_17[label="asdf-epsilon-graph-vertex-phase-2", ];
 
-    subgraph P_2_case_0 {
-      label = "0";
-      cluster = true;
-      rank = same;
+  epsilon_graph_vertex_phase_2_18[label="asdf-epsilon-graph-vertex-phase-2", ];
 
-      color = "green4";
-      fontcolor = "green4";
+  lowered_state_0 -> epsilon_graph_vertex_phase_2_0[color="red", ];
 
-      vertex_6[label="ref: P_1", color="darkgoldenrod", fontcolor="darkgoldenrod", ];
-    }
-    subgraph P_2_case_1 {
-      label = "1";
-      cluster = true;
-      rank = same;
+  epsilon_graph_vertex_phase_2_0 -> epsilon_graph_vertex_phase_2_1[color="aqua", ];
 
-      color = "green4";
-      fontcolor = "green4";
+  epsilon_graph_vertex_phase_2_1 -> epsilon_graph_vertex_phase_2_2[color="aqua", ];
 
-      vertex_7[label="ref: P_2", color="darkgoldenrod", fontcolor="darkgoldenrod", ];
-    }
-    subgraph P_2_case_2 {
-      label = "2";
-      cluster = true;
-      rank = same;
+  epsilon_graph_vertex_phase_2_2 -> lowered_state_1[color="yellow3", ];
 
-      color = "green4";
-      fontcolor = "green4";
+  lowered_state_0 -> epsilon_graph_vertex_phase_2_3[color="red", ];
 
-      vertex_8[label="ref: P_1", color="darkgoldenrod", fontcolor="darkgoldenrod", ];
-      vertex_9[label="<bc>", color="brown", fontcolor="brown", ];
-    }
-  }
+  epsilon_graph_vertex_phase_2_3 -> epsilon_graph_vertex_phase_2_4[color="aqua", ];
 
-  vertex_6 -> prod_P_1[color="darkgoldenrod", ];
+  epsilon_graph_vertex_phase_2_4 -> epsilon_graph_vertex_phase_2_5[color="aqua", ];
 
-  prod_P_2 -> vertex_6[color="red", ];
+  epsilon_graph_vertex_phase_2_5 -> lowered_state_2[color="yellow3", ];
 
-  vertex_6 -> prod_P_2[color="black", ];
+  lowered_state_1 -> epsilon_graph_vertex_phase_2_2[color="red", ];
 
-  vertex_7 -> prod_P_2[color="darkgoldenrod", ];
+  epsilon_graph_vertex_phase_2_2 -> epsilon_graph_vertex_phase_2_6[color="aqua", ];
 
-  prod_P_2 -> vertex_7[color="red", ];
+  epsilon_graph_vertex_phase_2_6 -> lowered_state_3[color="yellow3", ];
 
-  vertex_7 -> prod_P_2[color="black", ];
+  lowered_state_2 -> epsilon_graph_vertex_phase_2_5[color="red", ];
 
-  vertex_8 -> prod_P_1[color="darkgoldenrod", ];
+  epsilon_graph_vertex_phase_2_5 -> epsilon_graph_vertex_phase_2_7[color="aqua", ];
 
-  prod_P_2 -> vertex_8[color="red", ];
+  epsilon_graph_vertex_phase_2_7 -> lowered_state_4[color="yellow3", ];
 
-  vertex_8 -> vertex_9[color="aqua", ];
+  lowered_state_5 -> epsilon_graph_vertex_phase_2_8[color="red", ];
 
-  vertex_9 -> prod_P_2[color="black", ];
+  epsilon_graph_vertex_phase_2_8 -> epsilon_graph_vertex_phase_2_9[color="aqua", ];
+
+  epsilon_graph_vertex_phase_2_9 -> epsilon_graph_vertex_phase_2_10[color="aqua", ];
+
+  epsilon_graph_vertex_phase_2_10 -> lowered_state_6[color="yellow3", ];
+
+  lowered_state_3 -> epsilon_graph_vertex_phase_2_6[color="red", ];
+
+  epsilon_graph_vertex_phase_2_6 -> epsilon_graph_vertex_phase_2_11[color="aqua", ];
+
+  epsilon_graph_vertex_phase_2_11 -> epsilon_graph_vertex_phase_2_12[color="aqua", ];
+
+  epsilon_graph_vertex_phase_2_12 -> lowered_state_6[color="yellow3", ];
+
+  lowered_state_0 -> epsilon_graph_vertex_phase_2_3[color="red", ];
+
+  epsilon_graph_vertex_phase_2_3 -> epsilon_graph_vertex_phase_2_13[color="aqua", ];
+
+  epsilon_graph_vertex_phase_2_13 -> epsilon_graph_vertex_phase_2_14[color="aqua", ];
+
+  epsilon_graph_vertex_phase_2_14 -> epsilon_graph_vertex_phase_2_0[color="aqua", ];
+
+  epsilon_graph_vertex_phase_2_0 -> epsilon_graph_vertex_phase_2_1[color="aqua", ];
+
+  epsilon_graph_vertex_phase_2_1 -> epsilon_graph_vertex_phase_2_2[color="aqua", ];
+
+  epsilon_graph_vertex_phase_2_2 -> lowered_state_1[color="yellow3", ];
+
+  lowered_state_3 -> epsilon_graph_vertex_phase_2_6[color="red", ];
+
+  epsilon_graph_vertex_phase_2_6 -> epsilon_graph_vertex_phase_2_11[color="aqua", ];
+
+  epsilon_graph_vertex_phase_2_11 -> epsilon_graph_vertex_phase_2_12[color="aqua", ];
+
+  epsilon_graph_vertex_phase_2_12 -> epsilon_graph_vertex_phase_2_15[color="aqua", ];
+
+  epsilon_graph_vertex_phase_2_15 -> epsilon_graph_vertex_phase_2_8[color="aqua", ];
+
+  epsilon_graph_vertex_phase_2_8 -> lowered_state_5[color="yellow3", ];
+
+  lowered_state_4 -> epsilon_graph_vertex_phase_2_7[color="red", ];
+
+  epsilon_graph_vertex_phase_2_7 -> epsilon_graph_vertex_phase_2_16[color="aqua", ];
+
+  epsilon_graph_vertex_phase_2_16 -> epsilon_graph_vertex_phase_2_0[color="aqua", ];
+
+  epsilon_graph_vertex_phase_2_0 -> epsilon_graph_vertex_phase_2_1[color="aqua", ];
+
+  epsilon_graph_vertex_phase_2_1 -> epsilon_graph_vertex_phase_2_2[color="aqua", ];
+
+  epsilon_graph_vertex_phase_2_2 -> lowered_state_1[color="yellow3", ];
+
+  lowered_state_3 -> epsilon_graph_vertex_phase_2_6[color="red", ];
+
+  epsilon_graph_vertex_phase_2_6 -> epsilon_graph_vertex_phase_2_11[color="aqua", ];
+
+  epsilon_graph_vertex_phase_2_11 -> epsilon_graph_vertex_phase_2_12[color="aqua", ];
+
+  epsilon_graph_vertex_phase_2_12 -> epsilon_graph_vertex_phase_2_17[color="aqua", ];
+
+  epsilon_graph_vertex_phase_2_17 -> epsilon_graph_vertex_phase_2_18[color="aqua", ];
+
+  epsilon_graph_vertex_phase_2_18 -> epsilon_graph_vertex_phase_2_10[color="aqua", ];
+
+  epsilon_graph_vertex_phase_2_10 -> lowered_state_6[color="yellow3", ];
 }
 
