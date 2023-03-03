@@ -1,25 +1,49 @@
 digraph test_graph {
   compound = true;
 
-  epsilon_graph_vertex_phase_2_1[label="+!0!", color="blue", fontcolor="blue", ];
+  cyclic_epsilon_graph_vertex_1[label="+!7!", color="blue", fontcolor="blue", ];
 
-  epsilon_graph_vertex_phase_2_4[label="+!1!", color="blue", fontcolor="blue", ];
+  cyclic_epsilon_graph_vertex_2[label="+!8!", color="blue", fontcolor="blue", ];
 
-  epsilon_graph_vertex_phase_2_9[label="-!3!", color="blue", fontcolor="blue", ];
+  cyclic_epsilon_graph_vertex_4[label="-!8!", color="blue", fontcolor="blue", ];
 
-  epsilon_graph_vertex_phase_2_11[label="-!0!", color="blue", fontcolor="blue", ];
+  cyclic_epsilon_graph_vertex_5[label="-!7!", color="blue", fontcolor="blue", ];
 
-  epsilon_graph_vertex_phase_2_13[label="+!3!", color="blue", fontcolor="blue", ];
+  cyclic_epsilon_graph_vertex_7[label="+!2!", color="blue", fontcolor="blue", ];
 
-  epsilon_graph_vertex_phase_2_14[label="+!4!", color="blue", fontcolor="blue", ];
+  cyclic_epsilon_graph_vertex_9[label="+!1!", color="blue", fontcolor="blue", ];
 
-  epsilon_graph_vertex_phase_2_15[label="-!4!", color="blue", fontcolor="blue", ];
+  cyclic_epsilon_graph_vertex_11[label="-!1!", color="blue", fontcolor="blue", ];
 
-  epsilon_graph_vertex_phase_2_16[label="+!2!", color="blue", fontcolor="blue", ];
+  cyclic_epsilon_graph_vertex_13[label="-!2!", color="blue", fontcolor="blue", ];
 
-  epsilon_graph_vertex_phase_2_17[label="-!2!", color="blue", fontcolor="blue", ];
+  cyclic_epsilon_graph_vertex_14[label="-!4!", color="blue", fontcolor="blue", ];
 
-  epsilon_graph_vertex_phase_2_18[label="-!1!", color="blue", fontcolor="blue", ];
+  cyclic_epsilon_graph_vertex_15[label="-!3!", color="blue", fontcolor="blue", ];
+
+  cyclic_epsilon_graph_vertex_16[label="-!6!", color="blue", fontcolor="blue", ];
+
+  cyclic_epsilon_graph_vertex_17[label="-!5!", color="blue", fontcolor="blue", ];
+
+  epsilon_graph_vertex_phase_2_0[label="+!0!", color="blue", fontcolor="blue", ];
+
+  epsilon_graph_vertex_phase_2_2[label="+!3!", color="blue", fontcolor="blue", ];
+
+  epsilon_graph_vertex_phase_2_9[label="+!5!", color="blue", fontcolor="blue", ];
+
+  epsilon_graph_vertex_phase_2_10[label="+!6!", color="blue", fontcolor="blue", ];
+
+  epsilon_graph_vertex_phase_2_11[label="+!9!", color="blue", fontcolor="blue", ];
+
+  epsilon_graph_vertex_phase_2_12[label="+!10!", color="blue", fontcolor="blue", ];
+
+  epsilon_graph_vertex_phase_2_13[label="-!9!", color="blue", fontcolor="blue", ];
+
+  epsilon_graph_vertex_phase_2_14[label="-!0!", color="blue", fontcolor="blue", ];
+
+  epsilon_graph_vertex_phase_2_15[label="-!10!", color="blue", fontcolor="blue", ];
+
+  epsilon_graph_vertex_phase_2_16[label="+!4!", color="blue", fontcolor="blue", ];
 
   subgraph border_vertices {
     label = "Borders";
@@ -29,10 +53,10 @@ digraph test_graph {
     color = "purple";
     fontcolor = "purple";
 
-    epsilon_graph_vertex_phase_2_0[label="Start(0)", color="brown", fontcolor="brown", ];
-    epsilon_graph_vertex_phase_2_3[label="Start(1)", color="brown", fontcolor="brown", ];
-    epsilon_graph_vertex_phase_2_10[label="End(1)", color="darkgoldenrod", fontcolor="darkgoldenrod", ];
-    epsilon_graph_vertex_phase_2_12[label="End(0)", color="darkgoldenrod", fontcolor="darkgoldenrod", ];
+    cyclic_epsilon_graph_vertex_0[label="Start(1)", color="brown", fontcolor="brown", ];
+    cyclic_epsilon_graph_vertex_3[label="End(1)", color="darkgoldenrod", fontcolor="darkgoldenrod", ];
+    cyclic_epsilon_graph_vertex_8[label="Start(0)", color="brown", fontcolor="brown", ];
+    cyclic_epsilon_graph_vertex_12[label="End(0)", color="darkgoldenrod", fontcolor="darkgoldenrod", ];
   }
 
   subgraph state_vertices {
@@ -44,51 +68,99 @@ digraph test_graph {
     fontcolor = "green4";
     node [color="green4", fontcolor="green4", ];
 
-    epsilon_graph_vertex_phase_2_2[label="0/0/0", ];
-    epsilon_graph_vertex_phase_2_5[label="1/0/0", ];
-    epsilon_graph_vertex_phase_2_6[label="0/0/1", ];
-    epsilon_graph_vertex_phase_2_7[label="1/0/1", ];
-    epsilon_graph_vertex_phase_2_8[label="1/1/1", ];
+    cyclic_epsilon_graph_vertex_6[label="0/1/0", ];
+    cyclic_epsilon_graph_vertex_10[label="0/1/2", ];
+    epsilon_graph_vertex_phase_2_1[label="0/0/0", ];
+    epsilon_graph_vertex_phase_2_3[label="0/2/0", ];
+    epsilon_graph_vertex_phase_2_4[label="0/0/1", ];
+    epsilon_graph_vertex_phase_2_5[label="0/2/1", ];
+    epsilon_graph_vertex_phase_2_6[label="1/2/1", ];
+    epsilon_graph_vertex_phase_2_7[label="1/2/2", ];
+    epsilon_graph_vertex_phase_2_8[label="0/0/2", ];
   }
+
+  cyclic_epsilon_graph_vertex_8 -> epsilon_graph_vertex_phase_2_0[color="aqua", ];
 
   epsilon_graph_vertex_phase_2_0 -> epsilon_graph_vertex_phase_2_1[color="aqua", ];
 
-  epsilon_graph_vertex_phase_2_1 -> epsilon_graph_vertex_phase_2_2[color="aqua", ];
+  cyclic_epsilon_graph_vertex_8 -> cyclic_epsilon_graph_vertex_9[color="aqua", ];
 
-  epsilon_graph_vertex_phase_2_3 -> epsilon_graph_vertex_phase_2_4[color="aqua", ];
+  cyclic_epsilon_graph_vertex_9 -> cyclic_epsilon_graph_vertex_6[color="aqua", ];
 
-  epsilon_graph_vertex_phase_2_4 -> epsilon_graph_vertex_phase_2_5[color="aqua", ];
+  cyclic_epsilon_graph_vertex_8 -> epsilon_graph_vertex_phase_2_2[color="aqua", ];
 
-  epsilon_graph_vertex_phase_2_2 -> epsilon_graph_vertex_phase_2_6[color="aqua", ];
+  epsilon_graph_vertex_phase_2_2 -> epsilon_graph_vertex_phase_2_3[color="aqua", ];
 
-  epsilon_graph_vertex_phase_2_5 -> epsilon_graph_vertex_phase_2_7[color="aqua", ];
+  epsilon_graph_vertex_phase_2_1 -> epsilon_graph_vertex_phase_2_4[color="aqua", ];
 
-  epsilon_graph_vertex_phase_2_8 -> epsilon_graph_vertex_phase_2_9[color="aqua", ];
+  epsilon_graph_vertex_phase_2_3 -> epsilon_graph_vertex_phase_2_5[color="aqua", ];
+
+  epsilon_graph_vertex_phase_2_6 -> epsilon_graph_vertex_phase_2_7[color="aqua", ];
+
+  epsilon_graph_vertex_phase_2_4 -> epsilon_graph_vertex_phase_2_8[color="aqua", ];
+
+  cyclic_epsilon_graph_vertex_10 -> cyclic_epsilon_graph_vertex_11[color="aqua", ];
+
+  cyclic_epsilon_graph_vertex_11 -> cyclic_epsilon_graph_vertex_12[color="aqua", ];
+
+  cyclic_epsilon_graph_vertex_0 -> epsilon_graph_vertex_phase_2_9[color="aqua", ];
 
   epsilon_graph_vertex_phase_2_9 -> epsilon_graph_vertex_phase_2_10[color="aqua", ];
 
-  epsilon_graph_vertex_phase_2_6 -> epsilon_graph_vertex_phase_2_11[color="aqua", ];
+  epsilon_graph_vertex_phase_2_10 -> cyclic_epsilon_graph_vertex_8[color="aqua", ];
+
+  cyclic_epsilon_graph_vertex_0 -> epsilon_graph_vertex_phase_2_11[color="aqua", ];
 
   epsilon_graph_vertex_phase_2_11 -> epsilon_graph_vertex_phase_2_12[color="aqua", ];
 
-  epsilon_graph_vertex_phase_2_3 -> epsilon_graph_vertex_phase_2_13[color="aqua", ];
+  epsilon_graph_vertex_phase_2_12 -> cyclic_epsilon_graph_vertex_8[color="aqua", ];
 
-  epsilon_graph_vertex_phase_2_13 -> epsilon_graph_vertex_phase_2_14[color="aqua", ];
+  epsilon_graph_vertex_phase_2_7 -> epsilon_graph_vertex_phase_2_13[color="aqua", ];
 
-  epsilon_graph_vertex_phase_2_14 -> epsilon_graph_vertex_phase_2_0[color="aqua", ];
+  epsilon_graph_vertex_phase_2_13 -> cyclic_epsilon_graph_vertex_3[color="aqua", ];
 
-  epsilon_graph_vertex_phase_2_12 -> epsilon_graph_vertex_phase_2_15[color="aqua", ];
+  epsilon_graph_vertex_phase_2_8 -> epsilon_graph_vertex_phase_2_14[color="aqua", ];
 
-  epsilon_graph_vertex_phase_2_15 -> epsilon_graph_vertex_phase_2_8[color="aqua", ];
+  epsilon_graph_vertex_phase_2_14 -> cyclic_epsilon_graph_vertex_12[color="aqua", ];
 
-  epsilon_graph_vertex_phase_2_7 -> epsilon_graph_vertex_phase_2_16[color="aqua", ];
+  cyclic_epsilon_graph_vertex_6 -> cyclic_epsilon_graph_vertex_7[color="aqua", ];
 
-  epsilon_graph_vertex_phase_2_16 -> epsilon_graph_vertex_phase_2_0[color="aqua", ];
+  cyclic_epsilon_graph_vertex_7 -> cyclic_epsilon_graph_vertex_8[color="aqua", ];
 
-  epsilon_graph_vertex_phase_2_12 -> epsilon_graph_vertex_phase_2_17[color="aqua", ];
+  cyclic_epsilon_graph_vertex_12 -> epsilon_graph_vertex_phase_2_15[color="aqua", ];
 
-  epsilon_graph_vertex_phase_2_17 -> epsilon_graph_vertex_phase_2_18[color="aqua", ];
+  epsilon_graph_vertex_phase_2_15 -> epsilon_graph_vertex_phase_2_6[color="aqua", ];
 
-  epsilon_graph_vertex_phase_2_18 -> epsilon_graph_vertex_phase_2_10[color="aqua", ];
+  cyclic_epsilon_graph_vertex_12 -> cyclic_epsilon_graph_vertex_16[color="aqua", ];
+
+  cyclic_epsilon_graph_vertex_16 -> cyclic_epsilon_graph_vertex_17[color="aqua", ];
+
+  cyclic_epsilon_graph_vertex_17 -> cyclic_epsilon_graph_vertex_3[color="aqua", ];
+
+  cyclic_epsilon_graph_vertex_12 -> cyclic_epsilon_graph_vertex_13[color="aqua", ];
+
+  cyclic_epsilon_graph_vertex_13 -> cyclic_epsilon_graph_vertex_10[color="aqua", ];
+
+  cyclic_epsilon_graph_vertex_3 -> cyclic_epsilon_graph_vertex_14[color="aqua", ];
+
+  cyclic_epsilon_graph_vertex_14 -> cyclic_epsilon_graph_vertex_15[color="aqua", ];
+
+  cyclic_epsilon_graph_vertex_15 -> cyclic_epsilon_graph_vertex_12[color="aqua", ];
+
+  epsilon_graph_vertex_phase_2_5 -> epsilon_graph_vertex_phase_2_16[color="aqua", ];
+
+  epsilon_graph_vertex_phase_2_16 -> cyclic_epsilon_graph_vertex_0[color="aqua", ];
+
+  cyclic_epsilon_graph_vertex_0 -> cyclic_epsilon_graph_vertex_1[color="red", ];
+
+  cyclic_epsilon_graph_vertex_1 -> cyclic_epsilon_graph_vertex_2[color="red", ];
+
+  cyclic_epsilon_graph_vertex_2 -> cyclic_epsilon_graph_vertex_0[color="red", ];
+
+  cyclic_epsilon_graph_vertex_3 -> cyclic_epsilon_graph_vertex_4[color="red", ];
+
+  cyclic_epsilon_graph_vertex_4 -> cyclic_epsilon_graph_vertex_5[color="red", ];
+
+  cyclic_epsilon_graph_vertex_5 -> cyclic_epsilon_graph_vertex_3[color="red", ];
 }
 

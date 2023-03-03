@@ -21,7 +21,8 @@
 //! Implementation of parsing. Performance does *(eventually)* matter here.
 
 use crate::{
-  grammar_indexing as gi, grammar_specification as gs,
+  grammar_indexing as gi,
+  grammar_specification::{self as gs, graphviz as gv},
   lowering_to_indices::{grammar_building as gb, graph_coordinates as gc},
 };
 
@@ -65,39 +66,11 @@ trait SpansRange {
 }
 
 /// A flattened version of the information in a [SpanningSubtree].
-#[derive(Clone)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct FlattenedSpanInfo {
   pub state_pair: gi::StatePair,
   pub input_range: InputRange,
   pub stack_diff: gi::StackDiffSegment,
-}
-
-impl PartialEq for FlattenedSpanInfo {
-  fn eq(&self, other: &Self) -> bool {
-    self.state_pair == other.state_pair
-      && self.input_range == other.input_range
-      && self.stack_diff == other.stack_diff
-  }
-}
-
-impl Eq for FlattenedSpanInfo {}
-
-impl fmt::Debug for FlattenedSpanInfo {
-  fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-    write!(
-      f,
-      "FlattenedSpanInfo {{ state_pair: {:?}, input_range: {:?}, stack_diff: {:?} }}",
-      self.state_pair, self.input_range, self.stack_diff
-    )
-  }
-}
-
-impl Hash for FlattenedSpanInfo {
-  fn hash<H: Hasher>(&self, state: &mut H) {
-    self.state_pair.hash(state);
-    self.input_range.hash(state);
-    self.stack_diff.hash(state);
-  }
 }
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
@@ -111,86 +84,27 @@ pub struct ParentInfo {
 
 /// We want to have a consistent `id` within each [SpanningSubtree], so we add
 /// new trees via a specific method which assigns them an id.
-#[derive(Clone)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct SpanningSubtreeToCreate {
   pub input_span: FlattenedSpanInfo,
   pub parents: Option<ParentInfo>,
 }
 
-impl PartialEq for SpanningSubtreeToCreate {
-  fn eq(&self, other: &Self) -> bool {
-    self.input_span == other.input_span && self.parents == other.parents
-  }
-}
-
-impl Eq for SpanningSubtreeToCreate {}
-
-impl fmt::Debug for SpanningSubtreeToCreate {
-  fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-    write!(
-      f,
-      "SpanningSubtreeToCreate {{ input_span: {:?}, parents: {:?} }}",
-      self.input_span, self.parents
-    )
-  }
-}
-
-impl Hash for SpanningSubtreeToCreate {
-  fn hash<H: Hasher>(&self, state: &mut H) {
-    self.input_span.hash(state);
-    self.parents.hash(state);
-  }
-}
-
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct CompletelyFlattenedSubtree {
   pub states: Vec<gi::LoweredState>,
   pub input_range: InputRange,
 }
 
-impl PartialEq for CompletelyFlattenedSubtree {
-  fn eq(&self, other: &Self) -> bool {
-    self.states == other.states && self.input_range == other.input_range
-  }
-}
-
-impl Eq for CompletelyFlattenedSubtree {}
-
 pub trait FlattenableToStates {
   fn flatten_to_states(&self, parse: &Parse) -> CompletelyFlattenedSubtree;
 }
 
-#[derive(Clone)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct SpanningSubtree {
   pub input_span: FlattenedSpanInfo,
   pub parents: Option<ParentInfo>,
   pub id: SpanningSubtreeRef,
-}
-
-impl PartialEq for SpanningSubtree {
-  fn eq(&self, other: &Self) -> bool {
-    self.input_span == other.input_span && self.parents == other.parents && self.id == other.id
-  }
-}
-
-impl Eq for SpanningSubtree {}
-
-impl fmt::Debug for SpanningSubtree {
-  fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-    write!(
-      f,
-      "SpanningSubtree {{ input_span: {:?}, parents: {:?}, id: {:?} }}",
-      self.input_span, self.parents, self.id
-    )
-  }
-}
-
-impl Hash for SpanningSubtree {
-  fn hash<H: Hasher>(&self, state: &mut H) {
-    self.input_span.hash(state);
-    self.parents.hash(state);
-    self.id.hash(state);
-  }
 }
 
 impl FlattenableToStates for SpanningSubtree {
@@ -259,33 +173,36 @@ impl SpansRange for SpanningSubtree {
   }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct PossibleStates(pub Vec<gi::LoweredState>);
 
-impl PartialEq for PossibleStates {
-  fn eq(&self, other: &Self) -> bool { self.0 == other.0 }
-}
-
-impl Eq for PossibleStates {}
-
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ParseableGrammar {
   pub input_as_states: Vec<PossibleStates>,
   pub pairwise_state_transition_table: IndexMap<gi::StatePair, Vec<gi::StackDiffSegment>>,
   pub anon_step_mapping: IndexMap<gi::AnonSym, gi::UnflattenedProdCaseRef>,
 }
 
-impl PartialEq for ParseableGrammar {
-  fn eq(&self, other: &Self) -> bool {
-    self.input_as_states == other.input_as_states
-      && self.pairwise_state_transition_table == other.pairwise_state_transition_table
-      && self.anon_step_mapping == other.anon_step_mapping
-  }
-}
-
-impl Eq for ParseableGrammar {}
-
 impl ParseableGrammar {
+  pub fn build_dot_graph(self) -> gv::GraphBuilder {
+    let mut gb = gv::GraphBuilder::new();
+
+    let Self {
+      input_as_states,
+      pairwise_state_transition_table,
+      ..
+    } = self;
+
+    let mut state_vertices: IndexMap<gi::LoweredState, gv::Vertex> = IndexMap::new();
+
+    /* (A) Draw out all the states and transitions between them. */
+    {
+      todo!("parsing clearly has never worked");
+    }
+
+    gb
+  }
+
   /* TODO: get the transitive closure of this to get all the consecutive series
    * of states *over* length 2 and their corresponding stack diffs -- this
    * enables e.g. the use of SIMD instructions to find those series of
@@ -753,7 +670,7 @@ mod tests {
   use super::*;
   use crate::{
     grammar_indexing as gi, state,
-    test_framework::{new_token_position, non_cyclic_productions},
+    test_framework::{basic_productions, new_token_position, non_cyclic_productions},
   };
 
   #[test]
@@ -1279,5 +1196,37 @@ mod tests {
       }
     }
     assert!(hit_end);
+  }
+
+  #[test]
+  fn non_cyclic_parse_graphvis() {
+    let prods = non_cyclic_productions();
+
+    let detokenized = state::preprocessing::Init(prods).try_index().unwrap();
+    let indexed = detokenized.index();
+    let string_input = "ab";
+    let input = Input(string_input.chars().collect());
+    let parseable_grammar: ParseableGrammar = indexed.attach_input(&input).unwrap().0;
+
+    let gb = parseable_grammar.build_dot_graph();
+    let gv::DotOutput(output) = gb.build(gv::Id("test_graph".to_string()));
+
+    assert_eq!(output, "asdf");
+  }
+
+  #[test]
+  fn basic_parse_graphvis() {
+    let prods = basic_productions();
+
+    let detokenized = state::preprocessing::Init(prods).try_index().unwrap();
+    let indexed = detokenized.index();
+    let string_input = "abc";
+    let input = Input(string_input.chars().collect());
+    let parseable_grammar: ParseableGrammar = indexed.attach_input(&input).unwrap().0;
+
+    let gb = parseable_grammar.build_dot_graph();
+    let gv::DotOutput(output) = gb.build(gv::Id("test_graph".to_string()));
+
+    assert_eq!(output, "asdf");
   }
 }

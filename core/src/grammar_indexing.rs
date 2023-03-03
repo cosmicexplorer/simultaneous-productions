@@ -825,7 +825,6 @@ impl<Tok> PreprocessedGrammar<Tok> {
     } = self;
 
     let mut epsilon_graph_vertices: IndexMap<EpsilonGraphVertex, gv::Vertex> = IndexMap::new();
-
     let mut cyclic_edges: Vec<gv::Edge> = Vec::new();
     let mut stack_trie_vertices: IndexMap<TrieNodeRef, (StackTrieNode, gv::Vertex)> =
       IndexMap::new();
