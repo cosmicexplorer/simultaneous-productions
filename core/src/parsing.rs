@@ -674,7 +674,7 @@ mod tests {
   use super::*;
   use crate::{
     grammar_indexing as gi, state,
-    test_framework::{basic_productions, new_token_position, non_cyclic_productions},
+    text_backend::{basic_productions, new_token_position, non_cyclic_productions},
   };
 
   #[test]

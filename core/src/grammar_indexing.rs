@@ -1160,7 +1160,7 @@ mod tests {
   use super::*;
   use crate::{
     state,
-    test_framework::{basic_productions, new_token_position, non_cyclic_productions},
+    text_backend::{basic_productions, new_token_position, non_cyclic_productions},
   };
 
   #[test]

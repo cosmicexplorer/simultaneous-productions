@@ -393,7 +393,7 @@ mod tests {
     grammar_indexing as gi,
     lowering_to_indices::graph_coordinates as gc,
     parsing as p, state,
-    test_framework::{new_token_position, non_cyclic_productions},
+    text_backend::{new_token_position, non_cyclic_productions},
   };
 
   #[test]

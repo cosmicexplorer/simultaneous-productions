@@ -721,12 +721,13 @@ pub mod state {
   }
 }
 
-/// Helper methods to improve the ergonomics of testing in a [`no_std`]
-/// environment.
+/// An implementation of S.P. that works with finite blocks of text.
+///
+/// Helper methods are also provided to improve the ergonomics of testing in a
+/// [`no_std`] environment.
 ///
 /// [`no_std`]: https://docs.rust-embedded.org/book/intro/no-std.html
-#[cfg(test)]
-pub mod test_framework {
+pub mod text_backend {
   use super::grammar_specification::{self as gs, graphviz as gv};
   use crate::lowering_to_indices::graph_coordinates as gc;
 

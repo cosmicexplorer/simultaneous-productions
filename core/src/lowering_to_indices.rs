@@ -423,7 +423,7 @@ pub mod grammar_building {
 #[cfg(test)]
 mod tests {
   use super::{grammar_building as gb, graph_coordinates as gc};
-  use crate::{state, test_framework::*};
+  use crate::{state, text_backend::*};
 
   #[test]
   fn token_grammar_unsorted_alphabet() {
