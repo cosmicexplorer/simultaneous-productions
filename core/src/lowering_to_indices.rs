@@ -76,12 +76,12 @@ pub mod graph_coordinates {
   }
 
   /* FIXME: make doc comment apply to the macro expansion!!
-  /// Points to a particular Production within a sequence of
-  /// [gs::synthesis::Production]s.
-  ///
-  /// A version of [gs::synthesis::ProductionReference] which uses a [usize] for
-  /// speed.
-  */
+   * Points to a particular Production within a sequence of
+   * [gs::synthesis::Production]s.
+   *
+   * A version of [gs::synthesis::ProductionReference] which uses a [usize] for
+   * speed.
+   */
   via_primitive![ProdRef, usize];
 
   via_primitive![CaseRef, usize];
@@ -103,11 +103,11 @@ pub mod graph_coordinates {
   }
 
   /* FIXME: make doc comment apply to the macro expansion!!
-  /// Points to a particular token value within an alphabet.
-  ///
-  /// Differs from [TokenPosition], which points to an individual *state* in
-  /// the graph (which may be satisfied by exactly one token *value*).
-  */
+   * Points to a particular token value within an alphabet.
+   *
+   * Differs from [TokenPosition], which points to an individual *state* in
+   * the graph (which may be satisfied by exactly one token *value*).
+   */
   via_primitive![TokRef, usize];
 
   via_primitive![SMRef, usize];
@@ -130,49 +130,20 @@ pub mod grammar_building {
 
     use core::hash::Hash;
 
-    /* use heapless::{FnvIndexMap, FnvIndexSet, IndexMap, IndexSet, Vec}; */
     use indexmap::IndexMap;
 
-    macro_rules! vec_type {
+    macro_rules! collection_type {
       ($type_name:ident, $collection_type:ty) => {
-        #[derive(Debug)]
+        #[derive(Debug, PartialEq, Eq, Clone)]
         pub struct $type_name(pub $collection_type);
-
-        impl PartialEq for $type_name {
-          fn eq(&self, other: &Self) -> bool { self.0 == other.0 }
-        }
-
-        impl Eq for $type_name {}
-
-        impl Clone for $type_name {
-          fn clone(&self) -> Self { Self(self.0.clone()) }
-        }
       };
     }
 
-    vec_type![Case, Vec<gc::CaseEl>];
+    collection_type![Case, Vec<gc::CaseEl>];
 
-    vec_type![Production, Vec<Case>];
+    collection_type![Production, Vec<Case>];
 
-    macro_rules! indexmap_type {
-      ($type_name:ident, $collection_type:ty) => {
-        #[derive(Debug)]
-        pub struct $type_name(pub $collection_type);
-
-        impl PartialEq for $type_name {
-          fn eq(&self, other: &Self) -> bool { self.0 == other.0 }
-        }
-
-        impl Eq for $type_name {}
-
-        impl Clone for $type_name {
-          fn clone(&self) -> Self { Self(self.0.clone()) }
-        }
-      };
-    }
-
-    indexmap_type![DetokenizedProductions,
-                   IndexMap<gc::ProdRef, Production>];
+    collection_type![DetokenizedProductions, IndexMap<gc::ProdRef, Production>];
 
     impl DetokenizedProductions {
       pub fn new() -> Self { Self(IndexMap::new()) }
