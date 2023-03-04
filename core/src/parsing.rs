@@ -180,6 +180,9 @@ pub struct PossibleStates(pub Vec<gi::LoweredState>);
 pub struct ParseableGrammar {
   pub input_as_states: Vec<PossibleStates>,
   pub pairwise_state_transition_table: IndexMap<gi::StatePair, Vec<gi::StackDiffSegment>>,
+  /// Provide available stack cycles to the parse engine.
+  pub cyclic_subgraph: gi::EpsilonNodeStateSubgraph,
+  /* TODO: remove this; it appears to only be used in the (broken) parse reconstruction code. */
   pub anon_step_mapping: IndexMap<gi::AnonSym, gi::UnflattenedProdCaseRef>,
 }
 
@@ -278,15 +281,16 @@ impl ParseableGrammar {
     let gi::PreprocessedGrammar {
       cyclic_graph_decomposition:
         gi::CyclicGraphDecomposition {
+          cyclic_subgraph,
           pairwise_state_transitions,
           anon_step_mapping,
-          ..
         },
       token_states_mapping,
     } = grammar;
     Ok(ParseableGrammar {
       input_as_states: Self::get_possible_states_for_input(&token_states_mapping, input)?,
       pairwise_state_transition_table: Self::connect_stack_diffs(&pairwise_state_transitions),
+      cyclic_subgraph,
       anon_step_mapping,
     })
   }
