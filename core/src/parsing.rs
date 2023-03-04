@@ -1213,7 +1213,7 @@ mod tests {
     let parseable_grammar: ParseableGrammar = indexed.attach_input(&input).unwrap().0;
 
     let gb = parseable_grammar.build_dot_graph();
-    let gv::DotOutput(output) = gb.build(gv::Id("test_graph".to_string()));
+    let gv::DotOutput(output) = gb.build(gv::Id::validate("test_graph".to_string()));
 
     assert_eq!(output, "asdf");
   }
@@ -1229,7 +1229,7 @@ mod tests {
     let parseable_grammar: ParseableGrammar = indexed.attach_input(&input).unwrap().0;
 
     let gb = parseable_grammar.build_dot_graph();
-    let gv::DotOutput(output) = gb.build(gv::Id("test_graph".to_string()));
+    let gv::DotOutput(output) = gb.build(gv::Id::validate("test_graph".to_string()));
 
     assert_eq!(output, "asdf");
   }
