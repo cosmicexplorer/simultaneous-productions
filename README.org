@@ -7,11 +7,23 @@
 - [ ] hack up a [[P.S. prototype]] and develop a pitch
   - the pitch should explain that i haven't published yet because i didn't want to get scooped on [[the real prize]]
 
-** code TODO [3/8]
+** code TODO [1/8]
 1. [X] remove ~no_std~ impl
-2. [X] graphviz for every intermediate graph in grammar processing!
-3. [X] text-based grammar input format (for generating test cases)!
-4. [ ] implement typed callbacks (for e.g. AST construction) by stuffing intermediate arguments in the stack symbols!
+2. [-] graphviz for every intermediate graph in grammar processing! [1/3]
+   1. [-] S.P. [1/2]
+      1. [X] implement graphvis for basic S.P. in ~test_framework~
+      2. [ ] expose basic S.P. and rest of ~test_framework~ publicly!
+   2. [X] ~PreprocessedGrammar~
+   3. [ ] ~ParseableGrammar~
+3. [-] text-based grammar input format (for generating test cases)! [1/3]
+   1. [X] make basic grammar format
+   2. [ ] expose it publicly!
+   3. [ ] make it support literal ~>~ chars with backslashes!
+4. [ ] implement typed callbacks [0/4]
+   1. [ ] make parsing work at all again lmao
+   2. [ ] execute a callback whenever a sub-parse succeeds
+   3. [ ] signal parse failures
+   4. [ ] implement typed callbacks (for e.g. AST construction) by stuffing intermediate arguments in the stack symbols!
 5. [ ] demonstrate a grammar generator for regex constructs!
 6. [ ] implement context-sensitive and recursively-enumerable grammatical constructs!
    - also consider backrefs (can we make these sub-exponential?)!
