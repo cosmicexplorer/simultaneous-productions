@@ -6,7 +6,7 @@ edition                 = "2021"
 
 [dependencies]
 displaydoc              = { git = "https://github.com/yaahc/displaydoc", rev = "7159bb5c9d41ca3c7ccf04ae86ae3acb0ea12a27" }
-graphvizier             = { git = "https://github.com/cosmicexplorer/graphvizier", rev = "bbc625c311cb170728abe347a11cc4bc27896f1c" }
+graphvizier             = "0.0.0"
 indexmap                = "1.9.2"
 lazy_static             = "1"
 regex                   = "1"
