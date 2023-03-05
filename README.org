@@ -11,8 +11,8 @@
 1. [X] remove ~no_std~ impl
 2. [-] graphviz for every intermediate graph in grammar processing! [1/3]
    1. [-] S.P. [1/2]
-      1. [X] implement graphvis for basic S.P. in ~test_framework~
-      2. [ ] expose basic S.P. and rest of ~test_framework~ publicly!
+      1. [X] implement graphvis for basic S.P. in ~text_backend~
+      2. [ ] expose basic S.P. and rest of ~text_backend~ publicly!
    2. [X] ~PreprocessedGrammar~
    3. [ ] ~ParseableGrammar~
 3. [-] text-based grammar input format (for generating test cases)! [1/3]

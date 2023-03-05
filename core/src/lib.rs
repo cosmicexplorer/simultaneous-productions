@@ -84,7 +84,6 @@ pub mod grammar_specification {
     use regex::Regex;
     use uuid::Uuid;
 
-    /* FIXME: make this validate the string! only [a-zA-Z0-9_]! */
     #[derive(Debug, Hash, PartialEq, Eq, Clone)]
     pub struct Id(String);
 
@@ -395,6 +394,12 @@ pub mod grammar_specification {
       }
     }
 
+    /// Implement this trait to expose a graphviz implementation of your type.
+    pub trait Graphable {
+      /// This impl will be somewhat complex, and different for each type!
+      fn build_graph(self) -> GraphBuilder;
+    }
+
     #[cfg(test)]
     mod test {
       use super::*;
@@ -474,9 +479,9 @@ pub mod grammar_specification {
   /// Grammar components which synthesize the lower-level elements from
   /// [direct], [indirect], [explicit], and [undecidable].
   pub mod synthesis {
-    use super::{direct::Literal, indirect::ProductionReference};
+    use super::{direct::Literal, graphviz as gv, indirect::ProductionReference};
 
-    use core::iter::IntoIterator;
+    use core::{fmt, iter::IntoIterator};
 
     use displaydoc::Display;
 
@@ -515,6 +520,168 @@ pub mod grammar_specification {
       type P: Production;
       /// Override of [Iterator::Item].
       type Item: Into<(<<Self::P as Production>::C as Case>::PR, Self::P)>;
+    }
+
+    pub struct SPGrapher<SP>(pub SP);
+
+    impl<Tok, ID, PR, Lit, C, P, SP> gv::Graphable for SPGrapher<SP>
+    where
+      Tok: fmt::Display,
+      ID: fmt::Display,
+      PR: ProductionReference<ID=ID>+Into<ID>+Clone,
+      Lit: Literal<Tok=Tok>+IntoIterator<Item=Tok>,
+      C: Case<PR=PR>+IntoIterator<Item=CaseElement<Lit, PR>>,
+      P: Production<C=C>+IntoIterator<Item=C>,
+      SP: SimultaneousProductions<P=P>+IntoIterator<Item=(PR, P)>,
+    {
+      fn build_graph(self) -> gv::GraphBuilder {
+        let mut gb = gv::GraphBuilder::new();
+        let mut vertex_id_counter: usize = 0;
+        let mut prod_vertices: Vec<gv::Vertex> = Vec::new();
+        let mut prod_entities: Vec<gv::Entity> = Vec::new();
+
+        let Self(sp) = self;
+
+        for prod in sp.into_iter() {
+          let (prod_ref, prod): (<<SP::P as Production>::C as Case>::PR, SP::P) = prod.into();
+          // (1) Add vertex corresponding to any references to this production by name.
+          let ref_id = format!("prod_{}", prod_ref.clone().into());
+          let ref_vertex = gv::Vertex {
+            id: gv::Id::validate(ref_id.clone()),
+            label: Some(gv::Label(format!("${}", prod_ref.into()))),
+            color: None,
+            fontcolor: None,
+          };
+          let this_prod_ref_id = ref_vertex.id.clone();
+          // (1.1) Record a vertex for each production for their own subgraph at the end
+          // of this loop.
+          prod_vertices.push(ref_vertex);
+
+          // (1.2) Accumulate edges and add them after each production's subgraph.
+          let mut edges: Vec<gv::Edge> = Vec::new();
+
+          // (1.3) Create a subgraph for each production!
+          let mut cur_prod_subgraph = gv::Subgraph {
+            id: gv::Id::validate(format!("{}_prod", prod_ref.clone().into())),
+            label: Some(gv::Label(format!("Cases: ${}", prod_ref.into()))),
+            color: Some(gv::Color("purple".to_string())),
+            fontcolor: Some(gv::Color("purple".to_string())),
+            ..Default::default()
+          };
+
+          // (2) Traverse the productions, accumulating case elements and edges between
+          //     each other and the prod refs!
+          for (case_index, case) in prod.into_iter().enumerate() {
+            // (2.1) Link each consecutive pair of case elements with a (directed) edge.
+            let mut prev_id = this_prod_ref_id.clone();
+            let mut cur_edge_color = gv::Color("red".to_string());
+
+            // (1.3)
+            let mut cur_case_subgraph = gv::Subgraph {
+              id: gv::Id::validate(format!("{}_case_{}", prod_ref.into(), case_index)),
+              label: Some(gv::Label(format!("{}", case_index))),
+              color: Some(gv::Color("green4".to_string())),
+              fontcolor: Some(gv::Color("green4".to_string())),
+              ..Default::default()
+            };
+
+            for case_el in case.into_iter() {
+              let case_el = CaseElement::from(case_el);
+
+              // (2.2) Create a new vertex for each case element.
+              let new_id = gv::Id::validate(format!("vertex_{}", vertex_id_counter));
+              vertex_id_counter += 1;
+
+              match case_el {
+                CaseElement::Lit(lit) => {
+                  let label = gv::Label(format!("<{}>", lit.into_string()));
+                  let new_vertex = gv::Vertex {
+                    id: new_id.clone(),
+                    label: Some(label),
+                    color: Some(gv::Color("brown".to_string())),
+                    fontcolor: Some(gv::Color("brown".to_string())),
+                  };
+
+                  cur_case_subgraph
+                    .entities
+                    .push(gv::Entity::Vertex(new_vertex));
+                },
+                CaseElement::Prod(pr) => {
+                  let label = gv::Label(format!("ref: {}", pr.into_string()));
+                  let new_vertex = gv::Vertex {
+                    id: new_id.clone(),
+                    label: Some(label),
+                    color: Some(gv::Color("darkgoldenrod".to_string())),
+                    fontcolor: Some(gv::Color("darkgoldenrod".to_string())),
+                  };
+
+                  cur_case_subgraph
+                    .entities
+                    .push(gv::Entity::Vertex(new_vertex));
+
+                  // (2.3) If this is a prod ref, then add another edge from this to the prod
+                  // ref's id!
+                  /* FIXME: remove duplicate format!("prod_{}", ...) calls! */
+                  let target_id = gv::Id::validate(format!("prod_{}", pr.into_string()));
+                  edges.push(gv::Edge {
+                    source: new_id.clone(),
+                    target: target_id,
+                    color: Some(gv::Color("darkgoldenrod".to_string())),
+                    ..Default::default()
+                  });
+                },
+              }
+
+              // See (2.1).
+              let new_edge = gv::Edge {
+                source: prev_id,
+                target: new_id.clone(),
+                color: Some(cur_edge_color),
+                ..Default::default()
+              };
+              prev_id = new_id.clone();
+              cur_edge_color = gv::Color("aqua".to_string());
+              edges.push(new_edge);
+            }
+
+            // (2.4) Link this final case element back with the production!
+            edges.push(gv::Edge {
+              source: prev_id,
+              target: this_prod_ref_id.clone(),
+              color: Some(gv::Color("black".to_string())),
+              ..Default::default()
+            });
+
+            cur_prod_subgraph
+              .entities
+              .push(gv::Entity::Subgraph(cur_case_subgraph));
+          }
+          prod_entities.push(gv::Entity::Subgraph(cur_prod_subgraph));
+
+          for edge in edges.into_iter() {
+            prod_entities.push(gv::Entity::Edge(edge));
+          }
+        }
+
+        // See (1.1).
+        gb.accept_entity(gv::Entity::Subgraph(gv::Subgraph {
+          id: gv::Id::validate("prods".to_string()),
+          label: Some(gv::Label("Productions".to_string())),
+          color: Some(gv::Color("blue".to_string())),
+          fontcolor: Some(gv::Color("blue".to_string())),
+          node_defaults: Some(gv::NodeDefaults {
+            color: Some(gv::Color("blue".to_string())),
+            fontcolor: Some(gv::Color("blue".to_string())),
+          }),
+          entities: prod_vertices.into_iter().map(gv::Entity::Vertex).collect(),
+        }));
+
+        for entity in prod_entities.into_iter() {
+          gb.accept_entity(entity);
+        }
+
+        gb
+      }
     }
   }
 }
@@ -927,152 +1094,6 @@ pub mod text_backend {
     SP::from(&cases[..])
   }
 
-  /* FIXME: provide this as a generic method for any implementor of the SP
-   * trait! */
-  pub fn build_sp_graph(sp: SP) -> gv::GraphBuilder {
-    let mut gb = gv::GraphBuilder::new();
-    let mut vertex_id_counter: usize = 0;
-    let mut prod_vertices: Vec<gv::Vertex> = Vec::new();
-    let mut prod_entities: Vec<gv::Entity> = Vec::new();
-
-    for (prod_ref, prod) in sp.into_iter() {
-      // (1) Add vertex corresponding to any references to this production by name.
-      let ref_id = format!("prod_{}", prod_ref.into_string());
-      let ref_vertex = gv::Vertex {
-        id: gv::Id::validate(ref_id.clone()),
-        label: Some(gv::Label(prod_ref.into_string())),
-        color: None,
-        fontcolor: None,
-      };
-      let this_prod_ref_id = ref_vertex.id.clone();
-      // (1.1) Record a vertex for each production for their own subgraph at the end
-      // of this loop.
-      prod_vertices.push(ref_vertex);
-
-      // (1.2) Accumulate edges and add them after each production's subgraph.
-      let mut edges: Vec<gv::Edge> = Vec::new();
-
-      // (1.3) Create a subgraph for each production!
-      let mut cur_prod_subgraph = gv::Subgraph {
-        id: gv::Id::validate(format!("{}_prod", prod_ref.into_string())),
-        label: Some(gv::Label(format!("Cases: {}", prod_ref.into_string()))),
-        color: Some(gv::Color("purple".to_string())),
-        fontcolor: Some(gv::Color("purple".to_string())),
-        ..Default::default()
-      };
-
-      // (2) Traverse the productions, accumulating case elements and edges between
-      //     each other and the prod refs!
-      for (case_index, case) in prod.into_iter().enumerate() {
-        // (2.1) Link each consecutive pair of case elements with a (directed) edge.
-        let mut prev_id = this_prod_ref_id.clone();
-        let mut cur_edge_color = gv::Color("red".to_string());
-
-        // (1.3)
-        let mut cur_case_subgraph = gv::Subgraph {
-          id: gv::Id::validate(format!("{}_case_{}", prod_ref.into_string(), case_index)),
-          label: Some(gv::Label(format!("{}", case_index))),
-          color: Some(gv::Color("green4".to_string())),
-          fontcolor: Some(gv::Color("green4".to_string())),
-          ..Default::default()
-        };
-
-        for case_el in case.into_iter() {
-          // (2.2) Create a new vertex for each case element.
-          let new_id = gv::Id::validate(format!("vertex_{}", vertex_id_counter));
-          vertex_id_counter += 1;
-
-          match case_el {
-            CE::Lit(lit) => {
-              let label = gv::Label(format!("<{}>", lit.into_string()));
-              let new_vertex = gv::Vertex {
-                id: new_id.clone(),
-                label: Some(label),
-                color: Some(gv::Color("brown".to_string())),
-                fontcolor: Some(gv::Color("brown".to_string())),
-              };
-
-              cur_case_subgraph
-                .entities
-                .push(gv::Entity::Vertex(new_vertex));
-            },
-            CE::Prod(pr) => {
-              let label = gv::Label(format!("ref: {}", pr.into_string()));
-              let new_vertex = gv::Vertex {
-                id: new_id.clone(),
-                label: Some(label),
-                color: Some(gv::Color("darkgoldenrod".to_string())),
-                fontcolor: Some(gv::Color("darkgoldenrod".to_string())),
-              };
-
-              cur_case_subgraph
-                .entities
-                .push(gv::Entity::Vertex(new_vertex));
-
-              // (2.3) If this is a prod ref, then add another edge from this to the prod
-              // ref's id!
-              /* FIXME: remove duplicate format!("prod_{}", ...) calls! */
-              let target_id = gv::Id::validate(format!("prod_{}", pr.into_string()));
-              edges.push(gv::Edge {
-                source: new_id.clone(),
-                target: target_id,
-                color: Some(gv::Color("darkgoldenrod".to_string())),
-                ..Default::default()
-              });
-            },
-          }
-
-          // See (2.1).
-          let new_edge = gv::Edge {
-            source: prev_id,
-            target: new_id.clone(),
-            color: Some(cur_edge_color),
-            ..Default::default()
-          };
-          prev_id = new_id.clone();
-          cur_edge_color = gv::Color("aqua".to_string());
-          edges.push(new_edge);
-        }
-
-        // (2.4) Link this final case element back with the production!
-        edges.push(gv::Edge {
-          source: prev_id,
-          target: this_prod_ref_id.clone(),
-          color: Some(gv::Color("black".to_string())),
-          ..Default::default()
-        });
-
-        cur_prod_subgraph
-          .entities
-          .push(gv::Entity::Subgraph(cur_case_subgraph));
-      }
-      prod_entities.push(gv::Entity::Subgraph(cur_prod_subgraph));
-
-      for edge in edges.into_iter() {
-        prod_entities.push(gv::Entity::Edge(edge));
-      }
-    }
-
-    // See (1.1).
-    gb.accept_entity(gv::Entity::Subgraph(gv::Subgraph {
-      id: gv::Id::validate("prods".to_string()),
-      label: Some(gv::Label("Productions".to_string())),
-      color: Some(gv::Color("blue".to_string())),
-      fontcolor: Some(gv::Color("blue".to_string())),
-      node_defaults: Some(gv::NodeDefaults {
-        color: Some(gv::Color("blue".to_string())),
-        fontcolor: Some(gv::Color("blue".to_string())),
-      }),
-      entities: prod_vertices.into_iter().map(gv::Entity::Vertex).collect(),
-    }));
-
-    for entity in prod_entities.into_iter() {
-      gb.accept_entity(entity);
-    }
-
-    gb
-  }
-
   pub fn non_cyclic_productions() -> SP {
     SP::from(
       [
@@ -1122,8 +1143,11 @@ B: $A -> <a>
 
   #[test]
   fn non_cyclic_graphviz() {
+    use gv::Graphable;
+
     let sp = non_cyclic_productions();
-    let gb = build_sp_graph(sp);
+    let grapher = gs::synthesis::SPGrapher(sp);
+    let gb = grapher.build_graph();
     let gv::DotOutput(output) = gb.build(gv::Id::validate("test_sp_graph".to_string()));
 
     assert_eq!(
@@ -1198,9 +1222,12 @@ P_2: $P_1 -> <bc>
   }
 
   #[test]
-  fn basic_graphvis() {
+  fn basic_graphviz() {
+    use gv::Graphable;
+
     let sp = basic_productions();
-    let gb = build_sp_graph(sp);
+    let grapher = gs::synthesis::SPGrapher(sp);
+    let gb = grapher.build_graph();
     let gv::DotOutput(output) = gb.build(gv::Id::validate("test_sp_graph".to_string()));
 
     assert_eq!(output, "digraph test_sp_graph {\n  compound = true;\n\n  subgraph prods {\n    label = \"Productions\";\n    cluster = true;\n    rank = same;\n\n    color = \"blue\";\n    fontcolor = \"blue\";\n    node [color=\"blue\", fontcolor=\"blue\", ];\n\n    prod_P_1[label=\"P_1\", ];\n    prod_P_2[label=\"P_2\", ];\n  }\n\n  subgraph P_1_prod {\n    label = \"Cases: P_1\";\n    cluster = true;\n    rank = same;\n\n    color = \"purple\";\n    fontcolor = \"purple\";\n\n    subgraph P_1_case_0 {\n      label = \"0\";\n      cluster = true;\n      rank = same;\n\n      color = \"green4\";\n      fontcolor = \"green4\";\n\n      vertex_0[label=\"<abc>\", color=\"brown\", fontcolor=\"brown\", ];\n    }\n    subgraph P_1_case_1 {\n      label = \"1\";\n      cluster = true;\n      rank = same;\n\n      color = \"green4\";\n      fontcolor = \"green4\";\n\n      vertex_1[label=\"<a>\", color=\"brown\", fontcolor=\"brown\", ];\n      vertex_2[label=\"ref: P_1\", color=\"darkgoldenrod\", fontcolor=\"darkgoldenrod\", ];\n      vertex_3[label=\"<c>\", color=\"brown\", fontcolor=\"brown\", ];\n    }\n    subgraph P_1_case_2 {\n      label = \"2\";\n      cluster = true;\n      rank = same;\n\n      color = \"green4\";\n      fontcolor = \"green4\";\n\n      vertex_4[label=\"<bc>\", color=\"brown\", fontcolor=\"brown\", ];\n      vertex_5[label=\"ref: P_2\", color=\"darkgoldenrod\", fontcolor=\"darkgoldenrod\", ];\n    }\n  }\n\n  prod_P_1 -> vertex_0[color=\"red\", ];\n\n  vertex_0 -> prod_P_1[color=\"black\", ];\n\n  prod_P_1 -> vertex_1[color=\"red\", ];\n\n  vertex_2 -> prod_P_1[color=\"darkgoldenrod\", ];\n\n  vertex_1 -> vertex_2[color=\"aqua\", ];\n\n  vertex_2 -> vertex_3[color=\"aqua\", ];\n\n  vertex_3 -> prod_P_1[color=\"black\", ];\n\n  prod_P_1 -> vertex_4[color=\"red\", ];\n\n  vertex_5 -> prod_P_2[color=\"darkgoldenrod\", ];\n\n  vertex_4 -> vertex_5[color=\"aqua\", ];\n\n  vertex_5 -> prod_P_1[color=\"black\", ];\n\n  subgraph P_2_prod {\n    label = \"Cases: P_2\";\n    cluster = true;\n    rank = same;\n\n    color = \"purple\";\n    fontcolor = \"purple\";\n\n    subgraph P_2_case_0 {\n      label = \"0\";\n      cluster = true;\n      rank = same;\n\n      color = \"green4\";\n      fontcolor = \"green4\";\n\n      vertex_6[label=\"ref: P_1\", color=\"darkgoldenrod\", fontcolor=\"darkgoldenrod\", ];\n    }\n    subgraph P_2_case_1 {\n      label = \"1\";\n      cluster = true;\n      rank = same;\n\n      color = \"green4\";\n      fontcolor = \"green4\";\n\n      vertex_7[label=\"ref: P_2\", color=\"darkgoldenrod\", fontcolor=\"darkgoldenrod\", ];\n    }\n    subgraph P_2_case_2 {\n      label = \"2\";\n      cluster = true;\n      rank = same;\n\n      color = \"green4\";\n      fontcolor = \"green4\";\n\n      vertex_8[label=\"ref: P_1\", color=\"darkgoldenrod\", fontcolor=\"darkgoldenrod\", ];\n      vertex_9[label=\"<bc>\", color=\"brown\", fontcolor=\"brown\", ];\n    }\n  }\n\n  vertex_6 -> prod_P_1[color=\"darkgoldenrod\", ];\n\n  prod_P_2 -> vertex_6[color=\"red\", ];\n\n  vertex_6 -> prod_P_2[color=\"black\", ];\n\n  vertex_7 -> prod_P_2[color=\"darkgoldenrod\", ];\n\n  prod_P_2 -> vertex_7[color=\"red\", ];\n\n  vertex_7 -> prod_P_2[color=\"black\", ];\n\n  vertex_8 -> prod_P_1[color=\"darkgoldenrod\", ];\n\n  prod_P_2 -> vertex_8[color=\"red\", ];\n\n  vertex_8 -> vertex_9[color=\"aqua\", ];\n\n  vertex_9 -> prod_P_2[color=\"black\", ];\n}\n");
