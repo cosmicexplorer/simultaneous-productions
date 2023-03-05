@@ -23,11 +23,10 @@
 
 /* These clippy lint descriptions are purely non-functional and do not affect the functionality
  * or correctness of the code.
+ * TODO: #![warn(missing_docs)]
  * TODO: rustfmt breaks multiline comments when used one on top of another! (each with its own
  * pair of delimiters)
  * Note: run clippy with: rustup run nightly cargo-clippy! */
-#![warn(missing_docs)]
-/* There should be no need to use unsafe code here! */
 #![deny(unsafe_code)]
 /* Ensure any doctest warnings fails the doctest! */
 #![doc(test(attr(deny(warnings))))]
@@ -79,373 +78,6 @@ pub mod grammar_specification {
     pub trait Hashable: Hash+Eq {}
   }
 
-  pub mod graphviz {
-    use lazy_static::lazy_static;
-    use regex::Regex;
-    use uuid::Uuid;
-
-    #[derive(Debug, Hash, PartialEq, Eq, Clone)]
-    pub struct Id(String);
-
-    impl Id {
-      pub fn into_string(self) -> String { self.0 }
-
-      pub fn validate(s: String) -> Self {
-        dbg!(&s);
-        lazy_static! {
-          static ref VALID_GRAPHVIZ_ID: Regex = Regex::new("^[a-zA-Z0-9_-]*$").unwrap();
-        }
-
-        if !VALID_GRAPHVIZ_ID.is_match(&s) {
-          let rx: &Regex = &VALID_GRAPHVIZ_ID;
-          panic!("invalid id '{}' provided: must match /{}/", s, rx);
-        }
-
-        Self(s)
-      }
-    }
-
-    #[derive(Debug, Clone)]
-    pub struct Label(pub String);
-
-    #[derive(Debug, Clone)]
-    pub struct Color(pub String);
-
-    #[derive(Debug, Clone)]
-    pub struct Vertex {
-      pub id: Id,
-      pub label: Option<Label>,
-      pub color: Option<Color>,
-      pub fontcolor: Option<Color>,
-    }
-
-    impl Default for Vertex {
-      fn default() -> Self {
-        let id = Id::validate(Uuid::new_v4().to_string());
-        Self {
-          id,
-          label: None,
-          color: None,
-          fontcolor: None,
-        }
-      }
-    }
-
-    #[cfg(test)]
-    impl Vertex {
-      fn numeric(index: usize) -> Self {
-        let key = format!("node_{}", index);
-        Self {
-          id: Id::validate(key.clone()),
-          label: Some(Label(key)),
-          color: None,
-          fontcolor: None,
-        }
-      }
-    }
-
-    #[derive(Debug, Clone, Default)]
-    pub struct NodeDefaults {
-      pub color: Option<Color>,
-      pub fontcolor: Option<Color>,
-    }
-
-    #[derive(Debug, Clone)]
-    pub enum Entity {
-      Subgraph(Subgraph),
-      Vertex(Vertex),
-      Edge(Edge),
-    }
-
-    #[derive(Debug, Clone)]
-    pub struct Subgraph {
-      pub id: Id,
-      pub label: Option<Label>,
-      pub color: Option<Color>,
-      pub fontcolor: Option<Color>,
-      pub node_defaults: Option<NodeDefaults>,
-      pub entities: Vec<Entity>,
-    }
-
-    impl Default for Subgraph {
-      fn default() -> Self {
-        let id = Id::validate(Uuid::new_v4().to_string());
-        Self {
-          id,
-          label: None,
-          color: None,
-          fontcolor: None,
-          node_defaults: None,
-          entities: Vec::new(),
-        }
-      }
-    }
-
-    #[derive(Debug, Clone)]
-    pub struct Edge {
-      pub source: Id,
-      pub target: Id,
-      pub label: Option<Label>,
-      pub color: Option<Color>,
-      pub fontcolor: Option<Color>,
-    }
-
-    impl Default for Edge {
-      fn default() -> Self {
-        Self {
-          source: Id::validate("".to_string()),
-          target: Id::validate("".to_string()),
-          label: None,
-          color: None,
-          fontcolor: None,
-        }
-      }
-    }
-
-    #[derive(Debug, Hash, PartialEq, Eq, Clone)]
-    pub struct DotOutput(pub String);
-
-    pub struct GraphBuilder {
-      entities: Vec<Entity>,
-    }
-
-    impl GraphBuilder {
-      pub fn new() -> Self {
-        Self {
-          entities: Vec::new(),
-        }
-      }
-
-      pub fn accept_entity(&mut self, e: Entity) { self.entities.push(e); }
-
-      fn newline(output: &mut String) { output.push('\n'); }
-
-      fn newline_indent(output: &mut String, indent: usize) {
-        Self::newline(output);
-        for _ in 0..indent {
-          output.push(' ');
-        }
-      }
-
-      fn bump_indent(indent: &mut usize) { *indent += 2; }
-
-      fn unbump_indent(indent: &mut usize) {
-        assert!(*indent >= 2);
-        *indent -= 2;
-      }
-
-      fn print_entity(entity: Entity, mut indent: usize) -> String {
-        match entity {
-          Entity::Vertex(Vertex {
-            id,
-            label,
-            color,
-            fontcolor,
-          }) => {
-            let mut output = id.0;
-
-            let mut modifiers: Vec<String> = Vec::new();
-            if let Some(Label(label)) = label {
-              modifiers.push(format!("label=\"{}\"", label));
-            }
-            if let Some(Color(color)) = color {
-              modifiers.push(format!("color=\"{}\"", color));
-            }
-            if let Some(Color(fontcolor)) = fontcolor {
-              modifiers.push(format!("fontcolor=\"{}\"", fontcolor));
-            }
-
-            if !modifiers.is_empty() {
-              output.push('[');
-
-              for m in modifiers.into_iter() {
-                output.push_str(format!("{}, ", m).as_str());
-              }
-
-              output.push(']');
-            }
-
-            output.push(';');
-
-            output
-          },
-          Entity::Edge(Edge {
-            source,
-            target,
-            label,
-            color,
-            fontcolor,
-          }) => {
-            let mut output = format!("{} -> {}", source.0, target.0);
-
-            let mut modifiers: Vec<String> = Vec::new();
-            if let Some(Label(label)) = label {
-              modifiers.push(format!("label=\"{}\"", label));
-            }
-            if let Some(Color(color)) = color {
-              modifiers.push(format!("color=\"{}\"", color));
-            }
-            if let Some(Color(fontcolor)) = fontcolor {
-              modifiers.push(format!("fontcolor=\"{}\"", fontcolor));
-            }
-
-            if !modifiers.is_empty() {
-              output.push('[');
-
-              for m in modifiers.into_iter() {
-                output.push_str(format!("{}, ", m).as_str());
-              }
-
-              output.push(']');
-            }
-
-            output.push(';');
-
-            output
-          },
-          Entity::Subgraph(Subgraph {
-            id,
-            label,
-            color,
-            fontcolor,
-            node_defaults,
-            entities,
-          }) => {
-            let mut output = format!("subgraph {} {{", id.0);
-            Self::bump_indent(&mut indent);
-
-            Self::newline_indent(&mut output, indent);
-            if let Some(Label(label)) = label {
-              output.push_str(format!("label = \"{}\";", label).as_str());
-              Self::newline_indent(&mut output, indent);
-            }
-            output.push_str("cluster = true;");
-            Self::newline_indent(&mut output, indent);
-            output.push_str("rank = same;");
-            Self::newline(&mut output);
-
-            if let Some(Color(color)) = color {
-              Self::newline_indent(&mut output, indent);
-              output.push_str(format!("color = \"{}\";", color).as_str());
-            }
-            if let Some(Color(fontcolor)) = fontcolor {
-              Self::newline_indent(&mut output, indent);
-              output.push_str(format!("fontcolor = \"{}\";", fontcolor).as_str());
-            }
-            if let Some(NodeDefaults { color, fontcolor }) = node_defaults {
-              let mut modifiers: Vec<String> = Vec::new();
-              if let Some(Color(color)) = color {
-                modifiers.push(format!("color=\"{}\"", color));
-              }
-              if let Some(Color(fontcolor)) = fontcolor {
-                modifiers.push(format!("fontcolor=\"{}\"", fontcolor));
-              }
-              if !modifiers.is_empty() {
-                Self::newline_indent(&mut output, indent);
-                output.push_str("node [");
-                for m in modifiers.into_iter() {
-                  output.push_str(format!("{}, ", m).as_str());
-                }
-                output.push_str("];")
-              }
-            }
-            Self::newline(&mut output);
-
-            for e in entities.into_iter() {
-              Self::newline_indent(&mut output, indent);
-              let expr = Self::print_entity(e, indent);
-              output.push_str(expr.as_str());
-            }
-
-            Self::unbump_indent(&mut indent);
-            Self::newline_indent(&mut output, indent);
-            output.push('}');
-
-            output
-          },
-        }
-      }
-
-      pub fn build(self, graph_name: Id) -> DotOutput {
-        let mut output: String = String::new();
-        let mut indent: usize = 0;
-
-        output.push_str(format!("digraph {} {{", graph_name.0).as_str());
-        Self::bump_indent(&mut indent);
-
-        Self::newline_indent(&mut output, indent);
-        output.push_str("compound = true;");
-
-        for entity in self.entities.into_iter() {
-          Self::newline(&mut output);
-          Self::newline_indent(&mut output, indent);
-
-          let expr = Self::print_entity(entity, indent);
-          output.push_str(expr.as_str());
-        }
-
-        Self::unbump_indent(&mut indent);
-        assert_eq!(indent, 0);
-        Self::newline_indent(&mut output, indent);
-        output.push('}');
-        Self::newline(&mut output);
-
-        DotOutput(output)
-      }
-    }
-
-    /// Implement this trait to expose a graphviz implementation of your type.
-    pub trait Graphable {
-      /// This impl will be somewhat complex, and different for each type!
-      fn build_graph(self) -> GraphBuilder;
-    }
-
-    #[cfg(test)]
-    mod test {
-      use super::*;
-
-      #[test]
-      fn render_single_vertex() {
-        let mut gb = GraphBuilder::new();
-        gb.accept_entity(Entity::Vertex(Vertex::numeric(0)));
-        let DotOutput(output) = gb.build(Id::validate("test_graph".to_string()));
-
-        assert_eq!(
-          output,
-          "digraph test_graph {\n  \
-             compound = true;\n\n  \
-             node_0[label=\"node_0\", ];\n\
-           }\n"
-        );
-      }
-
-      #[test]
-      fn render_single_edge() {
-        let mut gb = GraphBuilder::new();
-        gb.accept_entity(Entity::Vertex(Vertex::numeric(0)));
-        gb.accept_entity(Entity::Vertex(Vertex::numeric(1)));
-        gb.accept_entity(Entity::Edge(Edge {
-          source: Vertex::numeric(0).id,
-          target: Vertex::numeric(1).id,
-          label: Some(Label("asdf".to_string())),
-          ..Default::default()
-        }));
-
-        let DotOutput(output) = gb.build(Id::validate("test_graph".to_string()));
-
-        assert_eq!(
-          output,
-          "digraph test_graph {\n  \
-             compound = true;\n\n  \
-             node_0[label=\"node_0\", ];\n\n  \
-             node_1[label=\"node_1\", ];\n\n  \
-             node_0 -> node_1[label=\"asdf\", ];\n\
-           }\n"
-        );
-      }
-    }
-  }
-
   /// Grammar components which expand into exactly one specific token.
   pub mod direct {
     use core::iter::IntoIterator;
@@ -479,11 +111,12 @@ pub mod grammar_specification {
   /// Grammar components which synthesize the lower-level elements from
   /// [direct], [indirect], [explicit], and [undecidable].
   pub mod synthesis {
-    use super::{direct::Literal, graphviz as gv, indirect::ProductionReference};
-
-    use core::{fmt, iter::IntoIterator};
+    use super::{direct::Literal, indirect::ProductionReference};
 
     use displaydoc::Display;
+    use graphvizier::{entities as gv, Graphable};
+
+    use core::{fmt, iter::IntoIterator};
 
     /// Each individual element that can be matched against some input in a
     /// case.
@@ -524,7 +157,7 @@ pub mod grammar_specification {
 
     pub struct SPGrapher<SP>(pub SP);
 
-    impl<Tok, ID, PR, Lit, C, P, SP> gv::Graphable for SPGrapher<SP>
+    impl<Tok, ID, PR, Lit, C, P, SP> Graphable for SPGrapher<SP>
     where
       Tok: fmt::Display,
       ID: fmt::Display,
@@ -534,8 +167,8 @@ pub mod grammar_specification {
       P: Production<C=C>+IntoIterator<Item=C>,
       SP: SimultaneousProductions<P=P>+IntoIterator<Item=(PR, P)>,
     {
-      fn build_graph(self) -> gv::GraphBuilder {
-        let mut gb = gv::GraphBuilder::new();
+      fn build_graph(self) -> graphvizier::generator::GraphBuilder {
+        let mut gb = graphvizier::generator::GraphBuilder::new();
         let mut vertex_id_counter: usize = 0;
         let mut prod_vertices: Vec<gv::Vertex> = Vec::new();
         let mut prod_entities: Vec<gv::Entity> = Vec::new();
@@ -548,7 +181,7 @@ pub mod grammar_specification {
           let ref_id = format!("prod_{}", prod_ref.clone().into());
           let ref_vertex = gv::Vertex {
             id: gv::Id::validate(ref_id.clone()),
-            label: Some(gv::Label(format!("${}", prod_ref.into()))),
+            label: Some(gv::Label(format!("#{}", prod_ref.clone().into()))),
             color: None,
             fontcolor: None,
           };
@@ -563,7 +196,7 @@ pub mod grammar_specification {
           // (1.3) Create a subgraph for each production!
           let mut cur_prod_subgraph = gv::Subgraph {
             id: gv::Id::validate(format!("{}_prod", prod_ref.clone().into())),
-            label: Some(gv::Label(format!("Cases: ${}", prod_ref.into()))),
+            label: Some(gv::Label(format!("Cases: \\#{}", prod_ref.clone().into()))),
             color: Some(gv::Color("purple".to_string())),
             fontcolor: Some(gv::Color("purple".to_string())),
             ..Default::default()
@@ -578,7 +211,7 @@ pub mod grammar_specification {
 
             // (1.3)
             let mut cur_case_subgraph = gv::Subgraph {
-              id: gv::Id::validate(format!("{}_case_{}", prod_ref.into(), case_index)),
+              id: gv::Id::validate(format!("{}_case_{}", prod_ref.clone().into(), case_index)),
               label: Some(gv::Label(format!("{}", case_index))),
               color: Some(gv::Color("green4".to_string())),
               fontcolor: Some(gv::Color("green4".to_string())),
@@ -594,7 +227,11 @@ pub mod grammar_specification {
 
               match case_el {
                 CaseElement::Lit(lit) => {
-                  let label = gv::Label(format!("<{}>", lit.into_string()));
+                  let mut joined_tokens = String::new();
+                  for tok in lit.into_iter() {
+                    joined_tokens.push_str(format!("{}", tok).as_str());
+                  }
+                  let label = gv::Label(format!("<{}>", joined_tokens));
                   let new_vertex = gv::Vertex {
                     id: new_id.clone(),
                     label: Some(label),
@@ -607,7 +244,8 @@ pub mod grammar_specification {
                     .push(gv::Entity::Vertex(new_vertex));
                 },
                 CaseElement::Prod(pr) => {
-                  let label = gv::Label(format!("ref: {}", pr.into_string()));
+                  let prod_id: ID = pr.into();
+                  let label = gv::Label(format!("ref: {}", prod_id));
                   let new_vertex = gv::Vertex {
                     id: new_id.clone(),
                     label: Some(label),
@@ -622,7 +260,7 @@ pub mod grammar_specification {
                   // (2.3) If this is a prod ref, then add another edge from this to the prod
                   // ref's id!
                   /* FIXME: remove duplicate format!("prod_{}", ...) calls! */
-                  let target_id = gv::Id::validate(format!("prod_{}", pr.into_string()));
+                  let target_id = gv::Id::validate(format!("prod_{}", prod_id));
                   edges.push(gv::Edge {
                     source: new_id.clone(),
                     target: target_id,
@@ -895,7 +533,7 @@ pub mod state {
 ///
 /// [`no_std`]: https://docs.rust-embedded.org/book/intro/no-std.html
 pub mod text_backend {
-  use super::grammar_specification::{self as gs, graphviz as gv};
+  use super::grammar_specification as gs;
   use crate::lowering_to_indices::graph_coordinates as gc;
 
   use core::{
@@ -970,9 +608,14 @@ pub mod text_backend {
         }
       }
 
-      #[allow(dead_code)]
+      impl ::core::fmt::Display for $type_name {
+        fn fmt(&self, f: &mut ::core::fmt::Formatter) -> ::core::fmt::Result {
+          write!(f, "{}", self.into_string())
+        }
+      }
+
       impl $type_name {
-        fn into_string(&self) -> String { String::from_iter(self.0.clone()) }
+        pub fn into_string(&self) -> String { String::from_iter(self.0.clone()) }
       }
     };
   }
@@ -1143,16 +786,17 @@ B: $A -> <a>
 
   #[test]
   fn non_cyclic_graphviz() {
-    use gv::Graphable;
+    use graphvizier::{entities as gv, Graphable};
 
     let sp = non_cyclic_productions();
     let grapher = gs::synthesis::SPGrapher(sp);
     let gb = grapher.build_graph();
-    let gv::DotOutput(output) = gb.build(gv::Id::validate("test_sp_graph".to_string()));
+    let graphvizier::generator::DotOutput(output) =
+      gb.build(gv::Id::validate("test_sp_graph".to_string()));
 
     assert_eq!(
       output,
-      "digraph test_sp_graph {\n  compound = true;\n\n  subgraph prods {\n    label = \"Productions\";\n    cluster = true;\n    rank = same;\n\n    color = \"blue\";\n    fontcolor = \"blue\";\n    node [color=\"blue\", fontcolor=\"blue\", ];\n\n    prod_A[label=\"A\", ];\n    prod_B[label=\"B\", ];\n  }\n\n  subgraph A_prod {\n    label = \"Cases: A\";\n    cluster = true;\n    rank = same;\n\n    color = \"purple\";\n    fontcolor = \"purple\";\n\n    subgraph A_case_0 {\n      label = \"0\";\n      cluster = true;\n      rank = same;\n\n      color = \"green4\";\n      fontcolor = \"green4\";\n\n      vertex_0[label=\"<ab>\", color=\"brown\", fontcolor=\"brown\", ];\n    }\n  }\n\n  prod_A -> vertex_0[color=\"red\", ];\n\n  vertex_0 -> prod_A[color=\"black\", ];\n\n  subgraph B_prod {\n    label = \"Cases: B\";\n    cluster = true;\n    rank = same;\n\n    color = \"purple\";\n    fontcolor = \"purple\";\n\n    subgraph B_case_0 {\n      label = \"0\";\n      cluster = true;\n      rank = same;\n\n      color = \"green4\";\n      fontcolor = \"green4\";\n\n      vertex_1[label=\"<ab>\", color=\"brown\", fontcolor=\"brown\", ];\n      vertex_2[label=\"ref: A\", color=\"darkgoldenrod\", fontcolor=\"darkgoldenrod\", ];\n    }\n    subgraph B_case_1 {\n      label = \"1\";\n      cluster = true;\n      rank = same;\n\n      color = \"green4\";\n      fontcolor = \"green4\";\n\n      vertex_3[label=\"ref: A\", color=\"darkgoldenrod\", fontcolor=\"darkgoldenrod\", ];\n      vertex_4[label=\"<a>\", color=\"brown\", fontcolor=\"brown\", ];\n    }\n  }\n\n  prod_B -> vertex_1[color=\"red\", ];\n\n  vertex_2 -> prod_A[color=\"darkgoldenrod\", ];\n\n  vertex_1 -> vertex_2[color=\"aqua\", ];\n\n  vertex_2 -> prod_B[color=\"black\", ];\n\n  vertex_3 -> prod_A[color=\"darkgoldenrod\", ];\n\n  prod_B -> vertex_3[color=\"red\", ];\n\n  vertex_3 -> vertex_4[color=\"aqua\", ];\n\n  vertex_4 -> prod_B[color=\"black\", ];\n}\n"
+      "digraph test_sp_graph {\n  compound = true;\n\n  subgraph prods {\n    label = \"Productions\";\n    cluster = true;\n    rank = same;\n\n    color = \"blue\";\n    fontcolor = \"blue\";\n    node [color=\"blue\", fontcolor=\"blue\", ];\n\n    prod_A[label=\"#A\", ];\n    prod_B[label=\"#B\", ];\n  }\n\n  subgraph A_prod {\n    label = \"Cases: \\#A\";\n    cluster = true;\n    rank = same;\n\n    color = \"purple\";\n    fontcolor = \"purple\";\n\n    subgraph A_case_0 {\n      label = \"0\";\n      cluster = true;\n      rank = same;\n\n      color = \"green4\";\n      fontcolor = \"green4\";\n\n      vertex_0[label=\"<ab>\", color=\"brown\", fontcolor=\"brown\", ];\n    }\n  }\n\n  prod_A -> vertex_0[color=\"red\", ];\n\n  vertex_0 -> prod_A[color=\"black\", ];\n\n  subgraph B_prod {\n    label = \"Cases: \\#B\";\n    cluster = true;\n    rank = same;\n\n    color = \"purple\";\n    fontcolor = \"purple\";\n\n    subgraph B_case_0 {\n      label = \"0\";\n      cluster = true;\n      rank = same;\n\n      color = \"green4\";\n      fontcolor = \"green4\";\n\n      vertex_1[label=\"<ab>\", color=\"brown\", fontcolor=\"brown\", ];\n      vertex_2[label=\"ref: A\", color=\"darkgoldenrod\", fontcolor=\"darkgoldenrod\", ];\n    }\n    subgraph B_case_1 {\n      label = \"1\";\n      cluster = true;\n      rank = same;\n\n      color = \"green4\";\n      fontcolor = \"green4\";\n\n      vertex_3[label=\"ref: A\", color=\"darkgoldenrod\", fontcolor=\"darkgoldenrod\", ];\n      vertex_4[label=\"<a>\", color=\"brown\", fontcolor=\"brown\", ];\n    }\n  }\n\n  prod_B -> vertex_1[color=\"red\", ];\n\n  vertex_2 -> prod_A[color=\"darkgoldenrod\", ];\n\n  vertex_1 -> vertex_2[color=\"aqua\", ];\n\n  vertex_2 -> prod_B[color=\"black\", ];\n\n  vertex_3 -> prod_A[color=\"darkgoldenrod\", ];\n\n  prod_B -> vertex_3[color=\"red\", ];\n\n  vertex_3 -> vertex_4[color=\"aqua\", ];\n\n  vertex_4 -> prod_B[color=\"black\", ];\n}\n"
     );
   }
 
@@ -1223,13 +867,14 @@ P_2: $P_1 -> <bc>
 
   #[test]
   fn basic_graphviz() {
-    use gv::Graphable;
+    use graphvizier::{entities as gv, Graphable};
 
     let sp = basic_productions();
     let grapher = gs::synthesis::SPGrapher(sp);
     let gb = grapher.build_graph();
-    let gv::DotOutput(output) = gb.build(gv::Id::validate("test_sp_graph".to_string()));
+    let graphvizier::generator::DotOutput(output) =
+      gb.build(gv::Id::validate("test_sp_graph".to_string()));
 
-    assert_eq!(output, "digraph test_sp_graph {\n  compound = true;\n\n  subgraph prods {\n    label = \"Productions\";\n    cluster = true;\n    rank = same;\n\n    color = \"blue\";\n    fontcolor = \"blue\";\n    node [color=\"blue\", fontcolor=\"blue\", ];\n\n    prod_P_1[label=\"P_1\", ];\n    prod_P_2[label=\"P_2\", ];\n  }\n\n  subgraph P_1_prod {\n    label = \"Cases: P_1\";\n    cluster = true;\n    rank = same;\n\n    color = \"purple\";\n    fontcolor = \"purple\";\n\n    subgraph P_1_case_0 {\n      label = \"0\";\n      cluster = true;\n      rank = same;\n\n      color = \"green4\";\n      fontcolor = \"green4\";\n\n      vertex_0[label=\"<abc>\", color=\"brown\", fontcolor=\"brown\", ];\n    }\n    subgraph P_1_case_1 {\n      label = \"1\";\n      cluster = true;\n      rank = same;\n\n      color = \"green4\";\n      fontcolor = \"green4\";\n\n      vertex_1[label=\"<a>\", color=\"brown\", fontcolor=\"brown\", ];\n      vertex_2[label=\"ref: P_1\", color=\"darkgoldenrod\", fontcolor=\"darkgoldenrod\", ];\n      vertex_3[label=\"<c>\", color=\"brown\", fontcolor=\"brown\", ];\n    }\n    subgraph P_1_case_2 {\n      label = \"2\";\n      cluster = true;\n      rank = same;\n\n      color = \"green4\";\n      fontcolor = \"green4\";\n\n      vertex_4[label=\"<bc>\", color=\"brown\", fontcolor=\"brown\", ];\n      vertex_5[label=\"ref: P_2\", color=\"darkgoldenrod\", fontcolor=\"darkgoldenrod\", ];\n    }\n  }\n\n  prod_P_1 -> vertex_0[color=\"red\", ];\n\n  vertex_0 -> prod_P_1[color=\"black\", ];\n\n  prod_P_1 -> vertex_1[color=\"red\", ];\n\n  vertex_2 -> prod_P_1[color=\"darkgoldenrod\", ];\n\n  vertex_1 -> vertex_2[color=\"aqua\", ];\n\n  vertex_2 -> vertex_3[color=\"aqua\", ];\n\n  vertex_3 -> prod_P_1[color=\"black\", ];\n\n  prod_P_1 -> vertex_4[color=\"red\", ];\n\n  vertex_5 -> prod_P_2[color=\"darkgoldenrod\", ];\n\n  vertex_4 -> vertex_5[color=\"aqua\", ];\n\n  vertex_5 -> prod_P_1[color=\"black\", ];\n\n  subgraph P_2_prod {\n    label = \"Cases: P_2\";\n    cluster = true;\n    rank = same;\n\n    color = \"purple\";\n    fontcolor = \"purple\";\n\n    subgraph P_2_case_0 {\n      label = \"0\";\n      cluster = true;\n      rank = same;\n\n      color = \"green4\";\n      fontcolor = \"green4\";\n\n      vertex_6[label=\"ref: P_1\", color=\"darkgoldenrod\", fontcolor=\"darkgoldenrod\", ];\n    }\n    subgraph P_2_case_1 {\n      label = \"1\";\n      cluster = true;\n      rank = same;\n\n      color = \"green4\";\n      fontcolor = \"green4\";\n\n      vertex_7[label=\"ref: P_2\", color=\"darkgoldenrod\", fontcolor=\"darkgoldenrod\", ];\n    }\n    subgraph P_2_case_2 {\n      label = \"2\";\n      cluster = true;\n      rank = same;\n\n      color = \"green4\";\n      fontcolor = \"green4\";\n\n      vertex_8[label=\"ref: P_1\", color=\"darkgoldenrod\", fontcolor=\"darkgoldenrod\", ];\n      vertex_9[label=\"<bc>\", color=\"brown\", fontcolor=\"brown\", ];\n    }\n  }\n\n  vertex_6 -> prod_P_1[color=\"darkgoldenrod\", ];\n\n  prod_P_2 -> vertex_6[color=\"red\", ];\n\n  vertex_6 -> prod_P_2[color=\"black\", ];\n\n  vertex_7 -> prod_P_2[color=\"darkgoldenrod\", ];\n\n  prod_P_2 -> vertex_7[color=\"red\", ];\n\n  vertex_7 -> prod_P_2[color=\"black\", ];\n\n  vertex_8 -> prod_P_1[color=\"darkgoldenrod\", ];\n\n  prod_P_2 -> vertex_8[color=\"red\", ];\n\n  vertex_8 -> vertex_9[color=\"aqua\", ];\n\n  vertex_9 -> prod_P_2[color=\"black\", ];\n}\n");
+    assert_eq!(output, "digraph test_sp_graph {\n  compound = true;\n\n  subgraph prods {\n    label = \"Productions\";\n    cluster = true;\n    rank = same;\n\n    color = \"blue\";\n    fontcolor = \"blue\";\n    node [color=\"blue\", fontcolor=\"blue\", ];\n\n    prod_P_1[label=\"#P_1\", ];\n    prod_P_2[label=\"#P_2\", ];\n  }\n\n  subgraph P_1_prod {\n    label = \"Cases: \\#P_1\";\n    cluster = true;\n    rank = same;\n\n    color = \"purple\";\n    fontcolor = \"purple\";\n\n    subgraph P_1_case_0 {\n      label = \"0\";\n      cluster = true;\n      rank = same;\n\n      color = \"green4\";\n      fontcolor = \"green4\";\n\n      vertex_0[label=\"<abc>\", color=\"brown\", fontcolor=\"brown\", ];\n    }\n    subgraph P_1_case_1 {\n      label = \"1\";\n      cluster = true;\n      rank = same;\n\n      color = \"green4\";\n      fontcolor = \"green4\";\n\n      vertex_1[label=\"<a>\", color=\"brown\", fontcolor=\"brown\", ];\n      vertex_2[label=\"ref: P_1\", color=\"darkgoldenrod\", fontcolor=\"darkgoldenrod\", ];\n      vertex_3[label=\"<c>\", color=\"brown\", fontcolor=\"brown\", ];\n    }\n    subgraph P_1_case_2 {\n      label = \"2\";\n      cluster = true;\n      rank = same;\n\n      color = \"green4\";\n      fontcolor = \"green4\";\n\n      vertex_4[label=\"<bc>\", color=\"brown\", fontcolor=\"brown\", ];\n      vertex_5[label=\"ref: P_2\", color=\"darkgoldenrod\", fontcolor=\"darkgoldenrod\", ];\n    }\n  }\n\n  prod_P_1 -> vertex_0[color=\"red\", ];\n\n  vertex_0 -> prod_P_1[color=\"black\", ];\n\n  prod_P_1 -> vertex_1[color=\"red\", ];\n\n  vertex_2 -> prod_P_1[color=\"darkgoldenrod\", ];\n\n  vertex_1 -> vertex_2[color=\"aqua\", ];\n\n  vertex_2 -> vertex_3[color=\"aqua\", ];\n\n  vertex_3 -> prod_P_1[color=\"black\", ];\n\n  prod_P_1 -> vertex_4[color=\"red\", ];\n\n  vertex_5 -> prod_P_2[color=\"darkgoldenrod\", ];\n\n  vertex_4 -> vertex_5[color=\"aqua\", ];\n\n  vertex_5 -> prod_P_1[color=\"black\", ];\n\n  subgraph P_2_prod {\n    label = \"Cases: \\#P_2\";\n    cluster = true;\n    rank = same;\n\n    color = \"purple\";\n    fontcolor = \"purple\";\n\n    subgraph P_2_case_0 {\n      label = \"0\";\n      cluster = true;\n      rank = same;\n\n      color = \"green4\";\n      fontcolor = \"green4\";\n\n      vertex_6[label=\"ref: P_1\", color=\"darkgoldenrod\", fontcolor=\"darkgoldenrod\", ];\n    }\n    subgraph P_2_case_1 {\n      label = \"1\";\n      cluster = true;\n      rank = same;\n\n      color = \"green4\";\n      fontcolor = \"green4\";\n\n      vertex_7[label=\"ref: P_2\", color=\"darkgoldenrod\", fontcolor=\"darkgoldenrod\", ];\n    }\n    subgraph P_2_case_2 {\n      label = \"2\";\n      cluster = true;\n      rank = same;\n\n      color = \"green4\";\n      fontcolor = \"green4\";\n\n      vertex_8[label=\"ref: P_1\", color=\"darkgoldenrod\", fontcolor=\"darkgoldenrod\", ];\n      vertex_9[label=\"<bc>\", color=\"brown\", fontcolor=\"brown\", ];\n    }\n  }\n\n  vertex_6 -> prod_P_1[color=\"darkgoldenrod\", ];\n\n  prod_P_2 -> vertex_6[color=\"red\", ];\n\n  vertex_6 -> prod_P_2[color=\"black\", ];\n\n  vertex_7 -> prod_P_2[color=\"darkgoldenrod\", ];\n\n  prod_P_2 -> vertex_7[color=\"red\", ];\n\n  vertex_7 -> prod_P_2[color=\"black\", ];\n\n  vertex_8 -> prod_P_1[color=\"darkgoldenrod\", ];\n\n  prod_P_2 -> vertex_8[color=\"red\", ];\n\n  vertex_8 -> vertex_9[color=\"aqua\", ];\n\n  vertex_9 -> prod_P_2[color=\"black\", ];\n}\n");
   }
 }

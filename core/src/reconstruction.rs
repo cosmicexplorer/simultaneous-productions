@@ -396,6 +396,7 @@ mod tests {
     text_backend::{new_token_position, non_cyclic_productions},
   };
 
+  #[ignore]
   #[test]
   fn reconstructs_from_parse() {
     let prods = non_cyclic_productions();

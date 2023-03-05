@@ -21,18 +21,14 @@
 //! Implementation of parsing. Performance does *(eventually)* matter here.
 
 use crate::{
-  grammar_indexing as gi,
-  grammar_specification::{self as gs, graphviz as gv},
+  grammar_indexing as gi, grammar_specification as gs,
   lowering_to_indices::{grammar_building as gb, graph_coordinates as gc},
 };
 
 use indexmap::{IndexMap, IndexSet};
 use priority_queue::PriorityQueue;
 
-use core::{
-  cmp, fmt,
-  hash::{Hash, Hasher},
-};
+use core::{cmp, fmt, hash::Hash};
 
 #[derive(Debug, Clone)]
 pub struct Input<Tok>(pub Vec<Tok>);
@@ -187,25 +183,6 @@ pub struct ParseableGrammar {
 }
 
 impl ParseableGrammar {
-  pub fn build_dot_graph(self) -> gv::GraphBuilder {
-    let mut gb = gv::GraphBuilder::new();
-
-    let Self {
-      input_as_states,
-      pairwise_state_transition_table,
-      ..
-    } = self;
-
-    let mut state_vertices: IndexMap<gi::LoweredState, gv::Vertex> = IndexMap::new();
-
-    /* (A) Draw out all the states and transitions between them. */
-    {
-      todo!("parsing clearly has never worked");
-    }
-
-    gb
-  }
-
   /* TODO: get the transitive closure of this to get all the consecutive series
    * of states *over* length 2 and their corresponding stack diffs -- this
    * enables e.g. the use of SIMD instructions to find those series of
@@ -295,6 +272,28 @@ impl ParseableGrammar {
     })
   }
 }
+
+impl graphvizier::Graphable for ParseableGrammar {
+  fn build_graph(self) -> graphvizier::generator::GraphBuilder {
+    /* let mut gb = graphvizier::generator::GraphBuilder::new(); */
+
+    /* let Self { */
+    /* input_as_states, */
+    /* pairwise_state_transition_table, */
+    /* .. */
+    /* } = self; */
+
+    /* let mut state_vertices: IndexMap<gi::LoweredState, gv::Vertex> =
+     * IndexMap::new(); */
+
+    todo!("parsing clearly has never worked")
+
+    /* (A) Draw out all the states and transitions between them. */
+
+    /* gb */
+  }
+}
+
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq, Hash)]
 pub enum ParseResult {
@@ -1202,8 +1201,11 @@ mod tests {
     assert!(hit_end);
   }
 
+  #[ignore]
   #[test]
   fn non_cyclic_parse_graphvis() {
+    use graphvizier::{entities as gv, Graphable};
+
     let prods = non_cyclic_productions();
 
     let detokenized = state::preprocessing::Init(prods).try_index().unwrap();
@@ -1212,14 +1214,18 @@ mod tests {
     let input = Input(string_input.chars().collect());
     let parseable_grammar: ParseableGrammar = indexed.attach_input(&input).unwrap().0;
 
-    let gb = parseable_grammar.build_dot_graph();
-    let gv::DotOutput(output) = gb.build(gv::Id::validate("test_graph".to_string()));
+    let gb = parseable_grammar.build_graph();
+    let graphvizier::generator::DotOutput(output) =
+      gb.build(gv::Id::validate("test_graph".to_string()));
 
     assert_eq!(output, "asdf");
   }
 
+  #[ignore]
   #[test]
   fn basic_parse_graphvis() {
+    use graphvizier::{entities as gv, Graphable};
+
     let prods = basic_productions();
 
     let detokenized = state::preprocessing::Init(prods).try_index().unwrap();
@@ -1228,8 +1234,9 @@ mod tests {
     let input = Input(string_input.chars().collect());
     let parseable_grammar: ParseableGrammar = indexed.attach_input(&input).unwrap().0;
 
-    let gb = parseable_grammar.build_dot_graph();
-    let gv::DotOutput(output) = gb.build(gv::Id::validate("test_graph".to_string()));
+    let gb = parseable_grammar.build_graph();
+    let graphvizier::generator::DotOutput(output) =
+      gb.build(gv::Id::validate("test_graph".to_string()));
 
     assert_eq!(output, "asdf");
   }

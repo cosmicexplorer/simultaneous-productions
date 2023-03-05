@@ -28,12 +28,10 @@
 //!
 //! *Implementation Note: Performance doesn't matter here.*
 
-use crate::{
-  grammar_specification::graphviz as gv,
-  lowering_to_indices::{grammar_building as gb, graph_coordinates as gc},
-};
+use crate::lowering_to_indices::{grammar_building as gb, graph_coordinates as gc};
 
 use displaydoc::Display;
+use graphvizier::entities as gv;
 use indexmap::{IndexMap, IndexSet};
 
 use core::fmt;
@@ -809,10 +807,156 @@ pub struct PreprocessedGrammar<Tok> {
   pub token_states_mapping: gb::InternedLookupTable<Tok, gc::TokRef>,
 }
 
-
 impl<Tok> PreprocessedGrammar<Tok> {
-  pub fn build_dot_graph(self) -> gv::GraphBuilder {
-    let mut gb = gv::GraphBuilder::new();
+  /// Intended to reduce visual clutter in the implementation of interval
+  /// production.
+  fn make_pos_neg_anon_steps(
+    cur_index: &mut usize,
+    anon_step_mapping: &mut IndexMap<AnonSym, UnflattenedProdCaseRef>,
+    cur_case: UnflattenedProdCaseRef,
+  ) -> (EpsilonGraphVertex, EpsilonGraphVertex) {
+    let the_sym = AnonSym(*cur_index);
+    *cur_index += 1;
+    anon_step_mapping.insert(the_sym, cur_case);
+    (
+      EpsilonGraphVertex::Anon(AnonStep::Positive(the_sym)),
+      EpsilonGraphVertex::Anon(AnonStep::Negative(the_sym)),
+    )
+  }
+
+  /// TODO: document this great method!!!
+  pub(crate) fn produce_terminals_interval_graph(
+    grammar: gb::TokenGrammar<Tok>,
+  ) -> (
+    EpsilonIntervalGraph,
+    gb::InternedLookupTable<Tok, gc::TokRef>,
+  ) {
+    /* We would like to just accept a DetokenizedProductions here, but we call
+     * this method directly in testing, and without the whole grammar object
+     * the type ascription is ambiguous. */
+    // TODO: what is "type ascription" referring to here^ lol
+    let gb::TokenGrammar {
+      graph: production_graph,
+      tokens,
+    } = grammar;
+    let prods = production_graph.into_index_map();
+    /* We would really like to use .flat_map()s here, but it's not clear how to
+     * do that while mutating the global `cur_anon_sym_index` value. When
+     * `move` is used on the inner loop, the value of `cur_anon_sym_index`
+     * mysteriously gets reset, even if `move` is also used on the
+     * outer loop. */
+    let mut cur_anon_sym_index: usize = 0;
+    let mut really_all_intervals: Vec<ContiguousNonterminalInterval> = Vec::new();
+    let mut anon_step_mapping: IndexMap<AnonSym, UnflattenedProdCaseRef> = IndexMap::new();
+    for (cur_prod_ref, the_prod) in prods.iter() {
+      let gb::Production(cases) = the_prod;
+      for (case_ind, the_case) in cases.iter().enumerate() {
+        let cur_case_ref: gc::CaseRef = case_ind.into();
+        let gb::Case(elements_of_case) = the_case;
+        let mut all_intervals_from_this_case: Vec<ContiguousNonterminalInterval> = Vec::new();
+
+        /* NB: make an anon sym whenever stepping onto a case! */
+        let cur_prod_case = gc::ProdCaseRef {
+          prod: *cur_prod_ref,
+          case: cur_case_ref,
+        };
+        let (pos_case_anon, neg_case_anon) = Self::make_pos_neg_anon_steps(
+          &mut cur_anon_sym_index,
+          &mut anon_step_mapping,
+          UnflattenedProdCaseRef::Case(cur_prod_case),
+        );
+
+        let mut cur_elements: Vec<EpsilonGraphVertex> = Vec::new();
+        cur_elements.push(EpsilonGraphVertex::Start(*cur_prod_ref));
+        cur_elements.push(pos_case_anon);
+
+        for (element_of_case_ind, el) in elements_of_case.iter().enumerate() {
+          let cur_el_ref: gc::CaseElRef = element_of_case_ind.into();
+          let cur_pos = gc::TokenPosition {
+            prod: *cur_prod_ref,
+            case: cur_case_ref,
+            el: cur_el_ref,
+          };
+          match el {
+            /* Continue the current interval of nonterminals. */
+            gc::CaseEl::Tok(_) => cur_elements.push(EpsilonGraphVertex::State(cur_pos)),
+            /* The current case invokes a subproduction, so is split into two intervals
+             * here, using anonymous symbols to keep track of where in
+             * this case we jumped off of and where we can jump back
+             * onto to satisfy this case of this production. */
+            gc::CaseEl::Prod(target_subprod_ref) => {
+              /* Generate anonymous steps for the current subprod split. */
+              let (pos_anon, neg_anon) = Self::make_pos_neg_anon_steps(
+                &mut cur_anon_sym_index,
+                &mut anon_step_mapping,
+                UnflattenedProdCaseRef::PassThrough,
+              );
+
+              /* Generate the interval terminating at the current subprod split. */
+              let mut interval_upto_subprod: Vec<EpsilonGraphVertex> =
+                Vec::with_capacity(cur_elements.len() + 2);
+              /* NB: we empty out the state of `cur_elements` here! */
+              interval_upto_subprod.extend(cur_elements.drain(..));
+              /* We /end/ this interval with a "start" vertex because this is going
+               * /into/ a subproduction! */
+              interval_upto_subprod.push(pos_anon);
+              interval_upto_subprod.push(EpsilonGraphVertex::Start(*target_subprod_ref));
+              /* NB: Mutate the loop state! */
+              /* Start a new interval of nonterminals which must come after the current
+               * subprod split. */
+              /* We /start/ with an "end" vertex because this comes /out/ of a
+               * subproduction! */
+              cur_elements.push(EpsilonGraphVertex::End(*target_subprod_ref));
+              cur_elements.push(neg_anon);
+              /* Register the interval we just cut off in the results list. */
+              all_intervals_from_this_case.push(ContiguousNonterminalInterval {
+                interval: interval_upto_subprod,
+              });
+            },
+            gc::CaseEl::SM(_sm_ref) => {
+              todo!("can't handle sm ref yet")
+            },
+          }
+        }
+        /* Construct the interval of all remaining nonterminals to the end of the
+         * production. */
+        let mut final_interval: Vec<EpsilonGraphVertex> =
+          Vec::with_capacity(cur_elements.len() + 2);
+        final_interval.extend(cur_elements.into_iter());
+        final_interval.push(neg_case_anon);
+        final_interval.push(EpsilonGraphVertex::End(*cur_prod_ref));
+
+        /* Register the interval of all remaining nonterminals in the results list. */
+        all_intervals_from_this_case.push(ContiguousNonterminalInterval {
+          interval: final_interval,
+        });
+        /* Return all the intervals from this case. */
+        really_all_intervals.extend(all_intervals_from_this_case);
+      }
+    }
+    (
+      EpsilonIntervalGraph {
+        all_intervals: really_all_intervals,
+        anon_step_mapping,
+      },
+      tokens,
+    )
+  }
+
+  pub fn new(grammar: gb::TokenGrammar<Tok>) -> Self {
+    let (terminals_interval_graph, tokens) = Self::produce_terminals_interval_graph(grammar);
+    let cyclic_graph_decomposition: CyclicGraphDecomposition =
+      terminals_interval_graph.connect_all_vertices();
+    PreprocessedGrammar {
+      token_states_mapping: tokens,
+      cyclic_graph_decomposition,
+    }
+  }
+}
+
+impl<Tok> graphvizier::Graphable for PreprocessedGrammar<Tok> {
+  fn build_graph(self) -> graphvizier::generator::GraphBuilder {
+    let mut gb = graphvizier::generator::GraphBuilder::new();
 
     let Self {
       cyclic_graph_decomposition:
@@ -1007,151 +1151,6 @@ impl<Tok> PreprocessedGrammar<Tok> {
     }
 
     gb
-  }
-
-  /// Intended to reduce visual clutter in the implementation of interval
-  /// production.
-  fn make_pos_neg_anon_steps(
-    cur_index: &mut usize,
-    anon_step_mapping: &mut IndexMap<AnonSym, UnflattenedProdCaseRef>,
-    cur_case: UnflattenedProdCaseRef,
-  ) -> (EpsilonGraphVertex, EpsilonGraphVertex) {
-    let the_sym = AnonSym(*cur_index);
-    *cur_index += 1;
-    anon_step_mapping.insert(the_sym, cur_case);
-    (
-      EpsilonGraphVertex::Anon(AnonStep::Positive(the_sym)),
-      EpsilonGraphVertex::Anon(AnonStep::Negative(the_sym)),
-    )
-  }
-
-  /// TODO: document this great method!!!
-  pub(crate) fn produce_terminals_interval_graph(
-    grammar: gb::TokenGrammar<Tok>,
-  ) -> (
-    EpsilonIntervalGraph,
-    gb::InternedLookupTable<Tok, gc::TokRef>,
-  ) {
-    /* We would like to just accept a DetokenizedProductions here, but we call
-     * this method directly in testing, and without the whole grammar object
-     * the type ascription is ambiguous. */
-    // TODO: what is "type ascription" referring to here^ lol
-    let gb::TokenGrammar {
-      graph: production_graph,
-      tokens,
-    } = grammar;
-    let prods = production_graph.into_index_map();
-    /* We would really like to use .flat_map()s here, but it's not clear how to
-     * do that while mutating the global `cur_anon_sym_index` value. When
-     * `move` is used on the inner loop, the value of `cur_anon_sym_index`
-     * mysteriously gets reset, even if `move` is also used on the
-     * outer loop. */
-    let mut cur_anon_sym_index: usize = 0;
-    let mut really_all_intervals: Vec<ContiguousNonterminalInterval> = Vec::new();
-    let mut anon_step_mapping: IndexMap<AnonSym, UnflattenedProdCaseRef> = IndexMap::new();
-    for (cur_prod_ref, the_prod) in prods.iter() {
-      let gb::Production(cases) = the_prod;
-      for (case_ind, the_case) in cases.iter().enumerate() {
-        let cur_case_ref: gc::CaseRef = case_ind.into();
-        let gb::Case(elements_of_case) = the_case;
-        let mut all_intervals_from_this_case: Vec<ContiguousNonterminalInterval> = Vec::new();
-
-        /* NB: make an anon sym whenever stepping onto a case! */
-        let cur_prod_case = gc::ProdCaseRef {
-          prod: *cur_prod_ref,
-          case: cur_case_ref,
-        };
-        let (pos_case_anon, neg_case_anon) = Self::make_pos_neg_anon_steps(
-          &mut cur_anon_sym_index,
-          &mut anon_step_mapping,
-          UnflattenedProdCaseRef::Case(cur_prod_case),
-        );
-
-        let mut cur_elements: Vec<EpsilonGraphVertex> = Vec::new();
-        cur_elements.push(EpsilonGraphVertex::Start(*cur_prod_ref));
-        cur_elements.push(pos_case_anon);
-
-        for (element_of_case_ind, el) in elements_of_case.iter().enumerate() {
-          let cur_el_ref: gc::CaseElRef = element_of_case_ind.into();
-          let cur_pos = gc::TokenPosition {
-            prod: *cur_prod_ref,
-            case: cur_case_ref,
-            el: cur_el_ref,
-          };
-          match el {
-            /* Continue the current interval of nonterminals. */
-            gc::CaseEl::Tok(_) => cur_elements.push(EpsilonGraphVertex::State(cur_pos)),
-            /* The current case invokes a subproduction, so is split into two intervals
-             * here, using anonymous symbols to keep track of where in
-             * this case we jumped off of and where we can jump back
-             * onto to satisfy this case of this production. */
-            gc::CaseEl::Prod(target_subprod_ref) => {
-              /* Generate anonymous steps for the current subprod split. */
-              let (pos_anon, neg_anon) = Self::make_pos_neg_anon_steps(
-                &mut cur_anon_sym_index,
-                &mut anon_step_mapping,
-                UnflattenedProdCaseRef::PassThrough,
-              );
-
-              /* Generate the interval terminating at the current subprod split. */
-              let mut interval_upto_subprod: Vec<EpsilonGraphVertex> =
-                Vec::with_capacity(cur_elements.len() + 2);
-              /* NB: we empty out the state of `cur_elements` here! */
-              interval_upto_subprod.extend(cur_elements.drain(..));
-              /* We /end/ this interval with a "start" vertex because this is going
-               * /into/ a subproduction! */
-              interval_upto_subprod.push(pos_anon);
-              interval_upto_subprod.push(EpsilonGraphVertex::Start(*target_subprod_ref));
-              /* NB: Mutate the loop state! */
-              /* Start a new interval of nonterminals which must come after the current
-               * subprod split. */
-              /* We /start/ with an "end" vertex because this comes /out/ of a
-               * subproduction! */
-              cur_elements.push(EpsilonGraphVertex::End(*target_subprod_ref));
-              cur_elements.push(neg_anon);
-              /* Register the interval we just cut off in the results list. */
-              all_intervals_from_this_case.push(ContiguousNonterminalInterval {
-                interval: interval_upto_subprod,
-              });
-            },
-            gc::CaseEl::SM(_sm_ref) => {
-              todo!("can't handle sm ref yet")
-            },
-          }
-        }
-        /* Construct the interval of all remaining nonterminals to the end of the
-         * production. */
-        let mut final_interval: Vec<EpsilonGraphVertex> =
-          Vec::with_capacity(cur_elements.len() + 2);
-        final_interval.extend(cur_elements.into_iter());
-        final_interval.push(neg_case_anon);
-        final_interval.push(EpsilonGraphVertex::End(*cur_prod_ref));
-
-        /* Register the interval of all remaining nonterminals in the results list. */
-        all_intervals_from_this_case.push(ContiguousNonterminalInterval {
-          interval: final_interval,
-        });
-        /* Return all the intervals from this case. */
-        really_all_intervals.extend(all_intervals_from_this_case);
-      }
-    }
-    (
-      EpsilonIntervalGraph {
-        all_intervals: really_all_intervals,
-        anon_step_mapping,
-      },
-      tokens,
-    )
-  }
-
-  pub fn new(grammar: gb::TokenGrammar<Tok>) -> Self {
-    let (terminals_interval_graph, tokens) = Self::produce_terminals_interval_graph(grammar);
-    let cyclic_graph_decomposition: CyclicGraphDecomposition =
-      terminals_interval_graph.connect_all_vertices();
-    PreprocessedGrammar {
-      token_states_mapping: tokens,
-      cyclic_graph_decomposition,
-    }
   }
 }
 
@@ -2384,24 +2383,30 @@ mod tests {
 
   #[test]
   fn non_cyclic_preprocessed_graphviz() {
+    use graphvizier::Graphable;
+
     let prods = non_cyclic_productions();
     let detokenized = state::preprocessing::Init(prods).try_index().unwrap();
     let state::preprocessing::Indexed(preprocessed_grammar) = detokenized.index();
 
-    let gb = preprocessed_grammar.build_dot_graph();
-    let gv::DotOutput(output) = gb.build(gv::Id::validate("test_graph".to_string()));
+    let gb = preprocessed_grammar.build_graph();
+    let graphvizier::generator::DotOutput(output) =
+      gb.build(gv::Id::validate("test_graph".to_string()));
 
     assert_eq!(output, "digraph test_graph {\n  compound = true;\n\n  epsilon_graph_vertex_phase_2_1[label=\"+!0!\", color=\"blue\", fontcolor=\"blue\", ];\n\n  epsilon_graph_vertex_phase_2_4[label=\"+!1!\", color=\"blue\", fontcolor=\"blue\", ];\n\n  epsilon_graph_vertex_phase_2_9[label=\"-!3!\", color=\"blue\", fontcolor=\"blue\", ];\n\n  epsilon_graph_vertex_phase_2_11[label=\"-!0!\", color=\"blue\", fontcolor=\"blue\", ];\n\n  epsilon_graph_vertex_phase_2_13[label=\"+!3!\", color=\"blue\", fontcolor=\"blue\", ];\n\n  epsilon_graph_vertex_phase_2_14[label=\"+!4!\", color=\"blue\", fontcolor=\"blue\", ];\n\n  epsilon_graph_vertex_phase_2_15[label=\"-!4!\", color=\"blue\", fontcolor=\"blue\", ];\n\n  epsilon_graph_vertex_phase_2_16[label=\"+!2!\", color=\"blue\", fontcolor=\"blue\", ];\n\n  epsilon_graph_vertex_phase_2_17[label=\"-!2!\", color=\"blue\", fontcolor=\"blue\", ];\n\n  epsilon_graph_vertex_phase_2_18[label=\"-!1!\", color=\"blue\", fontcolor=\"blue\", ];\n\n  subgraph border_vertices {\n    label = \"Borders\";\n    cluster = true;\n    rank = same;\n\n    color = \"purple\";\n    fontcolor = \"purple\";\n\n    epsilon_graph_vertex_phase_2_0[label=\"Start(0)\", color=\"brown\", fontcolor=\"brown\", ];\n    epsilon_graph_vertex_phase_2_3[label=\"Start(1)\", color=\"brown\", fontcolor=\"brown\", ];\n    epsilon_graph_vertex_phase_2_10[label=\"End(1)\", color=\"darkgoldenrod\", fontcolor=\"darkgoldenrod\", ];\n    epsilon_graph_vertex_phase_2_12[label=\"End(0)\", color=\"darkgoldenrod\", fontcolor=\"darkgoldenrod\", ];\n  }\n\n  subgraph state_vertices {\n    label = \"States\";\n    cluster = true;\n    rank = same;\n\n    color = \"green4\";\n    fontcolor = \"green4\";\n    node [color=\"green4\", fontcolor=\"green4\", ];\n\n    epsilon_graph_vertex_phase_2_2[label=\"0/0/0\", ];\n    epsilon_graph_vertex_phase_2_5[label=\"1/0/0\", ];\n    epsilon_graph_vertex_phase_2_6[label=\"0/0/1\", ];\n    epsilon_graph_vertex_phase_2_7[label=\"1/0/1\", ];\n    epsilon_graph_vertex_phase_2_8[label=\"1/1/1\", ];\n  }\n\n  epsilon_graph_vertex_phase_2_0 -> epsilon_graph_vertex_phase_2_1[color=\"aqua\", ];\n\n  epsilon_graph_vertex_phase_2_1 -> epsilon_graph_vertex_phase_2_2[color=\"aqua\", ];\n\n  epsilon_graph_vertex_phase_2_3 -> epsilon_graph_vertex_phase_2_4[color=\"aqua\", ];\n\n  epsilon_graph_vertex_phase_2_4 -> epsilon_graph_vertex_phase_2_5[color=\"aqua\", ];\n\n  epsilon_graph_vertex_phase_2_2 -> epsilon_graph_vertex_phase_2_6[color=\"aqua\", ];\n\n  epsilon_graph_vertex_phase_2_5 -> epsilon_graph_vertex_phase_2_7[color=\"aqua\", ];\n\n  epsilon_graph_vertex_phase_2_8 -> epsilon_graph_vertex_phase_2_9[color=\"aqua\", ];\n\n  epsilon_graph_vertex_phase_2_9 -> epsilon_graph_vertex_phase_2_10[color=\"aqua\", ];\n\n  epsilon_graph_vertex_phase_2_6 -> epsilon_graph_vertex_phase_2_11[color=\"aqua\", ];\n\n  epsilon_graph_vertex_phase_2_11 -> epsilon_graph_vertex_phase_2_12[color=\"aqua\", ];\n\n  epsilon_graph_vertex_phase_2_3 -> epsilon_graph_vertex_phase_2_13[color=\"aqua\", ];\n\n  epsilon_graph_vertex_phase_2_13 -> epsilon_graph_vertex_phase_2_14[color=\"aqua\", ];\n\n  epsilon_graph_vertex_phase_2_14 -> epsilon_graph_vertex_phase_2_0[color=\"aqua\", ];\n\n  epsilon_graph_vertex_phase_2_12 -> epsilon_graph_vertex_phase_2_15[color=\"aqua\", ];\n\n  epsilon_graph_vertex_phase_2_15 -> epsilon_graph_vertex_phase_2_8[color=\"aqua\", ];\n\n  epsilon_graph_vertex_phase_2_7 -> epsilon_graph_vertex_phase_2_16[color=\"aqua\", ];\n\n  epsilon_graph_vertex_phase_2_16 -> epsilon_graph_vertex_phase_2_0[color=\"aqua\", ];\n\n  epsilon_graph_vertex_phase_2_12 -> epsilon_graph_vertex_phase_2_17[color=\"aqua\", ];\n\n  epsilon_graph_vertex_phase_2_17 -> epsilon_graph_vertex_phase_2_18[color=\"aqua\", ];\n\n  epsilon_graph_vertex_phase_2_18 -> epsilon_graph_vertex_phase_2_10[color=\"aqua\", ];\n}\n")
   }
 
   #[test]
   fn basic_preprocessed_graphviz() {
+    use graphvizier::Graphable;
+
     let prods = basic_productions();
     let detokenized = state::preprocessing::Init(prods).try_index().unwrap();
     let state::preprocessing::Indexed(preprocessed_grammar) = detokenized.index();
 
-    let gb = preprocessed_grammar.build_dot_graph();
-    let gv::DotOutput(output) = gb.build(gv::Id::validate("test_graph".to_string()));
+    let gb = preprocessed_grammar.build_graph();
+    let graphvizier::generator::DotOutput(output) =
+      gb.build(gv::Id::validate("test_graph".to_string()));
 
     assert_eq!(output, "digraph test_graph {\n  compound = true;\n\n  cyclic_epsilon_graph_vertex_1[label=\"+!7!\", color=\"blue\", fontcolor=\"blue\", ];\n\n  cyclic_epsilon_graph_vertex_2[label=\"+!8!\", color=\"blue\", fontcolor=\"blue\", ];\n\n  cyclic_epsilon_graph_vertex_4[label=\"-!8!\", color=\"blue\", fontcolor=\"blue\", ];\n\n  cyclic_epsilon_graph_vertex_5[label=\"-!7!\", color=\"blue\", fontcolor=\"blue\", ];\n\n  cyclic_epsilon_graph_vertex_7[label=\"+!2!\", color=\"blue\", fontcolor=\"blue\", ];\n\n  cyclic_epsilon_graph_vertex_9[label=\"+!1!\", color=\"blue\", fontcolor=\"blue\", ];\n\n  cyclic_epsilon_graph_vertex_11[label=\"-!1!\", color=\"blue\", fontcolor=\"blue\", ];\n\n  cyclic_epsilon_graph_vertex_13[label=\"-!2!\", color=\"blue\", fontcolor=\"blue\", ];\n\n  cyclic_epsilon_graph_vertex_14[label=\"-!4!\", color=\"blue\", fontcolor=\"blue\", ];\n\n  cyclic_epsilon_graph_vertex_15[label=\"-!3!\", color=\"blue\", fontcolor=\"blue\", ];\n\n  cyclic_epsilon_graph_vertex_16[label=\"-!6!\", color=\"blue\", fontcolor=\"blue\", ];\n\n  cyclic_epsilon_graph_vertex_17[label=\"-!5!\", color=\"blue\", fontcolor=\"blue\", ];\n\n  epsilon_graph_vertex_phase_2_0[label=\"+!0!\", color=\"blue\", fontcolor=\"blue\", ];\n\n  epsilon_graph_vertex_phase_2_2[label=\"+!3!\", color=\"blue\", fontcolor=\"blue\", ];\n\n  epsilon_graph_vertex_phase_2_9[label=\"+!5!\", color=\"blue\", fontcolor=\"blue\", ];\n\n  epsilon_graph_vertex_phase_2_10[label=\"+!6!\", color=\"blue\", fontcolor=\"blue\", ];\n\n  epsilon_graph_vertex_phase_2_11[label=\"+!9!\", color=\"blue\", fontcolor=\"blue\", ];\n\n  epsilon_graph_vertex_phase_2_12[label=\"+!10!\", color=\"blue\", fontcolor=\"blue\", ];\n\n  epsilon_graph_vertex_phase_2_13[label=\"-!9!\", color=\"blue\", fontcolor=\"blue\", ];\n\n  epsilon_graph_vertex_phase_2_14[label=\"-!0!\", color=\"blue\", fontcolor=\"blue\", ];\n\n  epsilon_graph_vertex_phase_2_15[label=\"-!10!\", color=\"blue\", fontcolor=\"blue\", ];\n\n  epsilon_graph_vertex_phase_2_16[label=\"+!4!\", color=\"blue\", fontcolor=\"blue\", ];\n\n  subgraph border_vertices {\n    label = \"Borders\";\n    cluster = true;\n    rank = same;\n\n    color = \"purple\";\n    fontcolor = \"purple\";\n\n    cyclic_epsilon_graph_vertex_0[label=\"Start(1)\", color=\"brown\", fontcolor=\"brown\", ];\n    cyclic_epsilon_graph_vertex_3[label=\"End(1)\", color=\"darkgoldenrod\", fontcolor=\"darkgoldenrod\", ];\n    cyclic_epsilon_graph_vertex_8[label=\"Start(0)\", color=\"brown\", fontcolor=\"brown\", ];\n    cyclic_epsilon_graph_vertex_12[label=\"End(0)\", color=\"darkgoldenrod\", fontcolor=\"darkgoldenrod\", ];\n  }\n\n  subgraph state_vertices {\n    label = \"States\";\n    cluster = true;\n    rank = same;\n\n    color = \"green4\";\n    fontcolor = \"green4\";\n    node [color=\"green4\", fontcolor=\"green4\", ];\n\n    cyclic_epsilon_graph_vertex_6[label=\"0/1/0\", ];\n    cyclic_epsilon_graph_vertex_10[label=\"0/1/2\", ];\n    epsilon_graph_vertex_phase_2_1[label=\"0/0/0\", ];\n    epsilon_graph_vertex_phase_2_3[label=\"0/2/0\", ];\n    epsilon_graph_vertex_phase_2_4[label=\"0/0/1\", ];\n    epsilon_graph_vertex_phase_2_5[label=\"0/2/1\", ];\n    epsilon_graph_vertex_phase_2_6[label=\"1/2/1\", ];\n    epsilon_graph_vertex_phase_2_7[label=\"1/2/2\", ];\n    epsilon_graph_vertex_phase_2_8[label=\"0/0/2\", ];\n  }\n\n  cyclic_epsilon_graph_vertex_8 -> epsilon_graph_vertex_phase_2_0[color=\"aqua\", ];\n\n  epsilon_graph_vertex_phase_2_0 -> epsilon_graph_vertex_phase_2_1[color=\"aqua\", ];\n\n  cyclic_epsilon_graph_vertex_8 -> cyclic_epsilon_graph_vertex_9[color=\"aqua\", ];\n\n  cyclic_epsilon_graph_vertex_9 -> cyclic_epsilon_graph_vertex_6[color=\"aqua\", ];\n\n  cyclic_epsilon_graph_vertex_8 -> epsilon_graph_vertex_phase_2_2[color=\"aqua\", ];\n\n  epsilon_graph_vertex_phase_2_2 -> epsilon_graph_vertex_phase_2_3[color=\"aqua\", ];\n\n  epsilon_graph_vertex_phase_2_1 -> epsilon_graph_vertex_phase_2_4[color=\"aqua\", ];\n\n  epsilon_graph_vertex_phase_2_3 -> epsilon_graph_vertex_phase_2_5[color=\"aqua\", ];\n\n  epsilon_graph_vertex_phase_2_6 -> epsilon_graph_vertex_phase_2_7[color=\"aqua\", ];\n\n  epsilon_graph_vertex_phase_2_4 -> epsilon_graph_vertex_phase_2_8[color=\"aqua\", ];\n\n  cyclic_epsilon_graph_vertex_10 -> cyclic_epsilon_graph_vertex_11[color=\"aqua\", ];\n\n  cyclic_epsilon_graph_vertex_11 -> cyclic_epsilon_graph_vertex_12[color=\"aqua\", ];\n\n  cyclic_epsilon_graph_vertex_0 -> epsilon_graph_vertex_phase_2_9[color=\"aqua\", ];\n\n  epsilon_graph_vertex_phase_2_9 -> epsilon_graph_vertex_phase_2_10[color=\"aqua\", ];\n\n  epsilon_graph_vertex_phase_2_10 -> cyclic_epsilon_graph_vertex_8[color=\"aqua\", ];\n\n  cyclic_epsilon_graph_vertex_0 -> epsilon_graph_vertex_phase_2_11[color=\"aqua\", ];\n\n  epsilon_graph_vertex_phase_2_11 -> epsilon_graph_vertex_phase_2_12[color=\"aqua\", ];\n\n  epsilon_graph_vertex_phase_2_12 -> cyclic_epsilon_graph_vertex_8[color=\"aqua\", ];\n\n  epsilon_graph_vertex_phase_2_7 -> epsilon_graph_vertex_phase_2_13[color=\"aqua\", ];\n\n  epsilon_graph_vertex_phase_2_13 -> cyclic_epsilon_graph_vertex_3[color=\"aqua\", ];\n\n  epsilon_graph_vertex_phase_2_8 -> epsilon_graph_vertex_phase_2_14[color=\"aqua\", ];\n\n  epsilon_graph_vertex_phase_2_14 -> cyclic_epsilon_graph_vertex_12[color=\"aqua\", ];\n\n  cyclic_epsilon_graph_vertex_6 -> cyclic_epsilon_graph_vertex_7[color=\"aqua\", ];\n\n  cyclic_epsilon_graph_vertex_7 -> cyclic_epsilon_graph_vertex_8[color=\"aqua\", ];\n\n  cyclic_epsilon_graph_vertex_12 -> epsilon_graph_vertex_phase_2_15[color=\"aqua\", ];\n\n  epsilon_graph_vertex_phase_2_15 -> epsilon_graph_vertex_phase_2_6[color=\"aqua\", ];\n\n  cyclic_epsilon_graph_vertex_12 -> cyclic_epsilon_graph_vertex_16[color=\"aqua\", ];\n\n  cyclic_epsilon_graph_vertex_16 -> cyclic_epsilon_graph_vertex_17[color=\"aqua\", ];\n\n  cyclic_epsilon_graph_vertex_17 -> cyclic_epsilon_graph_vertex_3[color=\"aqua\", ];\n\n  cyclic_epsilon_graph_vertex_12 -> cyclic_epsilon_graph_vertex_13[color=\"aqua\", ];\n\n  cyclic_epsilon_graph_vertex_13 -> cyclic_epsilon_graph_vertex_10[color=\"aqua\", ];\n\n  cyclic_epsilon_graph_vertex_3 -> cyclic_epsilon_graph_vertex_14[color=\"aqua\", ];\n\n  cyclic_epsilon_graph_vertex_14 -> cyclic_epsilon_graph_vertex_15[color=\"aqua\", ];\n\n  cyclic_epsilon_graph_vertex_15 -> cyclic_epsilon_graph_vertex_12[color=\"aqua\", ];\n\n  epsilon_graph_vertex_phase_2_5 -> epsilon_graph_vertex_phase_2_16[color=\"aqua\", ];\n\n  epsilon_graph_vertex_phase_2_16 -> cyclic_epsilon_graph_vertex_0[color=\"aqua\", ];\n\n  cyclic_epsilon_graph_vertex_0 -> cyclic_epsilon_graph_vertex_1[color=\"red\", ];\n\n  cyclic_epsilon_graph_vertex_1 -> cyclic_epsilon_graph_vertex_2[color=\"red\", ];\n\n  cyclic_epsilon_graph_vertex_2 -> cyclic_epsilon_graph_vertex_0[color=\"red\", ];\n\n  cyclic_epsilon_graph_vertex_3 -> cyclic_epsilon_graph_vertex_4[color=\"red\", ];\n\n  cyclic_epsilon_graph_vertex_4 -> cyclic_epsilon_graph_vertex_5[color=\"red\", ];\n\n  cyclic_epsilon_graph_vertex_5 -> cyclic_epsilon_graph_vertex_3[color=\"red\", ];\n}\n")
   }

@@ -45,6 +45,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "graphvizier"
+version = "0.0.0"
+source = "git+https://github.com/cosmicexplorer/graphvizier?rev=bbc625c311cb170728abe347a11cc4bc27896f1c#bbc625c311cb170728abe347a11cc4bc27896f1c"
+dependencies = [
+ "lazy_static",
+ "regex",
+ "uuid",
+]
+
+[[package]]
 name = "hashbrown"
 version = "0.12.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -135,6 +145,7 @@ name = "sp-core"
 version = "0.0.0"
 dependencies = [
  "displaydoc",
+ "graphvizier",
  "indexmap",
  "lazy_static",
  "priority-queue",
