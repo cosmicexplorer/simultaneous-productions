@@ -1216,7 +1216,7 @@ mod tests {
 
     let gb = parseable_grammar.build_graph();
     let graphvizier::generator::DotOutput(output) =
-      gb.build(gv::Id::validate("test_graph".to_string()));
+      gb.build(gv::Id::new("test_graph"));
 
     assert_eq!(output, "asdf");
   }
@@ -1236,7 +1236,7 @@ mod tests {
 
     let gb = parseable_grammar.build_graph();
     let graphvizier::generator::DotOutput(output) =
-      gb.build(gv::Id::validate("test_graph".to_string()));
+      gb.build(gv::Id::new("test_graph"));
 
     assert_eq!(output, "asdf");
   }

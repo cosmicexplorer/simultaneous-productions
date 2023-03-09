@@ -46,9 +46,9 @@ dependencies = [
 
 [[package]]
 name = "graphvizier"
-version = "0.0.0"
+version = "0.0.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "190994d4cd89540edc5cff42e17386ae7ae7771e20f7f59852525487dcdff146"
+checksum = "5a79ffbf76e86a3dd5d61453448825c6965a41d376e1d0a09ec8aff9eb480cd8"
 dependencies = [
  "lazy_static",
  "regex",
