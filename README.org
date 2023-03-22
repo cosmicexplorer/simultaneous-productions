@@ -9,21 +9,22 @@
 
 ** code TODO [1/8]
 1. [X] remove ~no_std~ impl
-2. [-] graphviz for every intermediate graph in grammar processing! [1/3]
-   1. [-] S.P. [1/2]
+2. [-] graphviz for every intermediate graph in grammar processing! [2/3]
+   1. [X] S.P. [2/2]
       1. [X] implement graphvis for basic S.P. in ~text_backend~
-      2. [ ] expose basic S.P. and rest of ~text_backend~ publicly!
+      2. [X] expose basic S.P. and rest of ~text_backend~ publicly!
    2. [X] ~PreprocessedGrammar~
-   3. [ ] ~ParseableGrammar~
-3. [-] text-based grammar input format (for generating test cases)! [1/3]
+   3. [ ] ~ParseableGrammar~ [0/1]
+      - [ ] first make parsing understand stack cycles!!!
+3. [-] text-based grammar input format (for generating test cases)! [2/3]
    1. [X] make basic grammar format
-   2. [ ] expose it publicly!
+   2. [X] expose it publicly!
    3. [ ] make it support literal ~>~ chars with backslashes!
 4. [ ] implement typed callbacks [0/4]
-   1. [ ] make parsing work at all again lmao
-   2. [ ] execute a callback whenever a sub-parse succeeds
-   3. [ ] signal parse failures
-   4. [ ] implement typed callbacks (for e.g. AST construction) by stuffing intermediate arguments in the stack symbols!
+   1. [ ] execute a callback whenever a sub-parse succeeds
+   2. [ ] signal parse failures
+   3. [ ] implement typed callbacks (for e.g. AST construction) by stuffing intermediate arguments in the stack symbols!
+   4. [ ] replace ~reconstruction.rs~ with this!
 5. [ ] demonstrate a grammar generator for regex constructs!
 6. [ ] implement context-sensitive and recursively-enumerable grammatical constructs!
    - also consider backrefs (can we make these sub-exponential?)!

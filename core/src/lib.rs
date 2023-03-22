@@ -661,7 +661,6 @@ pub mod text_backend {
     type P = Production;
   }
 
-  /* TODO: expose this (and Lit/.../SP) publically (not as a test framework)! */
   pub fn parse_sp_text_format(grammar: &str) -> SP {
     use indexmap::IndexMap;
     use lazy_static::lazy_static;
