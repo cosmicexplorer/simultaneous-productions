@@ -661,120 +661,314 @@ pub mod text_backend {
     type P = Production;
   }
 
-  pub fn parse_sp_text_format(grammar: &str) -> SP {
-    use indexmap::IndexMap;
-    use lazy_static::lazy_static;
-    use regex::Regex;
+  pub use grammar_grammar::parse_sp_text_format;
+  pub mod grammar_grammar {
+    use super::*;
 
-    lazy_static! {
-      static ref LINE: Regex =
-        Regex::new("^(?P<prod>[A-Z][a-z0-9_-]*):[[:space:]]*(?P<rest>.+)$").unwrap();
-      static ref CASE: Regex = Regex::new(
-        "^(?P<head>\\$[A-Z][a-z0-9_-]*|<(?:[^>]|>>)*>)(?:[[:space:]]*->[[:space:]]*(?P<tail>.+))?$"
-      )
-      .unwrap();
+    use displaydoc::Display;
+    use regex::Regex;
+    use thiserror::Error;
+
+    #[derive(Debug, Display, Error, Clone)]
+    pub enum GrammarGrammarParsingError {
+      /// line {0} didn't match LINE: '{1}'
+      LineMatchFailed(String, &'static Regex),
+      /// case {0} didn't match CASE: '{1}'
+      CaseMatchFailed(String, &'static Regex),
     }
 
-    let mut cases: IndexMap<String, Vec<Vec<CE>>> = IndexMap::new();
+    /// Convert an EBNF-like syntax into an executable
+    /// [`SimultaneousProductions`](gs::synthesis::SimultaneousProductions) instance!
+    ///
+    /// # Line Format
+    /// The format expects any number of lines of text formatted like:
+    /// 1. `Line` = `ProductionName: CaseDefinition`
+    /// 1. `ProductionName` = `/[A-Z][a-z0-9_-]/`
+    /// 1. `CaseDefinition` = `CaseHead( -> CaseHead)*`
+    /// 1. `CaseHead` = `ProductionRef|Literal`
+    /// 1. `ProductionRef` = `$ProductionName`
+    /// 1. `Literal` = `/<([^>]|>>)*>/`
+    ///
+    /// Each `Line` appends a new `CaseDefinition` to the list of [`Case`](Case)s registered for the
+    /// production named `ProductionName`! Each case is a sequence of `CaseHead`s demarcated by the
+    /// ` -> ` literal, and each `CaseHead` may either be a `ProductionRef` (which consists of a `$`
+    /// literal before a `ProductionName`) or a `Literal`, which is a sequence of
+    /// unicode characters.
+    ///
+    /// **Note that leading and trailing whitespace is trimmed from each line, and lines that are
+    /// empty or contain only whitespace are skipped.**
+    ///
+    /// Here's an example of a parser that accepts the input `/abab?/` for the production `$B`:
+    ///```
+    /// use sp_core::text_backend::*;
+    ///
+    /// let sp = parse_sp_text_format(
+    ///   "\
+    /// A: <ab>
+    /// B: <ab> -> $A
+    /// B: $A -> <a>
+    /// ",
+    /// ).unwrap();
+    ///
+    /// assert_eq!(
+    ///   sp,
+    ///   SP::from(
+    ///     [
+    ///       (
+    ///         ProductionReference::from("A"),
+    ///         Production::from([Case::from([CE::Lit(Lit::from("ab"))].as_ref())].as_ref()),
+    ///       ),
+    ///       (
+    ///         ProductionReference::from("B"),
+    ///         Production::from(
+    ///           [
+    ///             Case::from(
+    ///               [
+    ///                 CE::Lit(Lit::from("ab")),
+    ///                 CE::Prod(ProductionReference::from("A")),
+    ///               ]
+    ///               .as_ref(),
+    ///             ),
+    ///             Case::from(
+    ///               [
+    ///                 CE::Prod(ProductionReference::from("A")),
+    ///                 CE::Lit(Lit::from("a")),
+    ///               ]
+    ///               .as_ref(),
+    ///             ),
+    ///           ]
+    ///           .as_ref(),
+    ///         ),
+    ///       ),
+    ///     ]
+    ///     .as_ref(),
+    ///   )
+    /// );
+    ///```
+    ///
+    /// ## Literal `>`
+    /// To form a single literal `>` character, provide `>>` within a `Literal`:
+    ///```
+    /// use sp_core::text_backend::*;
+    ///
+    /// let sp = parse_sp_text_format(
+    ///   "\
+    /// A: <a>>b>",
+    /// ).unwrap();
+    ///
+    /// assert_eq!(
+    ///   sp,
+    ///   SP::from(
+    ///     [(
+    ///       ProductionReference::from("A"),
+    ///       Production::from([Case::from([CE::Lit(Lit::from("a>b"))].as_ref())].as_ref())
+    ///     )]
+    ///     .as_ref()
+    ///   )
+    /// );
+    ///```
+    pub fn parse_sp_text_format(grammar: &str) -> Result<SP, GrammarGrammarParsingError> {
+      use indexmap::IndexMap;
+      use lazy_static::lazy_static;
 
-    for line in grammar.lines() {
-      let caps = LINE.captures(line).expect("line didn't match LINE");
-      let prod = caps.name("prod").unwrap().as_str();
-      dbg!(prod);
-      let rest = caps.name("rest").unwrap().as_str();
-
-      let mut case_els: Vec<CE> = Vec::new();
-      dbg!(rest);
-      let caps = CASE.captures(rest).expect("rest didn't match CASE");
-      let head = caps.name("head").unwrap().as_str();
-      let mut tail = caps.name("tail").map(|c| c.as_str());
-
-      fn parse_case_element(case_el: &str) -> CE {
-        if case_el.starts_with('$') {
-          CE::Prod(ProductionReference::from(&case_el[1..]))
-        } else {
-          /* (1) Strip the <> markers. */
-          assert!(case_el.starts_with('<'));
-          assert!(case_el.ends_with('>'));
-          let case_el = &case_el[1..(case_el.len() - 1)];
-          /* (2) Un-escape any doubled '>>', which should be the only case where '>' remains in the
-           * input. */
-          let mut prior_right_arrow: bool = false;
-          let mut chars: Vec<char> = Vec::new();
-          for c in case_el.chars() {
-            if c == '>' {
-              if prior_right_arrow {
-                chars.push(c);
-                prior_right_arrow = false;
-              } else {
-                prior_right_arrow = true;
-              }
-            } else {
-              if prior_right_arrow {
-                unreachable!("no unduplicated '>' should be here!");
-              }
-              chars.push(c);
-            }
-          }
-          let chars: &[char] = chars.as_ref();
-          CE::Lit(Lit::from(chars))
-        }
+      lazy_static! {
+        static ref MAYBE_SPACE: Regex = Regex::new("^[[:space:]]*$").unwrap();
+        static ref LINE: Regex = Regex::new(
+          "^[[:space:]]*(?P<prod>[A-Z][a-z0-9_-]*):[[:space:]]*(?P<rest>.+)[[:space:]]*$"
+        ).unwrap();
+        static ref CASE: Regex = Regex::new(
+          "^(?P<head>\\$[A-Z][a-z0-9_-]*|<(?:[^>]|>>)*>)(?:[[:space:]]*->[[:space:]]*(?P<tail>.+))?[[:space:]]*$"
+        )
+        .unwrap();
       }
 
-      let cur_ce = parse_case_element(head);
-      case_els.push(cur_ce);
+      let mut cases: IndexMap<String, Vec<Vec<CE>>> = IndexMap::new();
 
-      while tail.is_some() {
-        dbg!(tail);
+      for line in grammar.lines() {
+        /* LINE trims off any leading or trailing whitespace. */
+        let caps = match LINE.captures(line) {
+          Some(caps) => caps,
+          None => {
+            /* Ignore lines that are empty or contain only spaces. */
+            if MAYBE_SPACE.is_match(line) {
+              continue;
+            } else {
+              return Err(GrammarGrammarParsingError::LineMatchFailed(
+                line.to_string(),
+                &LINE,
+              ));
+            }
+          },
+        };
+        let prod = caps.name("prod").unwrap().as_str();
+        dbg!(prod);
+        let rest = caps.name("rest").unwrap().as_str();
+
+        let mut case_els: Vec<CE> = Vec::new();
+        dbg!(rest);
+        /* CASE trims off any trailing whitespace that wasn't caught by the LINE pattern. */
+        /* (This is likely due to longest-first matching.) */
         let caps = CASE
-          .captures(tail.unwrap())
-          .expect("tail didn't match CASE");
+          .captures(rest)
+          .ok_or_else(|| GrammarGrammarParsingError::CaseMatchFailed(rest.to_string(), &CASE))?;
         let head = caps.name("head").unwrap().as_str();
-        tail = caps.name("tail").map(|c| c.as_str());
+        let mut tail = caps.name("tail").map(|c| c.as_str());
+
+        fn parse_case_element(case_el: &str) -> CE {
+          if case_el.starts_with('$') {
+            CE::Prod(ProductionReference::from(&case_el[1..]))
+          } else {
+            /* (1) Strip the <> markers. */
+            assert!(case_el.starts_with('<'));
+            assert!(case_el.ends_with('>'));
+            let case_el = &case_el[1..(case_el.len() - 1)];
+            /* (2) Un-escape any doubled '>>', which should be the only case where '>' remains in
+             * the input. */
+            let mut prior_right_arrow: bool = false;
+            let mut chars: Vec<char> = Vec::new();
+            for c in case_el.chars() {
+              if c == '>' {
+                if prior_right_arrow {
+                  chars.push(c);
+                  prior_right_arrow = false;
+                } else {
+                  prior_right_arrow = true;
+                }
+              } else {
+                if prior_right_arrow {
+                  /* This is an assertion and not an Err because this should have been
+                   * verified by the CASE regex. */
+                  unreachable!("no unduplicated '>' should be here!");
+                }
+                chars.push(c);
+              }
+            }
+            let chars: &[char] = chars.as_ref();
+            CE::Lit(Lit::from(chars))
+          }
+        }
 
         let cur_ce = parse_case_element(head);
         case_els.push(cur_ce);
+
+        while let Some(cur_tail_nonempty) = tail {
+          dbg!(cur_tail_nonempty);
+          let caps = CASE.captures(cur_tail_nonempty).ok_or_else(|| {
+            GrammarGrammarParsingError::CaseMatchFailed(cur_tail_nonempty.to_string(), &CASE)
+          })?;
+          let head = caps.name("head").unwrap().as_str();
+          /* Mutate `tail` here, which will affect the `while` condition. */
+          tail = caps.name("tail").map(|c| c.as_str());
+
+          let cur_ce = parse_case_element(head);
+          case_els.push(cur_ce);
+        }
+
+        cases
+          .entry(prod.to_string())
+          .or_insert_with(Vec::new)
+          .push(case_els);
       }
 
-      cases
-        .entry(prod.to_string())
-        .or_insert_with(Vec::new)
-        .push(case_els);
+      let cases: Vec<(ProductionReference, Production)> = cases
+        .into_iter()
+        .map(|(pr, prod)| {
+          let cases: Vec<Case> = prod
+            .into_iter()
+            .map(|case_els| Case::from(&case_els[..]))
+            .collect();
+          (
+            ProductionReference::from(pr.as_str()),
+            Production::from(&cases[..]),
+          )
+        })
+        .collect();
+      Ok(SP::from(&cases[..]))
     }
 
-    let cases: Vec<(ProductionReference, Production)> = cases
-      .into_iter()
-      .map(|(pr, prod)| {
-        let cases: Vec<Case> = prod
-          .into_iter()
-          .map(|case_els| Case::from(&case_els[..]))
-          .collect();
-        (
-          ProductionReference::from(pr.as_str()),
-          Production::from(&cases[..]),
+    #[test]
+    fn test_empty() {
+      let sp = parse_sp_text_format("").unwrap();
+
+      assert_eq!(sp, SP::from([].as_ref()));
+    }
+
+    #[test]
+    fn test_strips_whitespace() {
+      let sp = parse_sp_text_format(" A: <a> ").unwrap();
+
+      assert_eq!(
+        sp,
+        SP::from(
+          [(
+            ProductionReference::from("A"),
+            Production::from([Case::from([CE::Lit(Lit::from("a"))].as_ref())].as_ref())
+          )]
+          .as_ref()
         )
-      })
-      .collect();
-    SP::from(&cases[..])
-  }
+      );
+    }
 
-  #[test]
-  fn test_escaped_backslashes() {
-    let sp = parse_sp_text_format(
-      "\
+    #[test]
+    fn test_escapes_double_right_arrow() {
+      let sp = parse_sp_text_format(
+        "\
 A: <a>>b>",
-    );
-
-    assert_eq!(
-      sp,
-      SP::from(
-        [(
-          ProductionReference::from("A"),
-          Production::from([Case::from([CE::Lit(Lit::from("a>b"))].as_ref())].as_ref())
-        )]
-        .as_ref()
       )
-    );
+      .unwrap();
+
+      assert_eq!(
+        sp,
+        SP::from(
+          [(
+            ProductionReference::from("A"),
+            Production::from([Case::from([CE::Lit(Lit::from("a>b"))].as_ref())].as_ref())
+          )]
+          .as_ref()
+        )
+      );
+    }
+
+    #[test]
+    fn test_production_ref() {
+      let sp = parse_sp_text_format("A: $B").unwrap();
+
+      assert_eq!(
+        sp,
+        SP::from(
+          [(
+            ProductionReference::from("A"),
+            Production::from(
+              [Case::from(
+                [CE::Prod(ProductionReference::from("B"))].as_ref()
+              )]
+              .as_ref()
+            )
+          )]
+          .as_ref()
+        ),
+      );
+    }
+
+    #[test]
+    fn test_line_match_fail() {
+      match parse_sp_text_format("A = B") {
+        Err(GrammarGrammarParsingError::LineMatchFailed(line, _)) => {
+          assert_eq!(&line, "A = B");
+        },
+        _ => unreachable!(),
+      };
+    }
+
+    #[test]
+    fn test_case_match_fail() {
+      match parse_sp_text_format("A: asdf") {
+        Err(GrammarGrammarParsingError::CaseMatchFailed(case, _)) => {
+          assert_eq!(&case, "asdf");
+        },
+        _ => unreachable!(),
+      }
+    }
   }
 
   pub fn non_cyclic_productions() -> SP {
@@ -819,7 +1013,8 @@ A: <ab>
 B: <ab> -> $A
 B: $A -> <a>
 ",
-    );
+    )
+    .unwrap();
 
     assert_eq!(sp, non_cyclic_productions());
   }
@@ -899,7 +1094,8 @@ P_2: $P_1
 P_2: $P_2
 P_2: $P_1 -> <bc>
 ",
-    );
+    )
+    .unwrap();
 
     assert_eq!(sp, basic_productions());
   }
