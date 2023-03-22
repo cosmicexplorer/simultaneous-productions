@@ -18,6 +18,7 @@
  * along with this program.  If not, see <https://www.gnu.org/licenses/>.
  */
 
+/* FIXME: update the "Line Format" docs!! */
 //! Convert an EBNF-like syntax into an executable
 //! [`SimultaneousProductions`](gs::synthesis::SimultaneousProductions) instance!
 //!
@@ -111,6 +112,56 @@
 //!     .as_ref()
 //!   )
 //! );
+//!```
+//!
+//! ## Grouped Elements
+//!```
+//! use sp_core::grammar_specification::constraints::SerializableGrammar;
+//! use sp_core::grammar_grammar::*;
+//! use sp_core::text_backend::*;
+//!
+//! let sp = SP::parse(&SPTextFormat::from(
+//!   "\
+//! $A$: (<a>)
+//! $A$: ($A$ -> <b>)".to_string()
+//! )).unwrap();
+//!
+//! assert_eq!(
+//!   sp,
+//!   SP::from(
+//!     [(
+//!       ProductionReference::from("A"),
+//!       Production::from([
+//!         Case::from([CE::Group(Group {
+//!           elements: vec![CE::Lit(Lit::from("a"))],
+//!         })].as_ref()),
+//!         Case::from([CE::Group(Group {
+//!           elements: vec![
+//!             CE::Prod(ProductionReference::from("A")),
+//!             CE::Lit(Lit::from("b")),
+//!           ],
+//!         })].as_ref()),
+//!       ].as_ref())
+//!     )]
+//!     .as_ref()
+//!   )
+//! );
+//!```
+//!
+//! ## `->` are ignored
+//!```
+//! use sp_core::grammar_specification::constraints::SerializableGrammar;
+//! use sp_core::grammar_grammar::*;
+//! use sp_core::text_backend::*;
+//!
+//! let sp1 = SP::parse(&SPTextFormat::from(
+//!   "$A$: (<a> <b>) $C$".to_string()
+//! )).unwrap();
+//! let sp2 = SP::parse(&SPTextFormat::from(
+//!   "$A$: (<a> -> <b>) -> $C$".to_string()
+//! )).unwrap();
+//!
+//! assert_eq!(sp1, sp2);
 //!```
 
 use crate::{
@@ -452,20 +503,59 @@ pub mod proptest_strategies {
   pub fn case_element(
     refs: Vec<ProductionReference>,
     ensure_arrow: bool,
+    group_min_length: usize,
+    group_max_length: usize,
+    remaining_depth: usize,
   ) -> impl Strategy<Value = CE> {
-    prop_oneof![
-      literal(ensure_arrow).prop_map(|lit| CE::Lit(lit)),
-      valid_prod_ref(refs).prop_map(|prod_ref| CE::Prod(prod_ref)),
-    ]
+    if remaining_depth == 0 {
+      prop_oneof![
+        literal(ensure_arrow).prop_map(|lit| CE::Lit(lit)),
+        valid_prod_ref(refs.clone()).prop_map(|prod_ref| CE::Prod(prod_ref)),
+      ]
+      .boxed()
+    } else {
+      prop_oneof![
+        literal(ensure_arrow).prop_map(|lit| CE::Lit(lit)),
+        valid_prod_ref(refs.clone()).prop_map(|prod_ref| CE::Prod(prod_ref)),
+        group(
+          refs.clone(),
+          ensure_arrow,
+          group_min_length,
+          group_max_length,
+          remaining_depth,
+        )
+        .prop_map(|group| CE::Group(group)),
+      ]
+      .boxed()
+    }
   }
   pub fn case(
     refs: Vec<ProductionReference>,
     ensure_arrow: bool,
     min_length: usize,
     max_length: usize,
+    remaining_depth: usize,
   ) -> impl Strategy<Value = Case> {
-    prop::collection::vec(case_element(refs, ensure_arrow), min_length..=max_length)
-      .prop_map(|elements| Case::via_into_iter(elements.into_iter()))
+    prop::collection::vec(
+      /* NB: we reuse {min,max}_length for case length and group length for simplicity! */
+      case_element(refs, ensure_arrow, min_length, max_length, remaining_depth),
+      min_length..=max_length,
+    )
+    .prop_map(|elements| Case::via_into_iter(elements.into_iter()))
+  }
+  prop_compose! {
+    pub fn group(
+      refs: Vec<ProductionReference>,
+      ensure_arrow: bool,
+      min_length: usize,
+      max_length: usize,
+      remaining_depth: usize,
+      /* NB: we reduce remaining_depth by 1 here! */
+    )(c in case(refs, ensure_arrow, min_length, max_length, remaining_depth - 1).boxed()) -> Group {
+      Group {
+        elements: c.into_iter().collect(),
+      }
+    }
   }
   pub fn production(
     refs: Vec<ProductionReference>,
@@ -474,9 +564,16 @@ pub mod proptest_strategies {
     max_case_length: usize,
     min_size: usize,
     max_size: usize,
+    max_group_depth: usize,
   ) -> impl Strategy<Value = Production> {
     prop::collection::vec(
-      case(refs, ensure_arrow, min_case_length, max_case_length),
+      case(
+        refs,
+        ensure_arrow,
+        min_case_length,
+        max_case_length,
+        max_group_depth,
+      ),
       min_size..=max_size,
     )
     .prop_map(|cases| Production::via_into_iter(cases.into_iter()))
@@ -490,6 +587,7 @@ pub mod proptest_strategies {
     max_cases: usize,
     min_case_els: usize,
     max_case_els: usize,
+    max_group_depth: usize,
   ) -> impl Strategy<Value = SP> {
     prod_names(ensure_cash, min_prods, max_prods)
       .prop_flat_map(move |names: Vec<ProductionReference>| {
@@ -504,6 +602,7 @@ pub mod proptest_strategies {
               max_case_els,
               min_cases,
               max_cases,
+              max_group_depth,
             ),
             n,
           ),
@@ -568,28 +667,28 @@ mod test {
 
   proptest! {
     #[test]
-    fn test_serde(sp in sp(false, false, 1, 20, 1, 5, 1, 5)) {
+    fn test_serde(sp in sp(false, false, 1, 20, 1, 5, 1, 5, 3)) {
       let text_grammar = sp.serialize().unwrap();
       assert_eq!(sp, SP::parse(&text_grammar).unwrap());
     }
   }
   proptest! {
     #[test]
-    fn test_serde_cash(sp in sp(true, false, 1, 20, 1, 5, 1, 5)) {
+    fn test_serde_cash(sp in sp(true, false, 1, 20, 1, 5, 1, 5, 3)) {
       let text_grammar = sp.serialize().unwrap();
       assert_eq!(sp, SP::parse(&text_grammar).unwrap());
     }
   }
   proptest! {
     #[test]
-    fn test_serde_arrow(sp in sp(false, true, 1, 20, 1, 5, 1, 5)) {
+    fn test_serde_arrow(sp in sp(false, true, 1, 20, 1, 5, 1, 5, 3)) {
       let text_grammar = sp.serialize().unwrap();
       assert_eq!(sp, SP::parse(&text_grammar).unwrap());
     }
   }
   proptest! {
     #[test]
-    fn test_serde_cash_arrwo(sp in sp(true, true, 1, 20, 1, 5, 1, 5)) {
+    fn test_serde_cash_arrwo(sp in sp(true, true, 1, 20, 1, 5, 1, 5, 3)) {
       let text_grammar = sp.serialize().unwrap();
       assert_eq!(sp, SP::parse(&text_grammar).unwrap());
     }
