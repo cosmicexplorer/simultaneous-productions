@@ -32,6 +32,7 @@
       1. [X] introduce ~Group~ as a ~CaseElement~!
       2. [X] enable grouping with arbitrary depth in ~SPTextFormat~
          - e.g. ~(<ab> -> $A$)~ to group ~CaseHead~ lists
+         - *THIS WAS CRAZY HARD AND EXTREMELY USEFUL!!!*
       3. [ ] suffix [0/4]
          1. [ ] ~*~
          2. [ ] ~+~

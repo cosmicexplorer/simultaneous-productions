@@ -123,7 +123,7 @@
 //! let sp = SP::parse(&SPTextFormat::from(
 //!   "\
 //! $A$: (<a>)
-//! $A$: ($A$ -> <b>)".to_string()
+//! $A$: ($A$ -> (<b>))".to_string()
 //! )).unwrap();
 //!
 //! assert_eq!(
@@ -138,7 +138,9 @@
 //!         Case::from([CE::Group(Group {
 //!           elements: vec![
 //!             CE::Prod(ProductionReference::from("A")),
-//!             CE::Lit(Lit::from("b")),
+//!             CE::Group(Group {
+//!               elements: vec![CE::Lit(Lit::from("b"))],
+//!             }),
 //!           ],
 //!         })].as_ref()),
 //!       ].as_ref())
