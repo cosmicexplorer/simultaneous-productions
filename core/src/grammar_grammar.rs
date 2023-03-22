@@ -133,6 +133,10 @@ pub enum GrammarGrammarParsingError {
   LineMatchFailed(String, &'static Regex),
   /// case {0} didn't match CASE: '{1}'
   CaseMatchFailed(String, &'static Regex),
+  /// unmatched close paren
+  UnmatchedCloseParen,
+  /// unmatched open paren
+  UnmatchedOpenParen,
 }
 
 /// grammar definition: "{0}"
@@ -162,6 +166,9 @@ impl SerializableGrammar for SP {
     use indexmap::IndexMap;
     use lazy_static::lazy_static;
 
+    use std::cell::RefCell;
+    use std::rc::Rc;
+
     let grammar: &str = out.as_ref();
 
     lazy_static! {
@@ -170,10 +177,12 @@ impl SerializableGrammar for SP {
         "^[[:space:]]*(?P<prod>\\$(?:[^\\$]|\\$\\$)*\\$):[[:space:]]*(?P<rest>.+)[[:space:]]*$"
       ).unwrap();
       /* FIXME: allow CASE to parse nested (!) pairs of grouping parens!!! */
+      static ref CASE_EL: Regex = Regex::new(
+        "\\$(?:[^\\$]|\\$\\$)*\\$|<(?:[^>]|>>)*>|[\\(\\)]|->|[[:space:]]+"
+      ).unwrap();
       static ref CASE: Regex = Regex::new(
-        "^(?P<head>\\$(?:[^\\$]|\\$\\$)*\\$|<(?:[^>]|>>)*>)(?:[[:space:]]*->[[:space:]]*(?P<tail>.+))?[[:space:]]*$"
-      )
-      .unwrap();
+        "^(?:\\$(?:[^\\$]|\\$\\$)*\\$|<(?:[^>]|>>)*>|[\\(\\)]|->|[[:space:]]+)+$"
+      ).unwrap();
     }
 
     fn parse_doubled_escape(escape_char: char, s: &str) -> String {
@@ -228,47 +237,89 @@ impl SerializableGrammar for SP {
       dbg!(&prod);
       let rest = caps.name("rest").unwrap().as_str();
 
-      let mut case_els: Vec<CE> = Vec::new();
       dbg!(rest);
       /* CASE trims off any trailing whitespace that wasn't caught by the LINE pattern. */
       /* (This is likely due to longest-first matching.) */
-      let caps = CASE
-        .captures(rest)
-        .ok_or_else(|| GrammarGrammarParsingError::CaseMatchFailed(rest.to_string(), &CASE))?;
-      let head = caps.name("head").unwrap().as_str();
-      let mut tail = caps.name("tail").map(|c| c.as_str());
+      if !CASE.is_match(rest) {
+        return Err(GrammarGrammarParsingError::CaseMatchFailed(
+          rest.to_string(),
+          &CASE,
+        ));
+      }
 
-      fn parse_case_element(case_el: &str) -> CE {
-        if case_el.starts_with('$') {
-          let prod_ref = parse_doubled_escape('$', &case_el[1..]);
-          CE::Prod(ProductionReference::from(prod_ref.as_str()))
-        } else {
-          assert!(case_el.starts_with('<'));
-          let lit = parse_doubled_escape('>', &case_el[1..]);
-          CE::Lit(Lit::from(lit.as_str()))
+      #[derive(Debug, Clone)]
+      struct Context {
+        pub case_els: Vec<CE>,
+        pub parent: Option<Rc<RefCell<Context>>>,
+      }
+
+      impl Context {
+        pub fn new() -> Self {
+          Self {
+            case_els: Vec::new(),
+            parent: None,
+          }
         }
       }
 
-      let cur_ce = parse_case_element(head);
-      case_els.push(cur_ce);
+      fn process_case_el(
+        ctx: &mut Rc<RefCell<Context>>,
+        case_el: &str,
+      ) -> Result<(), GrammarGrammarParsingError> {
+        match case_el {
+          "(" => {
+            *ctx = Rc::new(RefCell::new(Context {
+              case_els: Vec::new(),
+              parent: Some(Rc::clone(ctx)),
+            }));
+          },
+          ")" => {
+            let inner_case_els = ctx.borrow().case_els.clone();
+            let parent: Rc<RefCell<Context>> = ctx
+              .borrow_mut()
+              .parent
+              .as_mut()
+              .cloned()
+              .ok_or(GrammarGrammarParsingError::UnmatchedCloseParen)?;
+            parent.borrow_mut().case_els.push(CE::Group(Group {
+              elements: inner_case_els,
+            }));
+            *ctx = parent;
+          },
+          "->" => { /* NB: these arrows are optional and do nothing! */ },
+          case_el if case_el.starts_with('$') => {
+            let prod_ref = parse_doubled_escape('$', &case_el[1..]);
+            ctx
+              .borrow_mut()
+              .case_els
+              .push(CE::Prod(ProductionReference::from(prod_ref.as_str())));
+          },
+          case_el if case_el.starts_with('<') => {
+            let lit = parse_doubled_escape('>', &case_el[1..]);
+            ctx
+              .borrow_mut()
+              .case_els
+              .push(CE::Lit(Lit::from(lit.as_str())));
+          },
+          case_el => {
+            assert!(EMPTY_SPACE.is_match(case_el));
+          },
+        }
+        Ok(())
+      }
 
-      while let Some(cur_tail_nonempty) = tail {
-        dbg!(cur_tail_nonempty);
-        let caps = CASE.captures(cur_tail_nonempty).ok_or_else(|| {
-          GrammarGrammarParsingError::CaseMatchFailed(cur_tail_nonempty.to_string(), &CASE)
-        })?;
-        let head = caps.name("head").unwrap().as_str();
-        /* Mutate `tail` here, which will affect the `while` condition. */
-        tail = caps.name("tail").map(|c| c.as_str());
-
-        let cur_ce = parse_case_element(head);
-        case_els.push(cur_ce);
+      let mut ctx = Rc::new(RefCell::new(Context::new()));
+      for case_el in CASE_EL.find_iter(rest).map(|m| m.as_str()) {
+        process_case_el(&mut ctx, case_el)?;
+      }
+      if ctx.borrow().parent.is_some() {
+        return Err(GrammarGrammarParsingError::UnmatchedOpenParen);
       }
 
       cases
         .entry(prod.to_string())
         .or_insert_with(Vec::new)
-        .push(case_els);
+        .push(ctx.borrow().case_els.clone());
     }
 
     let cases: Vec<(ProductionReference, Production)> = cases
