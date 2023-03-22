@@ -76,6 +76,18 @@ pub mod grammar_specification {
     /// Necessary requirement to hash an object, but not e.g. to
     /// lexicographically sort it.
     pub trait Hashable: Hash + Eq {}
+
+    pub trait SerializableGrammar {
+      type Out;
+
+      type ParseError;
+      fn parse(out: &Self::Out) -> Result<Self, Self::ParseError>
+      where
+        Self: Sized;
+
+      type SerializeError;
+      fn serialize(&self) -> Result<Self::Out, Self::SerializeError>;
+    }
   }
 
   /// Grammar components which expand into exactly one specific token.
@@ -685,9 +697,10 @@ pub mod text_backend {
     type P = Production;
   }
 
-  pub use grammar_grammar::{SPTextFormat, SerializableGrammar};
+  pub use grammar_grammar::SPTextFormat;
   pub mod grammar_grammar {
     use super::*;
+    use gs::constraints::SerializableGrammar;
 
     use displaydoc::Display;
     use regex::Regex;
@@ -699,18 +712,6 @@ pub mod text_backend {
       LineMatchFailed(String, &'static Regex),
       /// case {0} didn't match CASE: '{1}'
       CaseMatchFailed(String, &'static Regex),
-    }
-
-    pub trait SerializableGrammar {
-      type Out;
-
-      type ParseError;
-      fn parse(out: &Self::Out) -> Result<Self, Self::ParseError>
-      where
-        Self: Sized;
-
-      type SerializeError;
-      fn serialize(&self) -> Result<Self::Out, Self::SerializeError>;
     }
 
     /// grammar definition: "{0}"
@@ -738,6 +739,7 @@ pub mod text_backend {
     ///
     /// Here's an example of a parser that accepts the input `/abab?/` for the production `$B`:
     ///```
+    /// use sp_core::grammar_specification::constraints::SerializableGrammar;
     /// use sp_core::text_backend::*;
     ///
     /// let sp = SP::parse(&SPTextFormat::from(
@@ -788,11 +790,11 @@ pub mod text_backend {
     /// To form a single literal `>` character, provide `>>` within a `Literal`. To form a single
     /// literal `$` character for a production name, provide `$$` within a `ProductionName`:
     ///```
+    /// use sp_core::grammar_specification::constraints::SerializableGrammar;
     /// use sp_core::text_backend::*;
     ///
     /// let sp = SP::parse(&SPTextFormat::from(
-    ///   "\
-    /// $A$$B$: <a>>b>".to_string()
+    ///   "$A$$B$: <a>>b>".to_string()
     /// )).unwrap();
     ///
     /// assert_eq!(
@@ -1171,6 +1173,7 @@ $A$: $A$ -> <b>"
 
   #[test]
   fn non_cyclic_parse() {
+    use gs::constraints::SerializableGrammar;
     let sp = SP::parse(&SPTextFormat::from(
       "\
 $A$: <ab>
@@ -1250,6 +1253,7 @@ $B$: $A$ -> <a>
 
   #[test]
   fn basic_parse() {
+    use gs::constraints::SerializableGrammar;
     let sp = SP::parse(&SPTextFormat::from(
       "\
 $P_1$: <abc>
