@@ -7,7 +7,7 @@
 - [ ] hack up a [[P.S. prototype]] and develop a pitch
   - the pitch should explain that i haven't published yet because i didn't want to get scooped on [[the real prize]]
 
-** code TODO [2/8]
+** code TODO [1/7]
 1. [X] remove ~no_std~ impl
 2. [-] graphviz for every intermediate graph in grammar processing! [2/3]
    1. [X] S.P. [2/2]
@@ -16,7 +16,7 @@
    2. [X] ~PreprocessedGrammar~
    3. [ ] ~ParseableGrammar~ [0/1]
       - [ ] first make parsing understand stack cycles!!!
-3. [X] text-based grammar input format (for generating test cases)! [4/4]
+3. [-] text-based grammar input format (for generating test cases)! [4/5]
    1. [X] make basic grammar format
    2. [X] expose it publicly!
    3. [X] make it support literal ~>~ chars!
@@ -28,22 +28,31 @@
          1. [X] make it accept any production name with doubled ~$$~ if needed!
       3. [X] put ~SerializableGrammar~ in ~grammar_specification::constraints~!
       4. [X] do ~proptest~ tests!!!
+   5. [ ] extend the text grammar format to allow regex operators! [0/3]
+      1. [ ] suffix [0/4]
+         1. [ ] ~*~
+         2. [ ] ~+~
+         3. [ ] ~?~
+         4. [ ] ~{n,m}~
+      2. [ ] literal
+         - e.g. ~/a(b)+/~, with ~//~ as a new type of ~CaseHead~
+      3. [ ] grouping
+         - e.g. ~(<ab> -> $A$)+~ to group ~Case~ lists
 4. [ ] implement typed callbacks [0/4]
    1. [ ] execute a callback whenever a sub-parse succeeds
    2. [ ] signal parse failures
    3. [ ] implement typed callbacks (for e.g. AST construction) by stuffing intermediate arguments in the stack symbols!
    4. [ ] replace ~reconstruction.rs~ with this!
-5. [ ] demonstrate a grammar generator for regex constructs!
-6. [ ] implement context-sensitive and recursively-enumerable grammatical constructs!
+5. [ ] implement context-sensitive and recursively-enumerable grammatical constructs!
    - also consider backrefs (can we make these sub-exponential?)!
-7. [ ] make a single iteration of parsing/resolution into a re-entrant(/lock-free?) process!
+6. [ ] make a single iteration of parsing/resolution into a re-entrant(/lock-free?) process!
    - we'll probably want to explicitly separate:
      1. /selecting an adjacent pair to resolve/: pop off an adjacent pair of sub-parses from the sub-parse forest.
      2. /resolving the adjacent pair/: push the merged sub-parse back onto the sub-parse forest.
    - having a lock/atomic flag /per sub-parse/ might be the easiest way to do this?
      - atomic flag is more feasible than usual for this use case, because there are so many other sub-parses to choose from
      - *could make it: per sub-parse /greater than ~k~ tokens wide/?*
-8. [ ] generate intermediate grammar graphs with proptest (maybe grammars themselves with cargo-fuzz too?)!
+7. [ ] generate intermediate grammar graphs with proptest (maybe grammars themselves with cargo-fuzz too?)!
 
 * S.P. paper
 ** abstract
