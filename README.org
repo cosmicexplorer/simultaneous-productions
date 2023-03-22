@@ -24,7 +24,8 @@
         - this made more sense than needing to resort to a separate escape character such as backslash!
    4. [-] make it go through ~SerializableGrammar~ [1/4]
       1. [X] implement ~SP::parse()~
-      2. [ ] implement ~SP::serialize()~
+      2. [-] implement ~SP::serialize()~ [0/1]
+         1. [ ] make it accept any production name with doubled ~$$~ if needed!
       3. [ ] put ~SerializableGrammar~ in ~grammar_specification::synthesis~!
       4. [ ] do ~proptest~ tests!!!
 4. [ ] implement typed callbacks [0/4]

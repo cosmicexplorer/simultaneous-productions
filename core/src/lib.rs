@@ -701,8 +701,11 @@ pub mod text_backend {
       CaseMatchFailed(String, &'static Regex),
     }
 
-    #[derive(Debug, Display, Clone)]
-    pub enum GrammarGrammarSerializationError {}
+    #[derive(Debug, Display, Error, Clone)]
+    pub enum GrammarGrammarSerializationError {
+      /// production name '{0}' didn't match PROD: '{1}'
+      InvalidProductionName(String, &'static Regex),
+    }
 
     pub trait SerializableGrammar {
       type Out;
@@ -724,7 +727,7 @@ pub mod text_backend {
     /// # Line Format
     /// The format expects any number of lines of text formatted like:
     /// 1. `Line` = `ProductionName: CaseDefinition`
-    /// 1. `ProductionName` = `/[A-Z][a-z0-9_-]/`
+    /// 1. `ProductionName` = `/[A-Z][a-z0-9_-]*/`
     /// 1. `CaseDefinition` = `CaseHead( -> CaseHead)*`
     /// 1. `CaseHead` = `ProductionRef|Literal`
     /// 1. `ProductionRef` = `$ProductionName`
@@ -808,7 +811,7 @@ pub mod text_backend {
     ///   )
     /// );
     ///```
-    #[derive(Debug, Clone, Display)]
+    #[derive(Debug, Clone, Display, Eq, PartialEq, Hash)]
     #[ignore_extra_doc_attributes]
     pub struct SPTextFormat(String);
 
@@ -954,8 +957,79 @@ pub mod text_backend {
 
       type SerializeError = GrammarGrammarSerializationError;
       fn serialize(&self) -> Result<Self::Out, Self::SerializeError> {
-        todo!()
+        use itertools::Itertools; /* for intersperse() */
+        use lazy_static::lazy_static;
+
+        lazy_static! {
+          /* FIXME: remove this requirement and allow $$ as an escape for the $ character! */
+          static ref PROD: Regex = Regex::new("^[A-Z][a-z0-9_-]*$").unwrap();
+        }
+
+        let mut lines: Vec<String> = Vec::new();
+        for (cur_prod_ref, prod) in self.clone() {
+          for case in prod {
+            let mut case_elements: Vec<String> = Vec::new();
+            for case_el in case {
+              match case_el {
+                CE::Lit(lit) => {
+                  case_elements.push(format!("<{0}>", lit.into_string().replace('>', ">>")));
+                },
+                CE::Prod(prod_ref) => {
+                  let prod_ref = prod_ref.into_string();
+                  if !PROD.is_match(&prod_ref) {
+                    return Err(GrammarGrammarSerializationError::InvalidProductionName(
+                      prod_ref, &PROD,
+                    ));
+                  }
+                  case_elements.push(format!("${0}", prod_ref));
+                },
+              }
+            }
+            let case_elements: String = case_elements
+              .into_iter()
+              .intersperse(" -> ".to_string())
+              .collect();
+            let case_line = format!("{0}: {1}", cur_prod_ref.into_string(), case_elements);
+            lines.push(case_line);
+          }
+        }
+
+        let lines: String = lines.into_iter().intersperse("\n".to_string()).collect();
+        Ok(SPTextFormat::from(lines))
       }
+    }
+
+    #[test]
+    fn test_serialize() {
+      let sp = SP::from(
+        [(
+          ProductionReference::from("A"),
+          Production::from(
+            [
+              Case::from([CE::Lit(Lit::from("a"))].as_ref()),
+              Case::from(
+                [
+                  CE::Prod(ProductionReference::from("A")),
+                  CE::Lit(Lit::from("b")),
+                ]
+                .as_ref(),
+              ),
+            ]
+            .as_ref(),
+          ),
+        )]
+        .as_ref(),
+      );
+
+      assert_eq!(
+        sp.serialize().unwrap(),
+        SPTextFormat::from(
+          "\
+A: <a>
+A: $A -> <b>"
+            .to_string()
+        )
+      );
     }
 
     #[test]
