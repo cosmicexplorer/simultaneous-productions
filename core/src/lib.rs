@@ -670,7 +670,7 @@ pub mod text_backend {
       static ref LINE: Regex =
         Regex::new("^(?P<prod>[A-Z][a-z0-9_-]*):[[:space:]]*(?P<rest>.+)$").unwrap();
       static ref CASE: Regex = Regex::new(
-        "^(?P<head>\\$[A-Z][a-z0-9_-]*|<[^>]*>)(?:[[:space:]]*->[[:space:]]*(?P<tail>.+))?$"
+        "^(?P<head>\\$[A-Z][a-z0-9_-]*|<(?:[^>]|>>)*>)(?:[[:space:]]*->[[:space:]]*(?P<tail>.+))?$"
       )
       .unwrap();
     }
@@ -693,9 +693,31 @@ pub mod text_backend {
         if case_el.starts_with('$') {
           CE::Prod(ProductionReference::from(&case_el[1..]))
         } else {
+          /* (1) Strip the <> markers. */
           assert!(case_el.starts_with('<'));
           assert!(case_el.ends_with('>'));
-          CE::Lit(Lit::from(&case_el[1..(case_el.len() - 1)]))
+          let case_el = &case_el[1..(case_el.len() - 1)];
+          /* (2) Un-escape any doubled '>>', which should be the only case where '>' remains in the
+           * input. */
+          let mut prior_right_arrow: bool = false;
+          let mut chars: Vec<char> = Vec::new();
+          for c in case_el.chars() {
+            if c == '>' {
+              if prior_right_arrow {
+                chars.push(c);
+                prior_right_arrow = false;
+              } else {
+                prior_right_arrow = true;
+              }
+            } else {
+              if prior_right_arrow {
+                unreachable!("no unduplicated '>' should be here!");
+              }
+              chars.push(c);
+            }
+          }
+          let chars: &[char] = chars.as_ref();
+          CE::Lit(Lit::from(chars))
         }
       }
 
@@ -734,6 +756,25 @@ pub mod text_backend {
       })
       .collect();
     SP::from(&cases[..])
+  }
+
+  #[test]
+  fn test_escaped_backslashes() {
+    let sp = parse_sp_text_format(
+      "\
+A: <a>>b>",
+    );
+
+    assert_eq!(
+      sp,
+      SP::from(
+        [(
+          ProductionReference::from("A"),
+          Production::from([Case::from([CE::Lit(Lit::from("a>b"))].as_ref())].as_ref())
+        )]
+        .as_ref()
+      )
+    );
   }
 
   pub fn non_cyclic_productions() -> SP {
@@ -790,8 +831,7 @@ B: $A -> <a>
     let sp = non_cyclic_productions();
     let grapher = gs::synthesis::SPGrapher(sp);
     let gb = grapher.build_graph();
-    let graphvizier::generator::DotOutput(output) =
-      gb.build(gv::Id::new("test_sp_graph"));
+    let graphvizier::generator::DotOutput(output) = gb.build(gv::Id::new("test_sp_graph"));
 
     assert_eq!(
       output,
@@ -871,8 +911,7 @@ P_2: $P_1 -> <bc>
     let sp = basic_productions();
     let grapher = gs::synthesis::SPGrapher(sp);
     let gb = grapher.build_graph();
-    let graphvizier::generator::DotOutput(output) =
-      gb.build(gv::Id::new("test_sp_graph"));
+    let graphvizier::generator::DotOutput(output) = gb.build(gv::Id::new("test_sp_graph"));
 
     assert_eq!(output, "digraph test_sp_graph {\n  compound = true;\n\n  subgraph prods {\n    label = \"Productions\";\n    cluster = true;\n    rank = same;\n\n    color = \"blue\";\n    fontcolor = \"blue\";\n    node [color=\"blue\", fontcolor=\"blue\", ];\n\n    prod_P_1[label=\"#P_1\", ];\n    prod_P_2[label=\"#P_2\", ];\n  }\n\n  subgraph P_1_prod {\n    label = \"Cases: \\#P_1\";\n    cluster = true;\n    rank = same;\n\n    color = \"purple\";\n    fontcolor = \"purple\";\n\n    subgraph P_1_case_0 {\n      label = \"0\";\n      cluster = true;\n      rank = same;\n\n      color = \"green4\";\n      fontcolor = \"green4\";\n\n      vertex_0[label=\"<abc>\", color=\"brown\", fontcolor=\"brown\", ];\n    }\n    subgraph P_1_case_1 {\n      label = \"1\";\n      cluster = true;\n      rank = same;\n\n      color = \"green4\";\n      fontcolor = \"green4\";\n\n      vertex_1[label=\"<a>\", color=\"brown\", fontcolor=\"brown\", ];\n      vertex_2[label=\"ref: P_1\", color=\"darkgoldenrod\", fontcolor=\"darkgoldenrod\", ];\n      vertex_3[label=\"<c>\", color=\"brown\", fontcolor=\"brown\", ];\n    }\n    subgraph P_1_case_2 {\n      label = \"2\";\n      cluster = true;\n      rank = same;\n\n      color = \"green4\";\n      fontcolor = \"green4\";\n\n      vertex_4[label=\"<bc>\", color=\"brown\", fontcolor=\"brown\", ];\n      vertex_5[label=\"ref: P_2\", color=\"darkgoldenrod\", fontcolor=\"darkgoldenrod\", ];\n    }\n  }\n\n  prod_P_1 -> vertex_0[color=\"red\", ];\n\n  vertex_0 -> prod_P_1[color=\"black\", ];\n\n  prod_P_1 -> vertex_1[color=\"red\", ];\n\n  vertex_2 -> prod_P_1[color=\"darkgoldenrod\", ];\n\n  vertex_1 -> vertex_2[color=\"aqua\", ];\n\n  vertex_2 -> vertex_3[color=\"aqua\", ];\n\n  vertex_3 -> prod_P_1[color=\"black\", ];\n\n  prod_P_1 -> vertex_4[color=\"red\", ];\n\n  vertex_5 -> prod_P_2[color=\"darkgoldenrod\", ];\n\n  vertex_4 -> vertex_5[color=\"aqua\", ];\n\n  vertex_5 -> prod_P_1[color=\"black\", ];\n\n  subgraph P_2_prod {\n    label = \"Cases: \\#P_2\";\n    cluster = true;\n    rank = same;\n\n    color = \"purple\";\n    fontcolor = \"purple\";\n\n    subgraph P_2_case_0 {\n      label = \"0\";\n      cluster = true;\n      rank = same;\n\n      color = \"green4\";\n      fontcolor = \"green4\";\n\n      vertex_6[label=\"ref: P_1\", color=\"darkgoldenrod\", fontcolor=\"darkgoldenrod\", ];\n    }\n    subgraph P_2_case_1 {\n      label = \"1\";\n      cluster = true;\n      rank = same;\n\n      color = \"green4\";\n      fontcolor = \"green4\";\n\n      vertex_7[label=\"ref: P_2\", color=\"darkgoldenrod\", fontcolor=\"darkgoldenrod\", ];\n    }\n    subgraph P_2_case_2 {\n      label = \"2\";\n      cluster = true;\n      rank = same;\n\n      color = \"green4\";\n      fontcolor = \"green4\";\n\n      vertex_8[label=\"ref: P_1\", color=\"darkgoldenrod\", fontcolor=\"darkgoldenrod\", ];\n      vertex_9[label=\"<bc>\", color=\"brown\", fontcolor=\"brown\", ];\n    }\n  }\n\n  vertex_6 -> prod_P_1[color=\"darkgoldenrod\", ];\n\n  prod_P_2 -> vertex_6[color=\"red\", ];\n\n  vertex_6 -> prod_P_2[color=\"black\", ];\n\n  vertex_7 -> prod_P_2[color=\"darkgoldenrod\", ];\n\n  prod_P_2 -> vertex_7[color=\"red\", ];\n\n  vertex_7 -> prod_P_2[color=\"black\", ];\n\n  vertex_8 -> prod_P_1[color=\"darkgoldenrod\", ];\n\n  prod_P_2 -> vertex_8[color=\"red\", ];\n\n  vertex_8 -> vertex_9[color=\"aqua\", ];\n\n  vertex_9 -> prod_P_2[color=\"black\", ];\n}\n");
   }
