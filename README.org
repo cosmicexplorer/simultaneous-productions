@@ -7,7 +7,7 @@
 - [ ] hack up a [[P.S. prototype]] and develop a pitch
   - the pitch should explain that i haven't published yet because i didn't want to get scooped on [[the real prize]]
 
-** code TODO [1/8]
+** code TODO [2/8]
 1. [X] remove ~no_std~ impl
 2. [-] graphviz for every intermediate graph in grammar processing! [2/3]
    1. [X] S.P. [2/2]
@@ -16,18 +16,18 @@
    2. [X] ~PreprocessedGrammar~
    3. [ ] ~ParseableGrammar~ [0/1]
       - [ ] first make parsing understand stack cycles!!!
-3. [-] text-based grammar input format (for generating test cases)! [3/4]
+3. [X] text-based grammar input format (for generating test cases)! [4/4]
    1. [X] make basic grammar format
    2. [X] expose it publicly!
    3. [X] make it support literal ~>~ chars!
       - *a single literal ~>~ is escaped by simply doubling it: ~>>~ becomes ~>~!*
         - this made more sense than needing to resort to a separate escape character such as backslash!
-   4. [-] make it go through ~SerializableGrammar~ [3/4]
+   4. [X] make it go through ~SerializableGrammar~ [4/4]
       1. [X] implement ~SP::parse()~
       2. [X] implement ~SP::serialize()~ [1/1]
          1. [X] make it accept any production name with doubled ~$$~ if needed!
       3. [X] put ~SerializableGrammar~ in ~grammar_specification::constraints~!
-      4. [ ] do ~proptest~ tests!!!
+      4. [X] do ~proptest~ tests!!!
 4. [ ] implement typed callbacks [0/4]
    1. [ ] execute a callback whenever a sub-parse succeeds
    2. [ ] signal parse failures
