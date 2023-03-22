@@ -75,7 +75,7 @@ pub mod grammar_specification {
 
     /// Necessary requirement to hash an object, but not e.g. to
     /// lexicographically sort it.
-    pub trait Hashable: Hash+Eq {}
+    pub trait Hashable: Hash + Eq {}
   }
 
   /// Grammar components which expand into exactly one specific token.
@@ -161,11 +161,11 @@ pub mod grammar_specification {
     where
       Tok: fmt::Display,
       ID: fmt::Display,
-      PR: ProductionReference<ID=ID>+Into<ID>+Clone,
-      Lit: Literal<Tok=Tok>+IntoIterator<Item=Tok>,
-      C: Case<PR=PR>+IntoIterator<Item=CaseElement<Lit, PR>>,
-      P: Production<C=C>+IntoIterator<Item=C>,
-      SP: SimultaneousProductions<P=P>+IntoIterator<Item=(PR, P)>,
+      PR: ProductionReference<ID = ID> + Into<ID> + Clone,
+      Lit: Literal<Tok = Tok> + IntoIterator<Item = Tok>,
+      C: Case<PR = PR> + IntoIterator<Item = CaseElement<Lit, PR>>,
+      P: Production<C = C> + IntoIterator<Item = C>,
+      SP: SimultaneousProductions<P = P> + IntoIterator<Item = (PR, P)>,
     {
       fn build_graph(self) -> graphvizier::generator::GraphBuilder {
         let mut gb = graphvizier::generator::GraphBuilder::new();
@@ -388,21 +388,26 @@ pub mod execution {
     impl<ST, I> STIterator<ST, I> {
       /// Create a new instance from a [`Transformer`] `ST` and an [`Iterator`]
       /// `I`.
-      pub fn new(state: ST, iter: I) -> Self { Self { state, iter } }
+      pub fn new(state: ST, iter: I) -> Self {
+        Self { state, iter }
+      }
     }
 
     impl<ST, I> From<I> for STIterator<ST, I>
-    where ST: Default
+    where
+      ST: Default,
     {
-      fn from(value: I) -> Self { Self::new(ST::default(), value) }
+      fn from(value: I) -> Self {
+        Self::new(ST::default(), value)
+      }
     }
 
     impl<ST, I, II, O, OO, R> Iterator for STIterator<ST, I>
     where
-      I: Input<InChunk=II>+Iterator<Item=II>,
-      O: Output<OutChunk=OO>+Iterator<Item=OO>,
+      I: Input<InChunk = II> + Iterator<Item = II>,
+      O: Output<OutChunk = OO> + Iterator<Item = OO>,
       R: Into<Option<OO>>,
-      ST: Transformer<I=I, O=O, R=R>,
+      ST: Transformer<I = I, O = O, R = R>,
     {
       type Item = OO;
 
@@ -445,12 +450,12 @@ pub mod state {
     impl<Tok, Lit, ID, PR, C, P, SP> Init<SP>
     where
       Tok: gs::constraints::Hashable,
-      Lit: gs::direct::Literal<Tok=Tok>+IntoIterator<Item=Tok>,
-      ID: gs::constraints::Hashable+Clone,
-      PR: gs::indirect::ProductionReference<ID=ID>,
-      C: gs::synthesis::Case<PR=PR>+IntoIterator<Item=gs::synthesis::CaseElement<Lit, PR>>,
-      P: gs::synthesis::Production<C=C>+IntoIterator<Item=C>,
-      SP: gs::synthesis::SimultaneousProductions<P=P>+IntoIterator<Item=(PR, P)>,
+      Lit: gs::direct::Literal<Tok = Tok> + IntoIterator<Item = Tok>,
+      ID: gs::constraints::Hashable + Clone,
+      PR: gs::indirect::ProductionReference<ID = ID>,
+      C: gs::synthesis::Case<PR = PR> + IntoIterator<Item = gs::synthesis::CaseElement<Lit, PR>>,
+      P: gs::synthesis::Production<C = C> + IntoIterator<Item = C>,
+      SP: gs::synthesis::SimultaneousProductions<P = P> + IntoIterator<Item = (PR, P)>,
     {
       /// Create a [`gb::TokenGrammar`] and convert it to [`Detokenized`] for
       /// further preprocessing.
@@ -466,7 +471,9 @@ pub mod state {
     impl<Tok> Detokenized<Tok> {
       /// Create a [`gi::PreprocessedGrammar`] and convert it to [`Indexed`] for
       /// further preprocessing.
-      pub fn index(self) -> Indexed<Tok> { Indexed(gi::PreprocessedGrammar::new(self.0)) }
+      pub fn index(self) -> Indexed<Tok> {
+        Indexed(gi::PreprocessedGrammar::new(self.0))
+      }
     }
 
     /// Container for an immediately executable grammar.
@@ -474,7 +481,8 @@ pub mod state {
     pub struct Indexed<Tok>(pub gi::PreprocessedGrammar<Tok>);
 
     impl<Tok> Indexed<Tok>
-    where Tok: gs::constraints::Hashable+fmt::Debug+Clone
+    where
+      Tok: gs::constraints::Hashable + fmt::Debug + Clone,
     {
       /// Create a [`p::ParseableGrammar`] and convert to a parseable state.
       ///
@@ -506,7 +514,9 @@ pub mod state {
 
     impl<'a> Ready<'a> {
       #[allow(missing_docs)]
-      pub fn new(grammar: p::ParseableGrammar) -> Self { Self(grammar, PhantomData) }
+      pub fn new(grammar: p::ParseableGrammar) -> Self {
+        Self(grammar, PhantomData)
+      }
 
       /// "Detokenize" *(TODO: cite!)* the input and produce a [`p::Parse`]
       /// instance!
@@ -521,7 +531,9 @@ pub mod state {
 
     impl<'a> InProgress<'a> {
       #[allow(missing_docs)]
-      pub fn new(parse: p::Parse) -> Self { Self(parse, PhantomData) }
+      pub fn new(parse: p::Parse) -> Self {
+        Self(parse, PhantomData)
+      }
     }
   }
 }
@@ -565,7 +577,9 @@ pub mod text_backend {
       pub struct $type_name(<Vec<$item> as IntoIterator>::IntoIter);
 
       impl $type_name {
-        fn as_new_vec(&self) -> Vec<$item> { self.0.clone().collect() }
+        fn as_new_vec(&self) -> Vec<$item> {
+          self.0.clone().collect()
+        }
       }
 
       impl From<&[$item]> for $type_name {
@@ -577,21 +591,29 @@ pub mod text_backend {
       impl Iterator for $type_name {
         type Item = $item;
 
-        fn next(&mut self) -> Option<Self::Item> { self.0.next() }
+        fn next(&mut self) -> Option<Self::Item> {
+          self.0.next()
+        }
       }
 
       impl Hash for $type_name {
-        fn hash<H: Hasher>(&self, state: &mut H) { self.as_new_vec().hash(state); }
+        fn hash<H: Hasher>(&self, state: &mut H) {
+          self.as_new_vec().hash(state);
+        }
       }
 
       impl PartialEq for $type_name {
-        fn eq(&self, other: &Self) -> bool { self.as_new_vec() == other.as_new_vec() }
+        fn eq(&self, other: &Self) -> bool {
+          self.as_new_vec() == other.as_new_vec()
+        }
       }
 
       impl Eq for $type_name {}
 
       impl Default for $type_name {
-        fn default() -> Self { Self(Vec::new().into_iter()) }
+        fn default() -> Self {
+          Self(Vec::new().into_iter())
+        }
       }
     };
   }
@@ -615,7 +637,9 @@ pub mod text_backend {
       }
 
       impl $type_name {
-        pub fn into_string(&self) -> String { String::from_iter(self.0.clone()) }
+        pub fn into_string(&self) -> String {
+          String::from_iter(self.0.clone())
+        }
       }
     };
   }
@@ -661,7 +685,7 @@ pub mod text_backend {
     type P = Production;
   }
 
-  pub use grammar_grammar::parse_sp_text_format;
+  pub use grammar_grammar::{SPTextFormat, SerializableGrammar};
   pub mod grammar_grammar {
     use super::*;
 
@@ -677,6 +701,23 @@ pub mod text_backend {
       CaseMatchFailed(String, &'static Regex),
     }
 
+    #[derive(Debug, Display, Clone)]
+    pub enum GrammarGrammarSerializationError {}
+
+    pub trait SerializableGrammar {
+      type Out;
+
+      type ParseError;
+      fn parse(out: &Self::Out) -> Result<Self, Self::ParseError>
+      where
+        Self: Sized;
+
+      type SerializeError;
+      fn serialize(&self) -> Result<Self::Out, Self::SerializeError>;
+    }
+
+    /// grammar definition: "{0}"
+    ///
     /// Convert an EBNF-like syntax into an executable
     /// [`SimultaneousProductions`](gs::synthesis::SimultaneousProductions) instance!
     ///
@@ -702,13 +743,13 @@ pub mod text_backend {
     ///```
     /// use sp_core::text_backend::*;
     ///
-    /// let sp = parse_sp_text_format(
+    /// let sp = SP::parse(&SPTextFormat::from(
     ///   "\
     /// A: <ab>
     /// B: <ab> -> $A
     /// B: $A -> <a>
-    /// ",
-    /// ).unwrap();
+    /// ".to_string()
+    /// )).unwrap();
     ///
     /// assert_eq!(
     ///   sp,
@@ -751,10 +792,10 @@ pub mod text_backend {
     ///```
     /// use sp_core::text_backend::*;
     ///
-    /// let sp = parse_sp_text_format(
+    /// let sp = SP::parse(&SPTextFormat::from(
     ///   "\
-    /// A: <a>>b>",
-    /// ).unwrap();
+    /// A: <a>>b>".to_string()
+    /// )).unwrap();
     ///
     /// assert_eq!(
     ///   sp,
@@ -767,135 +808,166 @@ pub mod text_backend {
     ///   )
     /// );
     ///```
-    pub fn parse_sp_text_format(grammar: &str) -> Result<SP, GrammarGrammarParsingError> {
-      use indexmap::IndexMap;
-      use lazy_static::lazy_static;
+    #[derive(Debug, Clone, Display)]
+    #[ignore_extra_doc_attributes]
+    pub struct SPTextFormat(String);
 
-      lazy_static! {
-        static ref MAYBE_SPACE: Regex = Regex::new("^[[:space:]]*$").unwrap();
-        static ref LINE: Regex = Regex::new(
-          "^[[:space:]]*(?P<prod>[A-Z][a-z0-9_-]*):[[:space:]]*(?P<rest>.+)[[:space:]]*$"
-        ).unwrap();
-        static ref CASE: Regex = Regex::new(
-          "^(?P<head>\\$[A-Z][a-z0-9_-]*|<(?:[^>]|>>)*>)(?:[[:space:]]*->[[:space:]]*(?P<tail>.+))?[[:space:]]*$"
-        )
-        .unwrap();
+    impl From<String> for SPTextFormat {
+      fn from(s: String) -> Self {
+        Self(s)
       }
+    }
 
-      let mut cases: IndexMap<String, Vec<Vec<CE>>> = IndexMap::new();
+    impl AsRef<str> for SPTextFormat {
+      fn as_ref(&self) -> &str {
+        self.0.as_str()
+      }
+    }
 
-      for line in grammar.lines() {
-        /* LINE trims off any leading or trailing whitespace. */
-        let caps = match LINE.captures(line) {
-          Some(caps) => caps,
-          None => {
-            /* Ignore lines that are empty or contain only spaces. */
-            if MAYBE_SPACE.is_match(line) {
-              continue;
-            } else {
-              return Err(GrammarGrammarParsingError::LineMatchFailed(
-                line.to_string(),
-                &LINE,
-              ));
-            }
-          },
-        };
-        let prod = caps.name("prod").unwrap().as_str();
-        dbg!(prod);
-        let rest = caps.name("rest").unwrap().as_str();
+    impl SerializableGrammar for SP {
+      type Out = SPTextFormat;
 
-        let mut case_els: Vec<CE> = Vec::new();
-        dbg!(rest);
-        /* CASE trims off any trailing whitespace that wasn't caught by the LINE pattern. */
-        /* (This is likely due to longest-first matching.) */
-        let caps = CASE
-          .captures(rest)
-          .ok_or_else(|| GrammarGrammarParsingError::CaseMatchFailed(rest.to_string(), &CASE))?;
-        let head = caps.name("head").unwrap().as_str();
-        let mut tail = caps.name("tail").map(|c| c.as_str());
+      type ParseError = GrammarGrammarParsingError;
+      fn parse(out: &Self::Out) -> Result<Self, Self::ParseError>
+      where
+        Self: Sized,
+      {
+        use indexmap::IndexMap;
+        use lazy_static::lazy_static;
 
-        fn parse_case_element(case_el: &str) -> CE {
-          if case_el.starts_with('$') {
-            CE::Prod(ProductionReference::from(&case_el[1..]))
-          } else {
-            /* (1) Strip the <> markers. */
-            assert!(case_el.starts_with('<'));
-            assert!(case_el.ends_with('>'));
-            let case_el = &case_el[1..(case_el.len() - 1)];
-            /* (2) Un-escape any doubled '>>', which should be the only case where '>' remains in
-             * the input. */
-            let mut prior_right_arrow: bool = false;
-            let mut chars: Vec<char> = Vec::new();
-            for c in case_el.chars() {
-              if c == '>' {
-                if prior_right_arrow {
-                  chars.push(c);
-                  prior_right_arrow = false;
-                } else {
-                  prior_right_arrow = true;
-                }
-              } else {
-                if prior_right_arrow {
-                  /* This is an assertion and not an Err because this should have been
-                   * verified by the CASE regex. */
-                  unreachable!("no unduplicated '>' should be here!");
-                }
-                chars.push(c);
-              }
-            }
-            let chars: &[char] = chars.as_ref();
-            CE::Lit(Lit::from(chars))
-          }
+        let grammar: &str = out.as_ref();
+
+        lazy_static! {
+          static ref MAYBE_SPACE: Regex = Regex::new("^[[:space:]]*$").unwrap();
+          static ref LINE: Regex = Regex::new(
+            "^[[:space:]]*(?P<prod>[A-Z][a-z0-9_-]*):[[:space:]]*(?P<rest>.+)[[:space:]]*$"
+          ).unwrap();
+          static ref CASE: Regex = Regex::new(
+            "^(?P<head>\\$[A-Z][a-z0-9_-]*|<(?:[^>]|>>)*>)(?:[[:space:]]*->[[:space:]]*(?P<tail>.+))?[[:space:]]*$"
+          )
+          .unwrap();
         }
 
-        let cur_ce = parse_case_element(head);
-        case_els.push(cur_ce);
+        let mut cases: IndexMap<String, Vec<Vec<CE>>> = IndexMap::new();
 
-        while let Some(cur_tail_nonempty) = tail {
-          dbg!(cur_tail_nonempty);
-          let caps = CASE.captures(cur_tail_nonempty).ok_or_else(|| {
-            GrammarGrammarParsingError::CaseMatchFailed(cur_tail_nonempty.to_string(), &CASE)
-          })?;
+        for line in grammar.lines() {
+          /* LINE trims off any leading or trailing whitespace. */
+          let caps = match LINE.captures(line) {
+            Some(caps) => caps,
+            None => {
+              /* Ignore lines that are empty or contain only spaces. */
+              if MAYBE_SPACE.is_match(line) {
+                continue;
+              } else {
+                return Err(GrammarGrammarParsingError::LineMatchFailed(
+                  line.to_string(),
+                  &LINE,
+                ));
+              }
+            },
+          };
+          let prod = caps.name("prod").unwrap().as_str();
+          dbg!(prod);
+          let rest = caps.name("rest").unwrap().as_str();
+
+          let mut case_els: Vec<CE> = Vec::new();
+          dbg!(rest);
+          /* CASE trims off any trailing whitespace that wasn't caught by the LINE pattern. */
+          /* (This is likely due to longest-first matching.) */
+          let caps = CASE
+            .captures(rest)
+            .ok_or_else(|| GrammarGrammarParsingError::CaseMatchFailed(rest.to_string(), &CASE))?;
           let head = caps.name("head").unwrap().as_str();
-          /* Mutate `tail` here, which will affect the `while` condition. */
-          tail = caps.name("tail").map(|c| c.as_str());
+          let mut tail = caps.name("tail").map(|c| c.as_str());
+
+          fn parse_case_element(case_el: &str) -> CE {
+            if case_el.starts_with('$') {
+              CE::Prod(ProductionReference::from(&case_el[1..]))
+            } else {
+              /* (1) Strip the <> markers. */
+              assert!(case_el.starts_with('<'));
+              assert!(case_el.ends_with('>'));
+              let case_el = &case_el[1..(case_el.len() - 1)];
+              /* (2) Un-escape any doubled '>>', which should be the only case where '>' remains in
+               * the input. */
+              let mut prior_right_arrow: bool = false;
+              let mut chars: Vec<char> = Vec::new();
+              for c in case_el.chars() {
+                if c == '>' {
+                  if prior_right_arrow {
+                    chars.push(c);
+                    prior_right_arrow = false;
+                  } else {
+                    prior_right_arrow = true;
+                  }
+                } else {
+                  if prior_right_arrow {
+                    /* This is an assertion and not an Err because this should have been
+                     * verified by the CASE regex. */
+                    unreachable!("no unduplicated '>' should be here!");
+                  }
+                  chars.push(c);
+                }
+              }
+              let chars: &[char] = chars.as_ref();
+              CE::Lit(Lit::from(chars))
+            }
+          }
 
           let cur_ce = parse_case_element(head);
           case_els.push(cur_ce);
+
+          while let Some(cur_tail_nonempty) = tail {
+            dbg!(cur_tail_nonempty);
+            let caps = CASE.captures(cur_tail_nonempty).ok_or_else(|| {
+              GrammarGrammarParsingError::CaseMatchFailed(cur_tail_nonempty.to_string(), &CASE)
+            })?;
+            let head = caps.name("head").unwrap().as_str();
+            /* Mutate `tail` here, which will affect the `while` condition. */
+            tail = caps.name("tail").map(|c| c.as_str());
+
+            let cur_ce = parse_case_element(head);
+            case_els.push(cur_ce);
+          }
+
+          cases
+            .entry(prod.to_string())
+            .or_insert_with(Vec::new)
+            .push(case_els);
         }
 
-        cases
-          .entry(prod.to_string())
-          .or_insert_with(Vec::new)
-          .push(case_els);
+        let cases: Vec<(ProductionReference, Production)> = cases
+          .into_iter()
+          .map(|(pr, prod)| {
+            let cases: Vec<Case> = prod
+              .into_iter()
+              .map(|case_els| Case::from(&case_els[..]))
+              .collect();
+            (
+              ProductionReference::from(pr.as_str()),
+              Production::from(&cases[..]),
+            )
+          })
+          .collect();
+        Ok(SP::from(&cases[..]))
       }
 
-      let cases: Vec<(ProductionReference, Production)> = cases
-        .into_iter()
-        .map(|(pr, prod)| {
-          let cases: Vec<Case> = prod
-            .into_iter()
-            .map(|case_els| Case::from(&case_els[..]))
-            .collect();
-          (
-            ProductionReference::from(pr.as_str()),
-            Production::from(&cases[..]),
-          )
-        })
-        .collect();
-      Ok(SP::from(&cases[..]))
+      type SerializeError = GrammarGrammarSerializationError;
+      fn serialize(&self) -> Result<Self::Out, Self::SerializeError> {
+        todo!()
+      }
     }
 
     #[test]
     fn test_empty() {
-      let sp = parse_sp_text_format("").unwrap();
+      let sp = SP::parse(&SPTextFormat::from("".to_string())).unwrap();
 
       assert_eq!(sp, SP::from([].as_ref()));
     }
 
     #[test]
     fn test_strips_whitespace() {
-      let sp = parse_sp_text_format(" A: <a> ").unwrap();
+      let sp = SP::parse(&SPTextFormat::from(" A: <a> ".to_string())).unwrap();
 
       assert_eq!(
         sp,
@@ -911,10 +983,11 @@ pub mod text_backend {
 
     #[test]
     fn test_escapes_double_right_arrow() {
-      let sp = parse_sp_text_format(
+      let sp = SP::parse(&SPTextFormat::from(
         "\
-A: <a>>b>",
-      )
+A: <a>>b>"
+          .to_string(),
+      ))
       .unwrap();
 
       assert_eq!(
@@ -931,7 +1004,7 @@ A: <a>>b>",
 
     #[test]
     fn test_production_ref() {
-      let sp = parse_sp_text_format("A: $B").unwrap();
+      let sp = SP::parse(&SPTextFormat::from("A: $B".to_string())).unwrap();
 
       assert_eq!(
         sp,
@@ -952,7 +1025,7 @@ A: <a>>b>",
 
     #[test]
     fn test_line_match_fail() {
-      match parse_sp_text_format("A = B") {
+      match SP::parse(&SPTextFormat::from("A = B".to_string())) {
         Err(GrammarGrammarParsingError::LineMatchFailed(line, _)) => {
           assert_eq!(&line, "A = B");
         },
@@ -962,7 +1035,7 @@ A: <a>>b>",
 
     #[test]
     fn test_case_match_fail() {
-      match parse_sp_text_format("A: asdf") {
+      match SP::parse(&SPTextFormat::from("A: asdf".to_string())) {
         Err(GrammarGrammarParsingError::CaseMatchFailed(case, _)) => {
           assert_eq!(&case, "asdf");
         },
@@ -1007,13 +1080,14 @@ A: <a>>b>",
 
   #[test]
   fn non_cyclic_parse() {
-    let sp = parse_sp_text_format(
+    let sp = SP::parse(&SPTextFormat::from(
       "\
 A: <ab>
 B: <ab> -> $A
 B: $A -> <a>
-",
-    )
+"
+      .to_string(),
+    ))
     .unwrap();
 
     assert_eq!(sp, non_cyclic_productions());
@@ -1085,7 +1159,7 @@ B: $A -> <a>
 
   #[test]
   fn basic_parse() {
-    let sp = parse_sp_text_format(
+    let sp = SP::parse(&SPTextFormat::from(
       "\
 P_1: <abc>
 P_1: <a> -> $P_1 -> <c>
@@ -1093,8 +1167,9 @@ P_1: <bc> -> $P_2
 P_2: $P_1
 P_2: $P_2
 P_2: $P_1 -> <bc>
-",
-    )
+"
+      .to_string(),
+    ))
     .unwrap();
 
     assert_eq!(sp, basic_productions());
