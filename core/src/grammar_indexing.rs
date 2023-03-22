@@ -809,22 +809,6 @@ pub struct PreprocessedGrammar<Tok> {
 }
 
 impl<Tok> PreprocessedGrammar<Tok> {
-  /// Intended to reduce visual clutter in the implementation of interval
-  /// production.
-  fn make_pos_neg_anon_steps(
-    cur_index: &mut usize,
-    anon_step_mapping: &mut IndexMap<AnonSym, UnflattenedProdCaseRef>,
-    cur_case: UnflattenedProdCaseRef,
-  ) -> (EpsilonGraphVertex, EpsilonGraphVertex) {
-    let the_sym = AnonSym(*cur_index);
-    *cur_index += 1;
-    anon_step_mapping.insert(the_sym, cur_case);
-    (
-      EpsilonGraphVertex::Anon(AnonStep::Positive(the_sym)),
-      EpsilonGraphVertex::Anon(AnonStep::Negative(the_sym)),
-    )
-  }
-
   /// TODO: document this great method!!!
   pub(crate) fn produce_terminals_interval_graph(
     grammar: gb::TokenGrammar<Tok>,
@@ -832,6 +816,20 @@ impl<Tok> PreprocessedGrammar<Tok> {
     EpsilonIntervalGraph,
     gb::InternedLookupTable<Tok, gc::TokRef>,
   ) {
+    fn make_pos_neg_anon_steps(
+      cur_index: &mut usize,
+      anon_step_mapping: &mut IndexMap<AnonSym, UnflattenedProdCaseRef>,
+      cur_case: UnflattenedProdCaseRef,
+    ) -> (EpsilonGraphVertex, EpsilonGraphVertex) {
+      let the_sym = AnonSym(*cur_index);
+      *cur_index += 1;
+      anon_step_mapping.insert(the_sym, cur_case);
+      (
+        EpsilonGraphVertex::Anon(AnonStep::Positive(the_sym)),
+        EpsilonGraphVertex::Anon(AnonStep::Negative(the_sym)),
+      )
+    }
+
     /* We would like to just accept a DetokenizedProductions here, but we call
      * this method directly in testing, and without the whole grammar object
      * the type ascription is ambiguous. */
@@ -839,6 +837,7 @@ impl<Tok> PreprocessedGrammar<Tok> {
     let gb::TokenGrammar {
       graph: production_graph,
       tokens,
+      groups,
     } = grammar;
     let prods = production_graph.into_index_map();
     /* We would really like to use .flat_map()s here, but it's not clear how to
@@ -861,7 +860,7 @@ impl<Tok> PreprocessedGrammar<Tok> {
           prod: *cur_prod_ref,
           case: cur_case_ref,
         };
-        let (pos_case_anon, neg_case_anon) = Self::make_pos_neg_anon_steps(
+        let (pos_case_anon, neg_case_anon) = make_pos_neg_anon_steps(
           &mut cur_anon_sym_index,
           &mut anon_step_mapping,
           UnflattenedProdCaseRef::Case(cur_prod_case),
@@ -878,44 +877,91 @@ impl<Tok> PreprocessedGrammar<Tok> {
             case: cur_case_ref,
             el: cur_el_ref,
           };
+
+          /* Helper methods! */
+          fn process_token(cur_pos: gc::TokenPosition, cur_elements: &mut Vec<EpsilonGraphVertex>) {
+            cur_elements.push(EpsilonGraphVertex::State(cur_pos));
+          }
+          fn process_prod_ref(
+            cur_anon_sym_index: &mut usize,
+            anon_step_mapping: &mut IndexMap<AnonSym, UnflattenedProdCaseRef>,
+            cur_elements: &mut Vec<EpsilonGraphVertex>,
+            all_intervals_from_this_case: &mut Vec<ContiguousNonterminalInterval>,
+            target_subprod_ref: gc::ProdRef,
+          ) {
+            /* Generate anonymous steps for the current subprod split. */
+            let (pos_anon, neg_anon) = make_pos_neg_anon_steps(
+              cur_anon_sym_index,
+              anon_step_mapping,
+              UnflattenedProdCaseRef::PassThrough,
+            );
+
+            /* Generate the interval terminating at the current subprod split. */
+            let mut interval_upto_subprod: Vec<EpsilonGraphVertex> =
+              Vec::with_capacity(cur_elements.len() + 2);
+            /* NB: we empty out the state of `cur_elements` here! */
+            interval_upto_subprod.extend(cur_elements.drain(..));
+            /* We /end/ this interval with a "start" vertex because this is going
+             * /into/ a subproduction! */
+            interval_upto_subprod.push(pos_anon);
+            interval_upto_subprod.push(EpsilonGraphVertex::Start(target_subprod_ref));
+            /* NB: Mutate the loop state! */
+            /* Start a new interval of nonterminals which must come after the current
+             * subprod split. */
+            /* We /start/ with an "end" vertex because this comes /out/ of a
+             * subproduction! */
+            cur_elements.push(EpsilonGraphVertex::End(target_subprod_ref));
+            cur_elements.push(neg_anon);
+            /* Register the interval we just cut off in the results list. */
+            all_intervals_from_this_case.push(ContiguousNonterminalInterval {
+              interval: interval_upto_subprod,
+            });
+          }
+          fn process_group(
+            cur_anon_sym_index: &mut usize,
+            anon_step_mapping: &mut IndexMap<AnonSym, UnflattenedProdCaseRef>,
+            cur_elements: &mut Vec<EpsilonGraphVertex>,
+            all_intervals_from_this_case: &mut Vec<ContiguousNonterminalInterval>,
+            groups: &IndexMap<gc::GroupRef, gc::ProdRef>,
+            target_group_ref: gc::GroupRef,
+          ) {
+            let target_prod_ref: gc::ProdRef = groups.get(&target_group_ref).unwrap().clone();
+            process_prod_ref(
+              cur_anon_sym_index,
+              anon_step_mapping,
+              cur_elements,
+              all_intervals_from_this_case,
+              target_prod_ref,
+            );
+          }
+
           match el {
             /* Continue the current interval of nonterminals. */
-            gc::CaseEl::Tok(_) => cur_elements.push(EpsilonGraphVertex::State(cur_pos)),
+            gc::CaseEl::Tok(_) => {
+              process_token(cur_pos, &mut cur_elements);
+            },
             /* The current case invokes a subproduction, so is split into two intervals
              * here, using anonymous symbols to keep track of where in
              * this case we jumped off of and where we can jump back
              * onto to satisfy this case of this production. */
             gc::CaseEl::Prod(target_subprod_ref) => {
-              /* Generate anonymous steps for the current subprod split. */
-              let (pos_anon, neg_anon) = Self::make_pos_neg_anon_steps(
+              process_prod_ref(
                 &mut cur_anon_sym_index,
                 &mut anon_step_mapping,
-                UnflattenedProdCaseRef::PassThrough,
+                &mut cur_elements,
+                &mut all_intervals_from_this_case,
+                *target_subprod_ref,
               );
-
-              /* Generate the interval terminating at the current subprod split. */
-              let mut interval_upto_subprod: Vec<EpsilonGraphVertex> =
-                Vec::with_capacity(cur_elements.len() + 2);
-              /* NB: we empty out the state of `cur_elements` here! */
-              interval_upto_subprod.extend(cur_elements.drain(..));
-              /* We /end/ this interval with a "start" vertex because this is going
-               * /into/ a subproduction! */
-              interval_upto_subprod.push(pos_anon);
-              interval_upto_subprod.push(EpsilonGraphVertex::Start(*target_subprod_ref));
-              /* NB: Mutate the loop state! */
-              /* Start a new interval of nonterminals which must come after the current
-               * subprod split. */
-              /* We /start/ with an "end" vertex because this comes /out/ of a
-               * subproduction! */
-              cur_elements.push(EpsilonGraphVertex::End(*target_subprod_ref));
-              cur_elements.push(neg_anon);
-              /* Register the interval we just cut off in the results list. */
-              all_intervals_from_this_case.push(ContiguousNonterminalInterval {
-                interval: interval_upto_subprod,
-              });
             },
-            gc::CaseEl::SM(_sm_ref) => {
-              todo!("can't handle sm ref yet")
+            gc::CaseEl::Group(target_group_ref) => {
+              process_group(
+                &mut cur_anon_sym_index,
+                &mut anon_step_mapping,
+                &mut cur_elements,
+                &mut all_intervals_from_this_case,
+                &groups,
+                *target_group_ref,
+              );
             },
           }
         }
@@ -1198,7 +1244,6 @@ mod tests {
     )
   }
 
-
   #[test]
   fn terminals_interval_graph() {
     let noncyclic_prods = non_cyclic_productions();
@@ -1280,63 +1325,72 @@ mod tests {
         .to_vec(),
     };
 
-    assert_eq!(noncyclic_interval_graph, EpsilonIntervalGraph {
-      all_intervals: [
-        a_0.clone(),
-        b_start_to_a_start_0.clone(),
-        a_end_to_b_end_0.clone(),
-        b_start_to_a_start_1.clone(),
-        a_end_to_b_end_1.clone(),
-      ]
-      .as_ref()
-      .to_vec(),
-      anon_step_mapping: [
-        (
-          AnonSym(0),
-          UnflattenedProdCaseRef::Case(gc::ProdCaseRef {
-            prod: gc::ProdRef(0),
-            case: gc::CaseRef(0)
-          })
-        ),
-        (
-          AnonSym(1),
-          UnflattenedProdCaseRef::Case(gc::ProdCaseRef {
-            prod: gc::ProdRef(1),
-            case: gc::CaseRef(0)
-          })
-        ),
-        (AnonSym(2), UnflattenedProdCaseRef::PassThrough),
-        (
-          AnonSym(3),
-          UnflattenedProdCaseRef::Case(gc::ProdCaseRef {
-            prod: gc::ProdRef(1),
-            case: gc::CaseRef(1)
-          })
-        ),
-        (AnonSym(4), UnflattenedProdCaseRef::PassThrough),
-      ]
-      .iter()
-      .cloned()
-      .collect::<IndexMap<_, _>>(),
-    });
+    assert_eq!(
+      noncyclic_interval_graph,
+      EpsilonIntervalGraph {
+        all_intervals: [
+          a_0.clone(),
+          b_start_to_a_start_0.clone(),
+          a_end_to_b_end_0.clone(),
+          b_start_to_a_start_1.clone(),
+          a_end_to_b_end_1.clone(),
+        ]
+        .as_ref()
+        .to_vec(),
+        anon_step_mapping: [
+          (
+            AnonSym(0),
+            UnflattenedProdCaseRef::Case(gc::ProdCaseRef {
+              prod: gc::ProdRef(0),
+              case: gc::CaseRef(0)
+            })
+          ),
+          (
+            AnonSym(1),
+            UnflattenedProdCaseRef::Case(gc::ProdCaseRef {
+              prod: gc::ProdRef(1),
+              case: gc::CaseRef(0)
+            })
+          ),
+          (AnonSym(2), UnflattenedProdCaseRef::PassThrough),
+          (
+            AnonSym(3),
+            UnflattenedProdCaseRef::Case(gc::ProdCaseRef {
+              prod: gc::ProdRef(1),
+              case: gc::CaseRef(1)
+            })
+          ),
+          (AnonSym(4), UnflattenedProdCaseRef::PassThrough),
+        ]
+        .iter()
+        .cloned()
+        .collect::<IndexMap<_, _>>(),
+      }
+    );
 
     /* Now check for indices. */
     let intervals_by_start_and_end = noncyclic_interval_graph.find_start_end_indices();
     assert_eq!(
       intervals_by_start_and_end,
       [
-        (a_prod, StartEndEpsilonIntervals {
-          start_epsilons: [a_0.clone()].as_ref().to_vec(),
-          end_epsilons: [a_end_to_b_end_0.clone(), a_end_to_b_end_1.clone()]
-            .as_ref()
-            .to_vec(),
-        },),
-        (b_prod, StartEndEpsilonIntervals {
-          start_epsilons: [b_start_to_a_start_0.clone(), b_start_to_a_start_1.clone()]
-            .as_ref()
-            .to_vec(),
-          end_epsilons: [].as_ref().to_vec(),
-        },),
+        (
+          a_prod,
+          StartEndEpsilonIntervals {
+            start_epsilons: [a_0.clone()].as_ref().to_vec(),
+            end_epsilons: [a_end_to_b_end_0.clone(), a_end_to_b_end_1.clone()]
+              .as_ref()
+              .to_vec(),
+          },
+        ),
+        (
+          b_prod,
+          StartEndEpsilonIntervals {
+            start_epsilons: [b_start_to_a_start_0.clone(), b_start_to_a_start_1.clone()]
+              .as_ref()
+              .to_vec(),
+            end_epsilons: [].as_ref().to_vec(),
+          },
+        ),
       ]
       .as_ref()
       .to_vec()
@@ -1352,10 +1406,13 @@ mod tests {
       anon_step_mapping,
     } = noncyclic_interval_graph.connect_all_vertices();
     /* There are no stack cycles in the noncyclic graph. */
-    assert_eq!(merged_stack_cycles, EpsilonNodeStateSubgraph {
-      vertex_mapping: IndexMap::new(),
-      trie_node_universe: [].as_ref().to_vec(),
-    });
+    assert_eq!(
+      merged_stack_cycles,
+      EpsilonNodeStateSubgraph {
+        vertex_mapping: IndexMap::new(),
+        trie_node_universe: [].as_ref().to_vec(),
+      }
+    );
     assert_eq!(
       anon_step_mapping,
       [
@@ -1525,183 +1582,186 @@ mod tests {
     let state::preprocessing::Detokenized::<char>(grammar) =
       state::preprocessing::Init(prods).try_index().unwrap();
     let (interval_graph, _) = PreprocessedGrammar::produce_terminals_interval_graph(grammar);
-    assert_eq!(&interval_graph, &EpsilonIntervalGraph {
-      all_intervals: [
-        ContiguousNonterminalInterval {
-          interval: [
-            EpsilonGraphVertex::Start(gc::ProdRef(0)),
-            EpsilonGraphVertex::Anon(AnonStep::Positive(AnonSym(0))),
-            EpsilonGraphVertex::State(new_token_position(0, 0, 0)),
-            EpsilonGraphVertex::State(new_token_position(0, 0, 1)),
-            EpsilonGraphVertex::State(new_token_position(0, 0, 2)),
-            EpsilonGraphVertex::Anon(AnonStep::Negative(AnonSym(0))),
-            EpsilonGraphVertex::End(gc::ProdRef(0)),
-          ]
-          .as_ref()
-          .to_vec(),
-        },
-        ContiguousNonterminalInterval {
-          interval: [
-            EpsilonGraphVertex::Start(gc::ProdRef(0)),
-            EpsilonGraphVertex::Anon(AnonStep::Positive(AnonSym(1))),
-            EpsilonGraphVertex::State(new_token_position(0, 1, 0)),
-            EpsilonGraphVertex::Anon(AnonStep::Positive(AnonSym(2))),
-            EpsilonGraphVertex::Start(gc::ProdRef(0)),
-          ]
-          .as_ref()
-          .to_vec(),
-        },
-        ContiguousNonterminalInterval {
-          interval: [
-            EpsilonGraphVertex::End(gc::ProdRef(0)),
-            EpsilonGraphVertex::Anon(AnonStep::Negative(AnonSym(2))),
-            EpsilonGraphVertex::State(new_token_position(0, 1, 2)),
-            EpsilonGraphVertex::Anon(AnonStep::Negative(AnonSym(1))),
-            EpsilonGraphVertex::End(gc::ProdRef(0)),
-          ]
-          .as_ref()
-          .to_vec(),
-        },
-        ContiguousNonterminalInterval {
-          interval: [
-            EpsilonGraphVertex::Start(gc::ProdRef(0)),
-            EpsilonGraphVertex::Anon(AnonStep::Positive(AnonSym(3))),
-            EpsilonGraphVertex::State(new_token_position(0, 2, 0)),
-            EpsilonGraphVertex::State(new_token_position(0, 2, 1)),
-            EpsilonGraphVertex::Anon(AnonStep::Positive(AnonSym(4))),
-            EpsilonGraphVertex::Start(gc::ProdRef(1)),
-          ]
-          .as_ref()
-          .to_vec(),
-        },
-        ContiguousNonterminalInterval {
-          interval: [
-            EpsilonGraphVertex::End(gc::ProdRef(1)),
-            EpsilonGraphVertex::Anon(AnonStep::Negative(AnonSym(4))),
-            EpsilonGraphVertex::Anon(AnonStep::Negative(AnonSym(3))),
-            EpsilonGraphVertex::End(gc::ProdRef(0)),
-          ]
-          .as_ref()
-          .to_vec(),
-        },
-        ContiguousNonterminalInterval {
-          interval: [
-            EpsilonGraphVertex::Start(gc::ProdRef(1)),
-            EpsilonGraphVertex::Anon(AnonStep::Positive(AnonSym(5))),
-            EpsilonGraphVertex::Anon(AnonStep::Positive(AnonSym(6))),
-            EpsilonGraphVertex::Start(gc::ProdRef(0)),
-          ]
-          .as_ref()
-          .to_vec(),
-        },
-        ContiguousNonterminalInterval {
-          interval: [
-            EpsilonGraphVertex::End(gc::ProdRef(0)),
-            EpsilonGraphVertex::Anon(AnonStep::Negative(AnonSym(6))),
-            EpsilonGraphVertex::Anon(AnonStep::Negative(AnonSym(5))),
-            EpsilonGraphVertex::End(gc::ProdRef(1)),
-          ]
-          .as_ref()
-          .to_vec(),
-        },
-        ContiguousNonterminalInterval {
-          interval: [
-            EpsilonGraphVertex::Start(gc::ProdRef(1)),
-            EpsilonGraphVertex::Anon(AnonStep::Positive(AnonSym(7))),
-            EpsilonGraphVertex::Anon(AnonStep::Positive(AnonSym(8))),
-            EpsilonGraphVertex::Start(gc::ProdRef(1)),
-          ]
-          .as_ref()
-          .to_vec(),
-        },
-        ContiguousNonterminalInterval {
-          interval: [
-            EpsilonGraphVertex::End(gc::ProdRef(1)),
-            EpsilonGraphVertex::Anon(AnonStep::Negative(AnonSym(8))),
-            EpsilonGraphVertex::Anon(AnonStep::Negative(AnonSym(7))),
-            EpsilonGraphVertex::End(gc::ProdRef(1)),
-          ]
-          .as_ref()
-          .to_vec(),
-        },
-        ContiguousNonterminalInterval {
-          interval: [
-            EpsilonGraphVertex::Start(gc::ProdRef(1)),
-            EpsilonGraphVertex::Anon(AnonStep::Positive(AnonSym(9))),
-            EpsilonGraphVertex::Anon(AnonStep::Positive(AnonSym(10))),
-            EpsilonGraphVertex::Start(gc::ProdRef(0)),
-          ]
-          .as_ref()
-          .to_vec(),
-        },
-        ContiguousNonterminalInterval {
-          interval: [
-            EpsilonGraphVertex::End(gc::ProdRef(0)),
-            EpsilonGraphVertex::Anon(AnonStep::Negative(AnonSym(10))),
-            EpsilonGraphVertex::State(new_token_position(1, 2, 1)),
-            EpsilonGraphVertex::State(new_token_position(1, 2, 2)),
-            EpsilonGraphVertex::Anon(AnonStep::Negative(AnonSym(9))),
-            EpsilonGraphVertex::End(gc::ProdRef(1)),
-          ]
-          .as_ref()
-          .to_vec(),
-        }
-      ]
-      .as_ref()
-      .to_vec(),
-      anon_step_mapping: [
-        (
-          AnonSym(0),
-          UnflattenedProdCaseRef::Case(gc::ProdCaseRef {
-            prod: gc::ProdRef(0),
-            case: gc::CaseRef(0)
-          })
-        ),
-        (
-          AnonSym(1),
-          UnflattenedProdCaseRef::Case(gc::ProdCaseRef {
-            prod: gc::ProdRef(0),
-            case: gc::CaseRef(1)
-          })
-        ),
-        (AnonSym(2), UnflattenedProdCaseRef::PassThrough),
-        (
-          AnonSym(3),
-          UnflattenedProdCaseRef::Case(gc::ProdCaseRef {
-            prod: gc::ProdRef(0),
-            case: gc::CaseRef(2)
-          })
-        ),
-        (AnonSym(4), UnflattenedProdCaseRef::PassThrough),
-        (
-          AnonSym(5),
-          UnflattenedProdCaseRef::Case(gc::ProdCaseRef {
-            prod: gc::ProdRef(1),
-            case: gc::CaseRef(0)
-          })
-        ),
-        (AnonSym(6), UnflattenedProdCaseRef::PassThrough),
-        (
-          AnonSym(7),
-          UnflattenedProdCaseRef::Case(gc::ProdCaseRef {
-            prod: gc::ProdRef(1),
-            case: gc::CaseRef(1)
-          })
-        ),
-        (AnonSym(8), UnflattenedProdCaseRef::PassThrough),
-        (
-          AnonSym(9),
-          UnflattenedProdCaseRef::Case(gc::ProdCaseRef {
-            prod: gc::ProdRef(1),
-            case: gc::CaseRef(2)
-          })
-        ),
-        (AnonSym(10), UnflattenedProdCaseRef::PassThrough),
-      ]
-      .iter()
-      .cloned()
-      .collect(),
-    });
+    assert_eq!(
+      &interval_graph,
+      &EpsilonIntervalGraph {
+        all_intervals: [
+          ContiguousNonterminalInterval {
+            interval: [
+              EpsilonGraphVertex::Start(gc::ProdRef(0)),
+              EpsilonGraphVertex::Anon(AnonStep::Positive(AnonSym(0))),
+              EpsilonGraphVertex::State(new_token_position(0, 0, 0)),
+              EpsilonGraphVertex::State(new_token_position(0, 0, 1)),
+              EpsilonGraphVertex::State(new_token_position(0, 0, 2)),
+              EpsilonGraphVertex::Anon(AnonStep::Negative(AnonSym(0))),
+              EpsilonGraphVertex::End(gc::ProdRef(0)),
+            ]
+            .as_ref()
+            .to_vec(),
+          },
+          ContiguousNonterminalInterval {
+            interval: [
+              EpsilonGraphVertex::Start(gc::ProdRef(0)),
+              EpsilonGraphVertex::Anon(AnonStep::Positive(AnonSym(1))),
+              EpsilonGraphVertex::State(new_token_position(0, 1, 0)),
+              EpsilonGraphVertex::Anon(AnonStep::Positive(AnonSym(2))),
+              EpsilonGraphVertex::Start(gc::ProdRef(0)),
+            ]
+            .as_ref()
+            .to_vec(),
+          },
+          ContiguousNonterminalInterval {
+            interval: [
+              EpsilonGraphVertex::End(gc::ProdRef(0)),
+              EpsilonGraphVertex::Anon(AnonStep::Negative(AnonSym(2))),
+              EpsilonGraphVertex::State(new_token_position(0, 1, 2)),
+              EpsilonGraphVertex::Anon(AnonStep::Negative(AnonSym(1))),
+              EpsilonGraphVertex::End(gc::ProdRef(0)),
+            ]
+            .as_ref()
+            .to_vec(),
+          },
+          ContiguousNonterminalInterval {
+            interval: [
+              EpsilonGraphVertex::Start(gc::ProdRef(0)),
+              EpsilonGraphVertex::Anon(AnonStep::Positive(AnonSym(3))),
+              EpsilonGraphVertex::State(new_token_position(0, 2, 0)),
+              EpsilonGraphVertex::State(new_token_position(0, 2, 1)),
+              EpsilonGraphVertex::Anon(AnonStep::Positive(AnonSym(4))),
+              EpsilonGraphVertex::Start(gc::ProdRef(1)),
+            ]
+            .as_ref()
+            .to_vec(),
+          },
+          ContiguousNonterminalInterval {
+            interval: [
+              EpsilonGraphVertex::End(gc::ProdRef(1)),
+              EpsilonGraphVertex::Anon(AnonStep::Negative(AnonSym(4))),
+              EpsilonGraphVertex::Anon(AnonStep::Negative(AnonSym(3))),
+              EpsilonGraphVertex::End(gc::ProdRef(0)),
+            ]
+            .as_ref()
+            .to_vec(),
+          },
+          ContiguousNonterminalInterval {
+            interval: [
+              EpsilonGraphVertex::Start(gc::ProdRef(1)),
+              EpsilonGraphVertex::Anon(AnonStep::Positive(AnonSym(5))),
+              EpsilonGraphVertex::Anon(AnonStep::Positive(AnonSym(6))),
+              EpsilonGraphVertex::Start(gc::ProdRef(0)),
+            ]
+            .as_ref()
+            .to_vec(),
+          },
+          ContiguousNonterminalInterval {
+            interval: [
+              EpsilonGraphVertex::End(gc::ProdRef(0)),
+              EpsilonGraphVertex::Anon(AnonStep::Negative(AnonSym(6))),
+              EpsilonGraphVertex::Anon(AnonStep::Negative(AnonSym(5))),
+              EpsilonGraphVertex::End(gc::ProdRef(1)),
+            ]
+            .as_ref()
+            .to_vec(),
+          },
+          ContiguousNonterminalInterval {
+            interval: [
+              EpsilonGraphVertex::Start(gc::ProdRef(1)),
+              EpsilonGraphVertex::Anon(AnonStep::Positive(AnonSym(7))),
+              EpsilonGraphVertex::Anon(AnonStep::Positive(AnonSym(8))),
+              EpsilonGraphVertex::Start(gc::ProdRef(1)),
+            ]
+            .as_ref()
+            .to_vec(),
+          },
+          ContiguousNonterminalInterval {
+            interval: [
+              EpsilonGraphVertex::End(gc::ProdRef(1)),
+              EpsilonGraphVertex::Anon(AnonStep::Negative(AnonSym(8))),
+              EpsilonGraphVertex::Anon(AnonStep::Negative(AnonSym(7))),
+              EpsilonGraphVertex::End(gc::ProdRef(1)),
+            ]
+            .as_ref()
+            .to_vec(),
+          },
+          ContiguousNonterminalInterval {
+            interval: [
+              EpsilonGraphVertex::Start(gc::ProdRef(1)),
+              EpsilonGraphVertex::Anon(AnonStep::Positive(AnonSym(9))),
+              EpsilonGraphVertex::Anon(AnonStep::Positive(AnonSym(10))),
+              EpsilonGraphVertex::Start(gc::ProdRef(0)),
+            ]
+            .as_ref()
+            .to_vec(),
+          },
+          ContiguousNonterminalInterval {
+            interval: [
+              EpsilonGraphVertex::End(gc::ProdRef(0)),
+              EpsilonGraphVertex::Anon(AnonStep::Negative(AnonSym(10))),
+              EpsilonGraphVertex::State(new_token_position(1, 2, 1)),
+              EpsilonGraphVertex::State(new_token_position(1, 2, 2)),
+              EpsilonGraphVertex::Anon(AnonStep::Negative(AnonSym(9))),
+              EpsilonGraphVertex::End(gc::ProdRef(1)),
+            ]
+            .as_ref()
+            .to_vec(),
+          }
+        ]
+        .as_ref()
+        .to_vec(),
+        anon_step_mapping: [
+          (
+            AnonSym(0),
+            UnflattenedProdCaseRef::Case(gc::ProdCaseRef {
+              prod: gc::ProdRef(0),
+              case: gc::CaseRef(0)
+            })
+          ),
+          (
+            AnonSym(1),
+            UnflattenedProdCaseRef::Case(gc::ProdCaseRef {
+              prod: gc::ProdRef(0),
+              case: gc::CaseRef(1)
+            })
+          ),
+          (AnonSym(2), UnflattenedProdCaseRef::PassThrough),
+          (
+            AnonSym(3),
+            UnflattenedProdCaseRef::Case(gc::ProdCaseRef {
+              prod: gc::ProdRef(0),
+              case: gc::CaseRef(2)
+            })
+          ),
+          (AnonSym(4), UnflattenedProdCaseRef::PassThrough),
+          (
+            AnonSym(5),
+            UnflattenedProdCaseRef::Case(gc::ProdCaseRef {
+              prod: gc::ProdRef(1),
+              case: gc::CaseRef(0)
+            })
+          ),
+          (AnonSym(6), UnflattenedProdCaseRef::PassThrough),
+          (
+            AnonSym(7),
+            UnflattenedProdCaseRef::Case(gc::ProdCaseRef {
+              prod: gc::ProdRef(1),
+              case: gc::CaseRef(1)
+            })
+          ),
+          (AnonSym(8), UnflattenedProdCaseRef::PassThrough),
+          (
+            AnonSym(9),
+            UnflattenedProdCaseRef::Case(gc::ProdCaseRef {
+              prod: gc::ProdRef(1),
+              case: gc::CaseRef(2)
+            })
+          ),
+          (AnonSym(10), UnflattenedProdCaseRef::PassThrough),
+        ]
+        .iter()
+        .cloned()
+        .collect(),
+      }
+    );
   }
 
   /* TODO: consider creating/using a generic tree diffing algorithm in case
@@ -2391,8 +2451,7 @@ mod tests {
     let state::preprocessing::Indexed(preprocessed_grammar) = detokenized.index();
 
     let gb = preprocessed_grammar.build_graph();
-    let graphvizier::generator::DotOutput(output) =
-      gb.build(gv::Id::new("test_graph"));
+    let graphvizier::generator::DotOutput(output) = gb.build(gv::Id::new("test_graph"));
 
     assert_eq!(output, "digraph test_graph {\n  compound = true;\n\n  epsilon_graph_vertex_phase_2_1[label=\"+!0!\", color=\"blue\", fontcolor=\"blue\", ];\n\n  epsilon_graph_vertex_phase_2_4[label=\"+!1!\", color=\"blue\", fontcolor=\"blue\", ];\n\n  epsilon_graph_vertex_phase_2_9[label=\"-!3!\", color=\"blue\", fontcolor=\"blue\", ];\n\n  epsilon_graph_vertex_phase_2_11[label=\"-!0!\", color=\"blue\", fontcolor=\"blue\", ];\n\n  epsilon_graph_vertex_phase_2_13[label=\"+!3!\", color=\"blue\", fontcolor=\"blue\", ];\n\n  epsilon_graph_vertex_phase_2_14[label=\"+!4!\", color=\"blue\", fontcolor=\"blue\", ];\n\n  epsilon_graph_vertex_phase_2_15[label=\"-!4!\", color=\"blue\", fontcolor=\"blue\", ];\n\n  epsilon_graph_vertex_phase_2_16[label=\"+!2!\", color=\"blue\", fontcolor=\"blue\", ];\n\n  epsilon_graph_vertex_phase_2_17[label=\"-!2!\", color=\"blue\", fontcolor=\"blue\", ];\n\n  epsilon_graph_vertex_phase_2_18[label=\"-!1!\", color=\"blue\", fontcolor=\"blue\", ];\n\n  subgraph border_vertices {\n    label = \"Borders\";\n    cluster = true;\n    rank = same;\n\n    color = \"purple\";\n    fontcolor = \"purple\";\n\n    epsilon_graph_vertex_phase_2_0[label=\"Start(0)\", color=\"brown\", fontcolor=\"brown\", ];\n    epsilon_graph_vertex_phase_2_3[label=\"Start(1)\", color=\"brown\", fontcolor=\"brown\", ];\n    epsilon_graph_vertex_phase_2_10[label=\"End(1)\", color=\"darkgoldenrod\", fontcolor=\"darkgoldenrod\", ];\n    epsilon_graph_vertex_phase_2_12[label=\"End(0)\", color=\"darkgoldenrod\", fontcolor=\"darkgoldenrod\", ];\n  }\n\n  subgraph state_vertices {\n    label = \"States\";\n    cluster = true;\n    rank = same;\n\n    color = \"green4\";\n    fontcolor = \"green4\";\n    node [color=\"green4\", fontcolor=\"green4\", ];\n\n    epsilon_graph_vertex_phase_2_2[label=\"0/0/0\", ];\n    epsilon_graph_vertex_phase_2_5[label=\"1/0/0\", ];\n    epsilon_graph_vertex_phase_2_6[label=\"0/0/1\", ];\n    epsilon_graph_vertex_phase_2_7[label=\"1/0/1\", ];\n    epsilon_graph_vertex_phase_2_8[label=\"1/1/1\", ];\n  }\n\n  epsilon_graph_vertex_phase_2_0 -> epsilon_graph_vertex_phase_2_1[color=\"aqua\", ];\n\n  epsilon_graph_vertex_phase_2_1 -> epsilon_graph_vertex_phase_2_2[color=\"aqua\", ];\n\n  epsilon_graph_vertex_phase_2_3 -> epsilon_graph_vertex_phase_2_4[color=\"aqua\", ];\n\n  epsilon_graph_vertex_phase_2_4 -> epsilon_graph_vertex_phase_2_5[color=\"aqua\", ];\n\n  epsilon_graph_vertex_phase_2_2 -> epsilon_graph_vertex_phase_2_6[color=\"aqua\", ];\n\n  epsilon_graph_vertex_phase_2_5 -> epsilon_graph_vertex_phase_2_7[color=\"aqua\", ];\n\n  epsilon_graph_vertex_phase_2_8 -> epsilon_graph_vertex_phase_2_9[color=\"aqua\", ];\n\n  epsilon_graph_vertex_phase_2_9 -> epsilon_graph_vertex_phase_2_10[color=\"aqua\", ];\n\n  epsilon_graph_vertex_phase_2_6 -> epsilon_graph_vertex_phase_2_11[color=\"aqua\", ];\n\n  epsilon_graph_vertex_phase_2_11 -> epsilon_graph_vertex_phase_2_12[color=\"aqua\", ];\n\n  epsilon_graph_vertex_phase_2_3 -> epsilon_graph_vertex_phase_2_13[color=\"aqua\", ];\n\n  epsilon_graph_vertex_phase_2_13 -> epsilon_graph_vertex_phase_2_14[color=\"aqua\", ];\n\n  epsilon_graph_vertex_phase_2_14 -> epsilon_graph_vertex_phase_2_0[color=\"aqua\", ];\n\n  epsilon_graph_vertex_phase_2_12 -> epsilon_graph_vertex_phase_2_15[color=\"aqua\", ];\n\n  epsilon_graph_vertex_phase_2_15 -> epsilon_graph_vertex_phase_2_8[color=\"aqua\", ];\n\n  epsilon_graph_vertex_phase_2_7 -> epsilon_graph_vertex_phase_2_16[color=\"aqua\", ];\n\n  epsilon_graph_vertex_phase_2_16 -> epsilon_graph_vertex_phase_2_0[color=\"aqua\", ];\n\n  epsilon_graph_vertex_phase_2_12 -> epsilon_graph_vertex_phase_2_17[color=\"aqua\", ];\n\n  epsilon_graph_vertex_phase_2_17 -> epsilon_graph_vertex_phase_2_18[color=\"aqua\", ];\n\n  epsilon_graph_vertex_phase_2_18 -> epsilon_graph_vertex_phase_2_10[color=\"aqua\", ];\n}\n")
   }
@@ -2406,8 +2465,7 @@ mod tests {
     let state::preprocessing::Indexed(preprocessed_grammar) = detokenized.index();
 
     let gb = preprocessed_grammar.build_graph();
-    let graphvizier::generator::DotOutput(output) =
-      gb.build(gv::Id::new("test_graph"));
+    let graphvizier::generator::DotOutput(output) = gb.build(gv::Id::new("test_graph"));
 
     assert_eq!(output, "digraph test_graph {\n  compound = true;\n\n  cyclic_epsilon_graph_vertex_1[label=\"+!7!\", color=\"blue\", fontcolor=\"blue\", ];\n\n  cyclic_epsilon_graph_vertex_2[label=\"+!8!\", color=\"blue\", fontcolor=\"blue\", ];\n\n  cyclic_epsilon_graph_vertex_4[label=\"-!8!\", color=\"blue\", fontcolor=\"blue\", ];\n\n  cyclic_epsilon_graph_vertex_5[label=\"-!7!\", color=\"blue\", fontcolor=\"blue\", ];\n\n  cyclic_epsilon_graph_vertex_7[label=\"+!2!\", color=\"blue\", fontcolor=\"blue\", ];\n\n  cyclic_epsilon_graph_vertex_9[label=\"+!1!\", color=\"blue\", fontcolor=\"blue\", ];\n\n  cyclic_epsilon_graph_vertex_11[label=\"-!1!\", color=\"blue\", fontcolor=\"blue\", ];\n\n  cyclic_epsilon_graph_vertex_13[label=\"-!2!\", color=\"blue\", fontcolor=\"blue\", ];\n\n  cyclic_epsilon_graph_vertex_14[label=\"-!4!\", color=\"blue\", fontcolor=\"blue\", ];\n\n  cyclic_epsilon_graph_vertex_15[label=\"-!3!\", color=\"blue\", fontcolor=\"blue\", ];\n\n  cyclic_epsilon_graph_vertex_16[label=\"-!6!\", color=\"blue\", fontcolor=\"blue\", ];\n\n  cyclic_epsilon_graph_vertex_17[label=\"-!5!\", color=\"blue\", fontcolor=\"blue\", ];\n\n  epsilon_graph_vertex_phase_2_0[label=\"+!0!\", color=\"blue\", fontcolor=\"blue\", ];\n\n  epsilon_graph_vertex_phase_2_2[label=\"+!3!\", color=\"blue\", fontcolor=\"blue\", ];\n\n  epsilon_graph_vertex_phase_2_9[label=\"+!5!\", color=\"blue\", fontcolor=\"blue\", ];\n\n  epsilon_graph_vertex_phase_2_10[label=\"+!6!\", color=\"blue\", fontcolor=\"blue\", ];\n\n  epsilon_graph_vertex_phase_2_11[label=\"+!9!\", color=\"blue\", fontcolor=\"blue\", ];\n\n  epsilon_graph_vertex_phase_2_12[label=\"+!10!\", color=\"blue\", fontcolor=\"blue\", ];\n\n  epsilon_graph_vertex_phase_2_13[label=\"-!9!\", color=\"blue\", fontcolor=\"blue\", ];\n\n  epsilon_graph_vertex_phase_2_14[label=\"-!0!\", color=\"blue\", fontcolor=\"blue\", ];\n\n  epsilon_graph_vertex_phase_2_15[label=\"-!10!\", color=\"blue\", fontcolor=\"blue\", ];\n\n  epsilon_graph_vertex_phase_2_16[label=\"+!4!\", color=\"blue\", fontcolor=\"blue\", ];\n\n  subgraph border_vertices {\n    label = \"Borders\";\n    cluster = true;\n    rank = same;\n\n    color = \"purple\";\n    fontcolor = \"purple\";\n\n    cyclic_epsilon_graph_vertex_0[label=\"Start(1)\", color=\"brown\", fontcolor=\"brown\", ];\n    cyclic_epsilon_graph_vertex_3[label=\"End(1)\", color=\"darkgoldenrod\", fontcolor=\"darkgoldenrod\", ];\n    cyclic_epsilon_graph_vertex_8[label=\"Start(0)\", color=\"brown\", fontcolor=\"brown\", ];\n    cyclic_epsilon_graph_vertex_12[label=\"End(0)\", color=\"darkgoldenrod\", fontcolor=\"darkgoldenrod\", ];\n  }\n\n  subgraph state_vertices {\n    label = \"States\";\n    cluster = true;\n    rank = same;\n\n    color = \"green4\";\n    fontcolor = \"green4\";\n    node [color=\"green4\", fontcolor=\"green4\", ];\n\n    cyclic_epsilon_graph_vertex_6[label=\"0/1/0\", ];\n    cyclic_epsilon_graph_vertex_10[label=\"0/1/2\", ];\n    epsilon_graph_vertex_phase_2_1[label=\"0/0/0\", ];\n    epsilon_graph_vertex_phase_2_3[label=\"0/2/0\", ];\n    epsilon_graph_vertex_phase_2_4[label=\"0/0/1\", ];\n    epsilon_graph_vertex_phase_2_5[label=\"0/2/1\", ];\n    epsilon_graph_vertex_phase_2_6[label=\"1/2/1\", ];\n    epsilon_graph_vertex_phase_2_7[label=\"1/2/2\", ];\n    epsilon_graph_vertex_phase_2_8[label=\"0/0/2\", ];\n  }\n\n  cyclic_epsilon_graph_vertex_8 -> epsilon_graph_vertex_phase_2_0[color=\"aqua\", ];\n\n  epsilon_graph_vertex_phase_2_0 -> epsilon_graph_vertex_phase_2_1[color=\"aqua\", ];\n\n  cyclic_epsilon_graph_vertex_8 -> cyclic_epsilon_graph_vertex_9[color=\"aqua\", ];\n\n  cyclic_epsilon_graph_vertex_9 -> cyclic_epsilon_graph_vertex_6[color=\"aqua\", ];\n\n  cyclic_epsilon_graph_vertex_8 -> epsilon_graph_vertex_phase_2_2[color=\"aqua\", ];\n\n  epsilon_graph_vertex_phase_2_2 -> epsilon_graph_vertex_phase_2_3[color=\"aqua\", ];\n\n  epsilon_graph_vertex_phase_2_1 -> epsilon_graph_vertex_phase_2_4[color=\"aqua\", ];\n\n  epsilon_graph_vertex_phase_2_3 -> epsilon_graph_vertex_phase_2_5[color=\"aqua\", ];\n\n  epsilon_graph_vertex_phase_2_6 -> epsilon_graph_vertex_phase_2_7[color=\"aqua\", ];\n\n  epsilon_graph_vertex_phase_2_4 -> epsilon_graph_vertex_phase_2_8[color=\"aqua\", ];\n\n  cyclic_epsilon_graph_vertex_10 -> cyclic_epsilon_graph_vertex_11[color=\"aqua\", ];\n\n  cyclic_epsilon_graph_vertex_11 -> cyclic_epsilon_graph_vertex_12[color=\"aqua\", ];\n\n  cyclic_epsilon_graph_vertex_0 -> epsilon_graph_vertex_phase_2_9[color=\"aqua\", ];\n\n  epsilon_graph_vertex_phase_2_9 -> epsilon_graph_vertex_phase_2_10[color=\"aqua\", ];\n\n  epsilon_graph_vertex_phase_2_10 -> cyclic_epsilon_graph_vertex_8[color=\"aqua\", ];\n\n  cyclic_epsilon_graph_vertex_0 -> epsilon_graph_vertex_phase_2_11[color=\"aqua\", ];\n\n  epsilon_graph_vertex_phase_2_11 -> epsilon_graph_vertex_phase_2_12[color=\"aqua\", ];\n\n  epsilon_graph_vertex_phase_2_12 -> cyclic_epsilon_graph_vertex_8[color=\"aqua\", ];\n\n  epsilon_graph_vertex_phase_2_7 -> epsilon_graph_vertex_phase_2_13[color=\"aqua\", ];\n\n  epsilon_graph_vertex_phase_2_13 -> cyclic_epsilon_graph_vertex_3[color=\"aqua\", ];\n\n  epsilon_graph_vertex_phase_2_8 -> epsilon_graph_vertex_phase_2_14[color=\"aqua\", ];\n\n  epsilon_graph_vertex_phase_2_14 -> cyclic_epsilon_graph_vertex_12[color=\"aqua\", ];\n\n  cyclic_epsilon_graph_vertex_6 -> cyclic_epsilon_graph_vertex_7[color=\"aqua\", ];\n\n  cyclic_epsilon_graph_vertex_7 -> cyclic_epsilon_graph_vertex_8[color=\"aqua\", ];\n\n  cyclic_epsilon_graph_vertex_12 -> epsilon_graph_vertex_phase_2_15[color=\"aqua\", ];\n\n  epsilon_graph_vertex_phase_2_15 -> epsilon_graph_vertex_phase_2_6[color=\"aqua\", ];\n\n  cyclic_epsilon_graph_vertex_12 -> cyclic_epsilon_graph_vertex_16[color=\"aqua\", ];\n\n  cyclic_epsilon_graph_vertex_16 -> cyclic_epsilon_graph_vertex_17[color=\"aqua\", ];\n\n  cyclic_epsilon_graph_vertex_17 -> cyclic_epsilon_graph_vertex_3[color=\"aqua\", ];\n\n  cyclic_epsilon_graph_vertex_12 -> cyclic_epsilon_graph_vertex_13[color=\"aqua\", ];\n\n  cyclic_epsilon_graph_vertex_13 -> cyclic_epsilon_graph_vertex_10[color=\"aqua\", ];\n\n  cyclic_epsilon_graph_vertex_3 -> cyclic_epsilon_graph_vertex_14[color=\"aqua\", ];\n\n  cyclic_epsilon_graph_vertex_14 -> cyclic_epsilon_graph_vertex_15[color=\"aqua\", ];\n\n  cyclic_epsilon_graph_vertex_15 -> cyclic_epsilon_graph_vertex_12[color=\"aqua\", ];\n\n  epsilon_graph_vertex_phase_2_5 -> epsilon_graph_vertex_phase_2_16[color=\"aqua\", ];\n\n  epsilon_graph_vertex_phase_2_16 -> cyclic_epsilon_graph_vertex_0[color=\"aqua\", ];\n\n  cyclic_epsilon_graph_vertex_0 -> cyclic_epsilon_graph_vertex_1[color=\"red\", ];\n\n  cyclic_epsilon_graph_vertex_1 -> cyclic_epsilon_graph_vertex_2[color=\"red\", ];\n\n  cyclic_epsilon_graph_vertex_2 -> cyclic_epsilon_graph_vertex_0[color=\"red\", ];\n\n  cyclic_epsilon_graph_vertex_3 -> cyclic_epsilon_graph_vertex_4[color=\"red\", ];\n\n  cyclic_epsilon_graph_vertex_4 -> cyclic_epsilon_graph_vertex_5[color=\"red\", ];\n\n  cyclic_epsilon_graph_vertex_5 -> cyclic_epsilon_graph_vertex_3[color=\"red\", ];\n}\n")
   }

@@ -26,8 +26,15 @@ pub struct InternArena<T, R> {
   _x: PhantomData<R>,
 }
 
+impl<T, R> Default for InternArena<T, R> {
+  fn default() -> Self {
+    Self::new()
+  }
+}
+
 impl<T, R> fmt::Debug for InternArena<T, R>
-where T: fmt::Debug
+where
+  T: fmt::Debug,
 {
   fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
     write!(f, "InternArena({:?})", &self.obarray)
@@ -43,8 +50,18 @@ impl<T, R> InternArena<T, R> {
   }
 }
 
+impl<T, R> From<Vec<T>> for InternArena<T, R> {
+  fn from(value: Vec<T>) -> Self {
+    Self {
+      obarray: value,
+      _x: PhantomData,
+    }
+  }
+}
+
 impl<T, R> Clone for InternArena<T, R>
-where T: Clone
+where
+  T: Clone,
 {
   fn clone(&self) -> Self {
     Self {
@@ -55,19 +72,16 @@ where T: Clone
 }
 
 impl<T, R> InternArena<T, R>
-where R: From<usize>
+where
+  R: From<usize>,
 {
   pub fn intern_always_new_increasing(&mut self, x: T) -> R {
+    let new_element_index: usize = self.obarray.len();
     self.obarray.push(x);
-    let new_element_index: usize = self.obarray.len() - 1;
     new_element_index.into()
   }
-}
 
-impl<T, R> InternArena<T, R>
-where R: From<usize>
-{
-  pub fn into_vec(self) -> Vec<(R, T)> {
+  pub fn into_vec_with_keys(self) -> Vec<(R, T)> {
     let mut ret: Vec<(R, T)> = Vec::new();
     let pairs = self
       .obarray
@@ -79,14 +93,18 @@ where R: From<usize>
   }
 }
 
-impl<T, R> From<Vec<T>> for InternArena<T, R>
-where R: From<usize>
+impl<T, R> InternArena<T, R>
+where
+  R: AsRef<usize>,
 {
-  fn from(value: Vec<T>) -> Self {
-    Self {
-      obarray: value,
-      _x: PhantomData,
-    }
+  pub fn get(&self, key: &R) -> &T {
+    let key: &usize = key.as_ref();
+    &self.obarray[*key]
+  }
+
+  pub fn get_mut(&mut self, key: &R) -> &mut T {
+    let key: &usize = key.as_ref();
+    &mut self.obarray[*key]
   }
 }
 
@@ -95,9 +113,9 @@ where
   T: Eq,
   R: From<usize>,
 {
-  fn key_for(&self, x: &T) -> Option<R> { self.obarray.iter().position(|y| y == x).map(R::from) }
-
-  pub fn retrieve_intern(&self, x: &T) -> Option<R> { self.key_for(x) }
+  pub fn key_for(&self, x: &T) -> Option<R> {
+    self.obarray.iter().position(|y| y == x).map(R::from)
+  }
 
   pub fn intern_exclusive(&mut self, x: T) -> R {
     self
@@ -107,9 +125,12 @@ where
 }
 
 impl<T, R> PartialEq for InternArena<T, R>
-where T: Eq
+where
+  T: PartialEq,
 {
-  fn eq(&self, other: &Self) -> bool { self.obarray == other.obarray }
+  fn eq(&self, other: &Self) -> bool {
+    self.obarray.eq(&other.obarray)
+  }
 }
 
 impl<T, R> Eq for InternArena<T, R> where T: Eq {}

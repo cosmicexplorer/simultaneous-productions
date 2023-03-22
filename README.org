@@ -28,16 +28,17 @@
          1. [X] make it accept any production name with doubled ~$$~ if needed!
       3. [X] put ~SerializableGrammar~ in ~grammar_specification::constraints~!
       4. [X] do ~proptest~ tests!!!
-   5. [ ] extend the text grammar format to allow regex operators! [0/3]
-      1. [ ] suffix [0/4]
+   5. [-] extend the text grammar format to allow regex operators! [1/4]
+      1. [X] introduce ~Group~ as a ~CaseElement~!
+      2. [ ] enable grouping with arbitrary depth in ~SPTextFormat~
+         - e.g. ~(<ab> -> $A$)~ to group ~CaseHead~ lists
+      3. [ ] suffix [0/4]
          1. [ ] ~*~
          2. [ ] ~+~
          3. [ ] ~?~
          4. [ ] ~{n,m}~
-      2. [ ] literal
+      4. [ ] literal
          - e.g. ~/a(b)+/~, with ~//~ as a new type of ~CaseHead~
-      3. [ ] grouping
-         - e.g. ~(<ab> -> $A$)+~ to group ~Case~ lists
 4. [ ] implement typed callbacks [0/4]
    1. [ ] execute a callback whenever a sub-parse succeeds
    2. [ ] signal parse failures

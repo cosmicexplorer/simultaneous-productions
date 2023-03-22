@@ -115,7 +115,7 @@
 
 use crate::{
   grammar_specification::constraints::SerializableGrammar,
-  text_backend::{Case, Lit, Production, ProductionReference, CE, SP},
+  text_backend::{Case, Group, Lit, Production, ProductionReference, CE, SP},
 };
 
 use displaydoc::Display;
@@ -165,10 +165,11 @@ impl SerializableGrammar for SP {
     let grammar: &str = out.as_ref();
 
     lazy_static! {
-      static ref MAYBE_SPACE: Regex = Regex::new("^[[:space:]]*$").unwrap();
+      static ref EMPTY_SPACE: Regex = Regex::new("^[[:space:]]*$").unwrap();
       static ref LINE: Regex = Regex::new(
         "^[[:space:]]*(?P<prod>\\$(?:[^\\$]|\\$\\$)*\\$):[[:space:]]*(?P<rest>.+)[[:space:]]*$"
       ).unwrap();
+      /* FIXME: allow CASE to parse nested (!) pairs of grouping parens!!! */
       static ref CASE: Regex = Regex::new(
         "^(?P<head>\\$(?:[^\\$]|\\$\\$)*\\$|<(?:[^>]|>>)*>)(?:[[:space:]]*->[[:space:]]*(?P<tail>.+))?[[:space:]]*$"
       )
@@ -210,7 +211,7 @@ impl SerializableGrammar for SP {
         Some(caps) => caps,
         None => {
           /* Ignore lines that are empty or contain only spaces. */
-          if MAYBE_SPACE.is_match(line) {
+          if EMPTY_SPACE.is_match(line) {
             continue;
           } else {
             return Err(GrammarGrammarParsingError::LineMatchFailed(
@@ -296,14 +297,32 @@ impl SerializableGrammar for SP {
       for case in prod {
         let mut case_elements: Vec<String> = Vec::new();
         for case_el in case {
-          match case_el {
-            CE::Lit(lit) => {
-              case_elements.push(format!("<{0}>", lit.into_string().replace('>', ">>")));
-            },
-            CE::Prod(prod_ref) => {
-              case_elements.push(format!("${0}$", prod_ref.into_string().replace('$', "$$")));
-            },
+          fn format_lit(lit: Lit) -> String {
+            format!("<{0}>", lit.into_string().replace('>', ">>"))
           }
+          fn format_prod_ref(prod_ref: ProductionReference) -> String {
+            format!("${0}$", prod_ref.into_string().replace('$', "$$"))
+          }
+          fn format_group(group: Group) -> String {
+            let Group { elements } = group;
+            let joined_elements: String = elements
+              .into_iter()
+              .map(|group_el| match group_el {
+                CE::Lit(lit) => format_lit(lit),
+                CE::Prod(prod_ref) => format_prod_ref(prod_ref),
+                CE::Group(group) => format_group(group),
+              })
+              .intersperse(" -> ".to_string())
+              .collect();
+            format!("({0})", joined_elements)
+          }
+
+          let formatted_case_el = match case_el {
+            CE::Lit(lit) => format_lit(lit),
+            CE::Prod(prod_ref) => format_prod_ref(prod_ref),
+            CE::Group(group) => format_group(group),
+          };
+          case_elements.push(formatted_case_el);
         }
         let case_elements: String = case_elements
           .into_iter()

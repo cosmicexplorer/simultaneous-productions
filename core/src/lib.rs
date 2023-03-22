@@ -57,13 +57,13 @@
 /* Arc<Mutex> can be more clear than needing to grok Orderings. */
 #![allow(clippy::mutex_atomic)]
 
+pub mod grammar_grammar;
 mod grammar_indexing;
 mod interns;
 mod lowering_to_indices;
 mod parsing;
 mod reconstruction;
 pub mod text_backend;
-pub mod grammar_grammar;
 
 /// The basic traits which define an input *grammar* (TODO: link to paper!).
 ///
@@ -132,14 +132,22 @@ pub mod grammar_specification {
 
     use core::{fmt, iter::IntoIterator};
 
+    pub trait Group: IntoIterator + Sized {
+      type Lit: Literal;
+      type PR: ProductionReference;
+      type Item: Into<CaseElement<Self::Lit, Self::PR, Self>>;
+    }
+
     /// Each individual element that can be matched against some input in a
     /// case.
     #[derive(Debug, Display, Copy, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
-    pub enum CaseElement<Lit, PR> {
+    pub enum CaseElement<Lit, PR, Group> {
       /// literal value {0}
       Lit(Lit),
       /// production reference {0}
       Prod(PR),
+      /// group {0}
+      Group(Group),
     }
 
     /// A sequence of *elements* which, if successfully matched against some
@@ -149,8 +157,9 @@ pub mod grammar_specification {
       type Lit: Literal;
       /// References to productions used in this case.
       type PR: ProductionReference;
+      type Group: Group;
       /// Override of [Iterator::Item].
-      type Item: Into<CaseElement<Self::Lit, Self::PR>>;
+      type Item: Into<CaseElement<Self::Lit, Self::PR, Self::Group>>;
     }
 
     /// A disjunction of cases.
@@ -171,13 +180,14 @@ pub mod grammar_specification {
 
     pub struct SPGrapher<SP>(pub SP);
 
-    impl<Tok, ID, PR, Lit, C, P, SP> Graphable for SPGrapher<SP>
+    impl<Tok, ID, PR, Lit, G, C, P, SP> Graphable for SPGrapher<SP>
     where
       Tok: fmt::Display,
       ID: fmt::Display,
       PR: ProductionReference<ID = ID> + Into<ID> + Clone,
       Lit: Literal<Tok = Tok> + IntoIterator<Item = Tok>,
-      C: Case<PR = PR> + IntoIterator<Item = CaseElement<Lit, PR>>,
+      G: Group<Lit = Lit, PR = PR>,
+      C: Case<Lit = Lit, PR = PR, Group = G> + IntoIterator<Item = CaseElement<Lit, PR, G>>,
       P: Production<C = C> + IntoIterator<Item = C>,
       SP: SimultaneousProductions<P = P> + IntoIterator<Item = (PR, P)>,
     {
@@ -282,6 +292,8 @@ pub mod grammar_specification {
                     ..Default::default()
                   });
                 },
+                /* FIXME: do this!!! */
+                CaseElement::Group(_) => todo!("we still need to support groups in graphviz!"),
               }
 
               // See (2.1).
@@ -461,13 +473,16 @@ pub mod state {
     #[derive(Debug, Copy, Clone)]
     pub struct Init<SP>(pub SP);
 
-    impl<Tok, Lit, ID, PR, C, P, SP> Init<SP>
+    impl<Tok, Lit, ID, PR, Group, C, P, SP> Init<SP>
     where
       Tok: gs::constraints::Hashable,
       Lit: gs::direct::Literal<Tok = Tok> + IntoIterator<Item = Tok>,
       ID: gs::constraints::Hashable + Clone,
       PR: gs::indirect::ProductionReference<ID = ID>,
-      C: gs::synthesis::Case<PR = PR> + IntoIterator<Item = gs::synthesis::CaseElement<Lit, PR>>,
+      Group: gs::synthesis::Group<Lit = Lit, PR = PR>
+        + IntoIterator<Item = gs::synthesis::CaseElement<Lit, PR, Group>>,
+      C: gs::synthesis::Case<Lit = Lit, PR = PR, Group = Group>
+        + IntoIterator<Item = gs::synthesis::CaseElement<Lit, PR, Group>>,
       P: gs::synthesis::Production<C = C> + IntoIterator<Item = C>,
       SP: gs::synthesis::SimultaneousProductions<P = P> + IntoIterator<Item = (PR, P)>,
     {

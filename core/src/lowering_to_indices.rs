@@ -59,12 +59,22 @@ pub mod graph_coordinates {
       #[derive(Debug, Copy, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
       pub struct $type_name(pub $primitive);
 
+      impl AsRef<$primitive> for $type_name {
+        fn as_ref(&self) -> &$primitive {
+          &self.0
+        }
+      }
+
       impl From<$primitive> for $type_name {
-        fn from(value: $primitive) -> Self { Self(value) }
+        fn from(value: $primitive) -> Self {
+          Self(value)
+        }
       }
 
       impl From<$type_name> for $primitive {
-        fn from(value: $type_name) -> Self { value.0 }
+        fn from(value: $type_name) -> Self {
+          value.0
+        }
       }
 
       impl ::core::fmt::Display for $type_name {
@@ -110,13 +120,13 @@ pub mod graph_coordinates {
    */
   via_primitive![TokRef, usize];
 
-  via_primitive![SMRef, usize];
+  via_primitive![GroupRef, usize];
 
   #[derive(Debug, Copy, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
   pub enum CaseEl {
     Tok(TokRef),
     Prod(ProdRef),
-    SM(SMRef),
+    Group(GroupRef),
   }
 }
 
@@ -134,8 +144,26 @@ pub mod grammar_building {
 
     macro_rules! collection_type {
       ($type_name:ident, $collection_type:ty) => {
-        #[derive(Debug, PartialEq, Eq, Clone)]
+        #[derive(Debug, PartialEq, Eq, Clone, Default)]
         pub struct $type_name(pub $collection_type);
+
+        impl $type_name {
+          pub fn new() -> Self {
+            Self::default()
+          }
+        }
+      };
+    }
+
+    macro_rules! index_map_type {
+      ($type_name:ident, $collection_type:ty) => {
+        collection_type![$type_name, $collection_type];
+
+        impl $type_name {
+          pub fn into_index_map(self) -> $collection_type {
+            self.0
+          }
+        }
       };
     }
 
@@ -143,11 +171,9 @@ pub mod grammar_building {
 
     collection_type![Production, Vec<Case>];
 
-    collection_type![DetokenizedProductions, IndexMap<gc::ProdRef, Production>];
+    index_map_type![DetokenizedProductions, IndexMap<gc::ProdRef, Production>];
 
     impl DetokenizedProductions {
-      pub fn new() -> Self { Self(IndexMap::new()) }
-
       pub fn insert_new_production(&mut self, entry: (gc::ProdRef, Production)) {
         let (key, value) = entry;
         match self.0.insert_full(key, value) {
@@ -155,8 +181,6 @@ pub mod grammar_building {
           (_, None) => (),
         }
       }
-
-      pub fn into_index_map(self) -> IndexMap<gc::ProdRef, Production> { self.0 }
     }
 
     /// Merge an intern table with a mapping of locations in the input where the
@@ -170,7 +194,7 @@ pub mod grammar_building {
     impl<Tok, Key> PartialEq for InternedLookupTable<Tok, Key>
     where
       Tok: Eq,
-      Key: Hash+Eq,
+      Key: Hash + Eq,
     {
       fn eq(&self, other: &Self) -> bool {
         self.alphabet == other.alphabet && self.locations == other.locations
@@ -180,7 +204,7 @@ pub mod grammar_building {
     impl<Tok, Key> Eq for InternedLookupTable<Tok, Key>
     where
       Tok: Eq,
-      Key: Hash+Eq,
+      Key: Hash + Eq,
     {
     }
 
@@ -189,15 +213,19 @@ pub mod grammar_building {
       Tok: Eq,
       Key: From<usize>,
     {
-      pub fn retrieve_intern(&self, x: &Tok) -> Option<Key> { self.alphabet.retrieve_intern(x) }
+      pub fn key_for(&self, x: &Tok) -> Option<Key> {
+        self.alphabet.key_for(x)
+      }
 
-      pub fn intern_exclusive(&mut self, tok: Tok) -> Key { self.alphabet.intern_exclusive(tok) }
+      pub fn intern_exclusive(&mut self, tok: Tok) -> Key {
+        self.alphabet.intern_exclusive(tok)
+      }
     }
 
     impl<Tok, Key> InternedLookupTable<Tok, Key>
     where
       Tok: Eq,
-      Key: Hash+Eq,
+      Key: Hash + Eq,
     {
       pub fn insert_new_position(&mut self, entry: (Key, gc::TokenPosition)) {
         let (key, new_value) = entry;
@@ -218,7 +246,9 @@ pub mod grammar_building {
         }
       }
 
-      pub fn into_index_map(self) -> IndexMap<Key, Vec<gc::TokenPosition>> { self.locations }
+      pub fn into_index_map(self) -> IndexMap<Key, Vec<gc::TokenPosition>> {
+        self.locations
+      }
     }
   }
 
@@ -255,7 +285,8 @@ pub mod grammar_building {
     }
 
     impl<ID> fmt::Debug for GrammarConstructionError<ID>
-    where ID: fmt::Debug
+    where
+      ID: fmt::Debug,
     {
       fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self {
@@ -278,7 +309,8 @@ pub mod grammar_building {
     }
 
     impl<ID> PartialEq for GrammarConstructionError<ID>
-    where ID: Eq
+    where
+      ID: Eq,
     {
       fn eq(&self, other: &Self) -> bool {
         match (self, other) {
@@ -296,7 +328,8 @@ pub mod grammar_building {
     impl<ID> Eq for GrammarConstructionError<ID> where ID: Eq {}
 
     impl<ID> PartialOrd for GrammarConstructionError<ID>
-    where ID: PartialOrd+Eq
+    where
+      ID: PartialOrd + Eq,
     {
       fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
         self.get_id().partial_cmp(other.get_id())
@@ -304,19 +337,24 @@ pub mod grammar_building {
     }
 
     impl<ID> Ord for GrammarConstructionError<ID>
-    where ID: Ord
+    where
+      ID: Ord,
     {
-      fn cmp(&self, other: &Self) -> Ordering { self.get_id().cmp(other.get_id()) }
+      fn cmp(&self, other: &Self) -> Ordering {
+        self.get_id().cmp(other.get_id())
+      }
     }
 
     #[derive(Debug, Clone)]
     pub struct TokenGrammar<Tok> {
       pub graph: DetokenizedProductions,
       pub tokens: InternedLookupTable<Tok, gc::TokRef>,
+      pub groups: IndexMap<gc::GroupRef, gc::ProdRef>,
     }
 
     impl<Tok> PartialEq for TokenGrammar<Tok>
-    where Tok: Eq
+    where
+      Tok: Eq,
     {
       fn eq(&self, other: &Self) -> bool {
         self.graph == other.graph && self.tokens == other.tokens
@@ -326,7 +364,8 @@ pub mod grammar_building {
     impl<Tok> Eq for TokenGrammar<Tok> where Tok: Eq {}
 
     impl<Tok> TokenGrammar<Tok>
-    where Tok: gs::constraints::Hashable
+    where
+      Tok: gs::constraints::Hashable,
     {
       /// Walk productions and split literal strings.
       ///
@@ -336,15 +375,20 @@ pub mod grammar_building {
       ///    at.
       /// 2. Match up [ProductionReference]s to [ProdRef]s, or error
       ///    out.
-      pub fn new<Lit, ID, PR, C, P, SP>(sp: SP) -> Result<Self, GrammarConstructionError<ID>>
+      pub fn new<Lit, ID, PR, Group, C, P, SP>(sp: SP) -> Result<Self, GrammarConstructionError<ID>>
       where
-        Lit: gs::direct::Literal<Tok=Tok>+IntoIterator<Item=Tok>,
-        ID: gs::constraints::Hashable+Clone,
-        PR: gs::indirect::ProductionReference<ID=ID>,
-        C: gs::synthesis::Case<PR=PR>+IntoIterator<Item=gs::synthesis::CaseElement<Lit, PR>>,
-        P: gs::synthesis::Production<C=C>+IntoIterator<Item=C>,
-        SP: gs::synthesis::SimultaneousProductions<P=P>+IntoIterator<Item=(PR, P)>,
+        Lit: gs::direct::Literal<Tok = Tok> + IntoIterator<Item = Tok>,
+        ID: gs::constraints::Hashable + Clone,
+        PR: gs::indirect::ProductionReference<ID = ID>,
+        Group: gs::synthesis::Group<Lit = Lit, PR = PR>
+          + IntoIterator<Item = gs::synthesis::CaseElement<Lit, PR, Group>>,
+        C: gs::synthesis::Case<Lit = Lit, PR = PR, Group = Group>
+          + IntoIterator<Item = gs::synthesis::CaseElement<Lit, PR, Group>>,
+        P: gs::synthesis::Production<C = C> + IntoIterator<Item = C>,
+        SP: gs::synthesis::SimultaneousProductions<P = P> + IntoIterator<Item = (PR, P)>,
       {
+        use core::hash::Hash;
+
         let (all_prods, id_prod_mapping) = {
           let mut all_prods: InternArena<P, gc::ProdRef> = InternArena::new();
           let mut id_prod_mapping: IndexMap<ID, gc::ProdRef> = IndexMap::new();
@@ -355,65 +399,186 @@ pub mod grammar_building {
               return Err(GrammarConstructionError::DuplicateProductionId(id));
             }
           }
-          (all_prods.into_vec(), id_prod_mapping)
+          (all_prods.into_vec_with_keys(), id_prod_mapping)
         };
 
         // Collect all the tokens (splitting up literals) as we traverse the
         // productions. So literal strings are "flattened" into their individual
         // tokens.
         let mut tokens: InternedLookupTable<Tok, gc::TokRef> = InternedLookupTable::new();
+        /* Collect all the recursive groups, and replace them with CaseElement::GroupRef. */
+        let mut groups: InternArena<gc::ProdRef, gc::GroupRef> = InternArena::new();
         let mut ret_prods: DetokenizedProductions = DetokenizedProductions::new();
+        let mut group_prods_index: usize = all_prods.len();
 
-        for (prod_ref, prod) in all_prods.into_iter() {
+        for (cur_prod_ref, prod) in all_prods.into_iter() {
           let mut ret_cases: Vec<Case> = Vec::new();
           for (case_ind, case) in prod.into_iter().enumerate() {
-            let case_ref: gc::CaseRef = case_ind.into();
+            let cur_case_ref: gc::CaseRef = case_ind.into();
             let mut ret_els: Vec<gc::CaseEl> = Vec::new();
             /* We want to track the positions of each token within each literal as well,
              * so we can't directly use .enumerate() */
             let mut case_el_ind: usize = 0;
             for el in case.into_iter() {
+              /* Helper methods! */
+              fn process_lit<
+                Tok: Hash + Eq,
+                Lit: gs::direct::Literal<Tok = Tok> + IntoIterator<Item = Tok>,
+              >(
+                ret_els: &mut Vec<gc::CaseEl>,
+                tokens: &mut InternedLookupTable<Tok, gc::TokRef>,
+                case_el_ind: &mut usize,
+                cur_prod_ref: gc::ProdRef,
+                cur_case_ref: gc::CaseRef,
+                lit: Lit,
+              ) {
+                for tok in lit.into_iter() {
+                  let tok_ref = tokens.intern_exclusive(tok);
+
+                  ret_els.push(gc::CaseEl::Tok(tok_ref));
+
+                  let el_ref = gc::CaseElRef(*case_el_ind);
+                  *case_el_ind += 1;
+                  let cur_pos = gc::TokenPosition {
+                    prod: cur_prod_ref,
+                    case: cur_case_ref,
+                    el: el_ref,
+                  };
+                  tokens.insert_new_position((tok_ref, cur_pos));
+                }
+              }
+              fn process_prod_ref<
+                ID: gs::constraints::Hashable + Clone,
+                PR: gs::indirect::ProductionReference<ID = ID>,
+              >(
+                id_prod_mapping: &IndexMap<ID, gc::ProdRef>,
+                ret_els: &mut Vec<gc::CaseEl>,
+                case_el_ind: &mut usize,
+                target_prod_ref: PR,
+              ) -> Result<(), GrammarConstructionError<ID>> {
+                let id: ID = target_prod_ref.into();
+                let pr: gc::ProdRef = match id_prod_mapping.get(&id) {
+                  Some(pr) => *pr,
+                  None => {
+                    return Err(GrammarConstructionError::UnrecognizedProdRefId(id));
+                  },
+                };
+
+                ret_els.push(gc::CaseEl::Prod(pr));
+                *case_el_ind += 1;
+
+                Ok(())
+              }
+              fn process_group<
+                Tok: Hash + Eq,
+                Lit: gs::direct::Literal<Tok = Tok> + IntoIterator<Item = Tok>,
+                ID: gs::constraints::Hashable + Clone,
+                PR: gs::indirect::ProductionReference<ID = ID>,
+                Group: gs::synthesis::Group<Lit = Lit, PR = PR>
+                  + IntoIterator<Item = gs::synthesis::CaseElement<Lit, PR, Group>>,
+              >(
+                id_prod_mapping: &IndexMap<ID, gc::ProdRef>,
+                ret_prods: &mut DetokenizedProductions,
+                ret_els: &mut Vec<gc::CaseEl>,
+                tokens: &mut InternedLookupTable<Tok, gc::TokRef>,
+                group_prods_index: &mut usize,
+                groups: &mut InternArena<gc::ProdRef, gc::GroupRef>,
+                case_el_ind: &mut usize,
+                group: Group,
+              ) -> Result<(), GrammarConstructionError<ID>> {
+                let mut inner_ret_els: Vec<gc::CaseEl> = Vec::new();
+                let mut inner_case_el_ind: usize = 0;
+
+                let group_prod_ref = gc::ProdRef(*group_prods_index);
+                *group_prods_index += 1;
+                let only_case_ref = gc::CaseRef(0);
+                let group_id = groups.intern_always_new_increasing(group_prod_ref.clone());
+
+                for el in group.into_iter() {
+                  match el {
+                    gs::synthesis::CaseElement::Lit(lit) => {
+                      process_lit::<Tok, Lit>(
+                        &mut inner_ret_els,
+                        tokens,
+                        &mut inner_case_el_ind,
+                        group_prod_ref,
+                        only_case_ref,
+                        lit,
+                      );
+                    },
+                    gs::synthesis::CaseElement::Prod(target_prod_ref) => {
+                      process_prod_ref::<ID, PR>(
+                        &id_prod_mapping,
+                        &mut inner_ret_els,
+                        &mut inner_case_el_ind,
+                        target_prod_ref,
+                      )?;
+                    },
+                    gs::synthesis::CaseElement::Group(group) => {
+                      process_group::<Tok, Lit, ID, PR, Group>(
+                        id_prod_mapping,
+                        ret_prods,
+                        &mut inner_ret_els,
+                        tokens,
+                        group_prods_index,
+                        groups,
+                        &mut inner_case_el_ind,
+                        group,
+                      )?;
+                    },
+                  }
+                }
+
+                ret_prods
+                  .insert_new_production((group_prod_ref, Production(vec![Case(inner_ret_els)])));
+                ret_els.push(gc::CaseEl::Group(group_id));
+                *case_el_ind += 1;
+
+                Ok(())
+              }
+
               match el {
                 gs::synthesis::CaseElement::Lit(lit) => {
-                  for tok in lit.into_iter() {
-                    let tok_ref = tokens.intern_exclusive(tok);
-
-                    ret_els.push(gc::CaseEl::Tok(tok_ref));
-
-                    let el_ref: gc::CaseElRef = case_el_ind.into();
-                    let cur_pos = gc::TokenPosition {
-                      prod: prod_ref,
-                      case: case_ref,
-                      el: el_ref,
-                    };
-                    tokens.insert_new_position((tok_ref, cur_pos));
-
-                    case_el_ind += 1;
-                  }
+                  process_lit::<Tok, Lit>(
+                    &mut ret_els,
+                    &mut tokens,
+                    &mut case_el_ind,
+                    cur_prod_ref,
+                    cur_case_ref,
+                    lit,
+                  );
                 },
-                gs::synthesis::CaseElement::Prod(prod_ref) => {
-                  let id: ID = prod_ref.into();
-                  let pr: gc::ProdRef = match id_prod_mapping.get(&id) {
-                    Some(pr) => *pr,
-                    None => {
-                      return Err(GrammarConstructionError::UnrecognizedProdRefId(id));
-                    },
-                  };
-
-                  ret_els.push(gc::CaseEl::Prod(pr));
-
-                  case_el_ind += 1;
+                gs::synthesis::CaseElement::Prod(target_prod_ref) => {
+                  process_prod_ref::<ID, PR>(
+                    &id_prod_mapping,
+                    &mut ret_els,
+                    &mut case_el_ind,
+                    target_prod_ref,
+                  )?;
+                },
+                gs::synthesis::CaseElement::Group(group) => {
+                  process_group::<Tok, Lit, ID, PR, Group>(
+                    &id_prod_mapping,
+                    &mut ret_prods,
+                    &mut ret_els,
+                    &mut tokens,
+                    &mut group_prods_index,
+                    &mut groups,
+                    &mut case_el_ind,
+                    group,
+                  )?;
                 },
               }
             }
             ret_cases.push(Case(ret_els));
           }
-          ret_prods.insert_new_production((prod_ref, Production(ret_cases)));
+          ret_prods.insert_new_production((cur_prod_ref, Production(ret_cases)));
         }
 
         Ok(Self {
           graph: ret_prods,
           tokens,
+          groups: groups.into_vec_with_keys().into_iter().collect(),
         })
       }
     }
@@ -466,10 +631,14 @@ mod tests {
     ts.insert_new_position((a_ref, new_token_position(0, 0, 1)));
     ts.insert_new_position((b_ref, new_token_position(0, 0, 2)));
     ts.insert_new_position((c_ref, new_token_position(0, 0, 3)));
-    assert_eq!(grammar, gb::TokenGrammar {
-      graph: dt,
-      tokens: ts,
-    });
+    assert_eq!(
+      grammar,
+      gb::TokenGrammar {
+        graph: dt,
+        tokens: ts,
+        groups: Default::default(),
+      }
+    );
   }
 
   #[test]
@@ -528,10 +697,14 @@ mod tests {
     ts.insert_new_position((a_ref, new_token_position(1, 0, 0)));
     ts.insert_new_position((b_ref, new_token_position(1, 0, 1)));
     ts.insert_new_position((a_ref, new_token_position(1, 1, 1)));
-    assert_eq!(grammar, gb::TokenGrammar {
-      graph: dt,
-      tokens: ts,
-    });
+    assert_eq!(
+      grammar,
+      gb::TokenGrammar {
+        graph: dt,
+        tokens: ts,
+        groups: Default::default()
+      }
+    );
   }
 
   #[test]

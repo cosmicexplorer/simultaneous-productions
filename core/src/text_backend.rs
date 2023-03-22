@@ -156,13 +156,42 @@ impl gs::indirect::ProductionReference for ProductionReference {
   type ID = Self;
 }
 
-pub type CE = gs::synthesis::CaseElement<Lit, ProductionReference>;
+#[derive(Debug, Clone, Hash, PartialEq, Eq)]
+pub struct Group {
+  pub elements: Vec<CE>,
+}
+
+impl Default for Group {
+  fn default() -> Self {
+    Self {
+      elements: Vec::new(),
+    }
+  }
+}
+
+impl IntoIterator for Group {
+  type Item = CE;
+  type IntoIter = <Vec<Self::Item> as IntoIterator>::IntoIter;
+
+  fn into_iter(self) -> Self::IntoIter {
+    self.elements.into_iter()
+  }
+}
+
+impl gs::synthesis::Group for Group {
+  type Lit = Lit;
+  type PR = ProductionReference;
+  type Item = CE;
+}
+
+pub type CE = gs::synthesis::CaseElement<Lit, ProductionReference, Group>;
 
 into_iter![Case, CE];
 
 impl gs::synthesis::Case for Case {
   type Item = CE;
   type Lit = Lit;
+  type Group = Group;
   type PR = ProductionReference;
 }
 

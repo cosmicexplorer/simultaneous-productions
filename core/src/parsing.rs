@@ -226,7 +226,7 @@ impl ParseableGrammar {
 
     for tok in input.0.iter() {
       let tok_ref = tokens
-        .retrieve_intern(tok)
+        .key_for(tok)
         .ok_or_else(|| ParsingInputFailure::UnknownToken(tok.clone()))?;
       let tok_positions = tokens
         .get(tok_ref)
