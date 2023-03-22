@@ -178,7 +178,6 @@ pub struct ParseableGrammar {
   pub pairwise_state_transition_table: IndexMap<gi::StatePair, Vec<gi::StackDiffSegment>>,
   /// Provide available stack cycles to the parse engine.
   pub cyclic_subgraph: gi::EpsilonNodeStateSubgraph,
-  /* TODO: remove this; it appears to only be used in the (broken) parse reconstruction code. */
   pub anon_step_mapping: IndexMap<gi::AnonSym, gi::UnflattenedProdCaseRef>,
 }
 

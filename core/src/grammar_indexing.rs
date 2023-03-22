@@ -347,6 +347,7 @@ pub struct CyclicGraphDecomposition {
   pub cyclic_subgraph: EpsilonNodeStateSubgraph,
   /* TODO: is this an optimization, or is this info not in cyclic_subgraph itself? */
   pub pairwise_state_transitions: Vec<CompletedStatePairWithVertices>,
+  /* TODO: document how/why this is used in parse reco */
   pub anon_step_mapping: IndexMap<AnonSym, UnflattenedProdCaseRef>,
 }
 
