@@ -701,12 +701,6 @@ pub mod text_backend {
       CaseMatchFailed(String, &'static Regex),
     }
 
-    #[derive(Debug, Display, Error, Clone)]
-    pub enum GrammarGrammarSerializationError {
-      /// production name '{0}' didn't match PROD: '{1}'
-      InvalidProductionName(String, &'static Regex),
-    }
-
     pub trait SerializableGrammar {
       type Out;
 
@@ -727,17 +721,17 @@ pub mod text_backend {
     /// # Line Format
     /// The format expects any number of lines of text formatted like:
     /// 1. `Line` = `ProductionName: CaseDefinition`
-    /// 1. `ProductionName` = `/[A-Z][a-z0-9_-]*/`
+    /// 1. `ProductionName` = `/\$([^\$]|\$\$)*\$/`
     /// 1. `CaseDefinition` = `CaseHead( -> CaseHead)*`
     /// 1. `CaseHead` = `ProductionRef|Literal`
-    /// 1. `ProductionRef` = `$ProductionName`
+    /// 1. `ProductionRef` = `ProductionName`
     /// 1. `Literal` = `/<([^>]|>>)*>/`
     ///
     /// Each `Line` appends a new `CaseDefinition` to the list of [`Case`](Case)s registered for the
     /// production named `ProductionName`! Each case is a sequence of `CaseHead`s demarcated by the
-    /// ` -> ` literal, and each `CaseHead` may either be a `ProductionRef` (which consists of a `$`
-    /// literal before a `ProductionName`) or a `Literal`, which is a sequence of
-    /// unicode characters.
+    /// ` -> ` literal, and each `CaseHead` may either be a `ProductionRef` (which is just
+    /// a `ProductionName`) or a `Literal` (which is a sequence of
+    /// unicode characters).
     ///
     /// **Note that leading and trailing whitespace is trimmed from each line, and lines that are
     /// empty or contain only whitespace are skipped.**
@@ -748,9 +742,9 @@ pub mod text_backend {
     ///
     /// let sp = SP::parse(&SPTextFormat::from(
     ///   "\
-    /// A: <ab>
-    /// B: <ab> -> $A
-    /// B: $A -> <a>
+    /// $A$: <ab>
+    /// $B$: <ab> -> $A$
+    /// $B$: $A$ -> <a>
     /// ".to_string()
     /// )).unwrap();
     ///
@@ -790,21 +784,22 @@ pub mod text_backend {
     /// );
     ///```
     ///
-    /// ## Literal `>`
-    /// To form a single literal `>` character, provide `>>` within a `Literal`:
+    /// ## Literal `>` and `$`
+    /// To form a single literal `>` character, provide `>>` within a `Literal`. To form a single
+    /// literal `$` character for a production name, provide `$$` within a `ProductionName`:
     ///```
     /// use sp_core::text_backend::*;
     ///
     /// let sp = SP::parse(&SPTextFormat::from(
     ///   "\
-    /// A: <a>>b>".to_string()
+    /// $A$$B$: <a>>b>".to_string()
     /// )).unwrap();
     ///
     /// assert_eq!(
     ///   sp,
     ///   SP::from(
     ///     [(
-    ///       ProductionReference::from("A"),
+    ///       ProductionReference::from("A$B"),
     ///       Production::from([Case::from([CE::Lit(Lit::from("a>b"))].as_ref())].as_ref())
     ///     )]
     ///     .as_ref()
@@ -843,12 +838,39 @@ pub mod text_backend {
         lazy_static! {
           static ref MAYBE_SPACE: Regex = Regex::new("^[[:space:]]*$").unwrap();
           static ref LINE: Regex = Regex::new(
-            "^[[:space:]]*(?P<prod>[A-Z][a-z0-9_-]*):[[:space:]]*(?P<rest>.+)[[:space:]]*$"
+            "^[[:space:]]*(?P<prod>\\$(?:[^\\$]|\\$\\$)*\\$):[[:space:]]*(?P<rest>.+)[[:space:]]*$"
           ).unwrap();
           static ref CASE: Regex = Regex::new(
-            "^(?P<head>\\$[A-Z][a-z0-9_-]*|<(?:[^>]|>>)*>)(?:[[:space:]]*->[[:space:]]*(?P<tail>.+))?[[:space:]]*$"
+            "^(?P<head>\\$(?:[^\\$]|\\$\\$)*\\$|<(?:[^>]|>>)*>)(?:[[:space:]]*->[[:space:]]*(?P<tail>.+))?[[:space:]]*$"
           )
           .unwrap();
+        }
+
+        fn parse_doubled_escape(escape_char: char, s: &str) -> String {
+          /* (1) Strip the end marker. */
+          assert!(s.ends_with(escape_char));
+          let s = &s[..(s.len() - 1)];
+          dbg!(s);
+          /* (2) Un-escape any doubled `escape_char`. */
+          let mut prior_escape_char: bool = false;
+          let mut chars: Vec<char> = Vec::new();
+          for c in s.chars() {
+            if c == escape_char {
+              if prior_escape_char {
+                chars.push(c);
+                prior_escape_char = false;
+              } else {
+                prior_escape_char = true;
+              }
+            } else {
+              assert!(
+                !prior_escape_char,
+                "no undoubled escape char should be here!"
+              );
+              chars.push(c);
+            }
+          }
+          chars.into_iter().collect()
         }
 
         let mut cases: IndexMap<String, Vec<Vec<CE>>> = IndexMap::new();
@@ -871,6 +893,9 @@ pub mod text_backend {
           };
           let prod = caps.name("prod").unwrap().as_str();
           dbg!(prod);
+          assert!(prod.starts_with('$'));
+          let prod = parse_doubled_escape('$', &prod[1..]);
+          dbg!(&prod);
           let rest = caps.name("rest").unwrap().as_str();
 
           let mut case_els: Vec<CE> = Vec::new();
@@ -885,35 +910,12 @@ pub mod text_backend {
 
           fn parse_case_element(case_el: &str) -> CE {
             if case_el.starts_with('$') {
-              CE::Prod(ProductionReference::from(&case_el[1..]))
+              let prod_ref = parse_doubled_escape('$', &case_el[1..]);
+              CE::Prod(ProductionReference::from(prod_ref.as_str()))
             } else {
-              /* (1) Strip the <> markers. */
               assert!(case_el.starts_with('<'));
-              assert!(case_el.ends_with('>'));
-              let case_el = &case_el[1..(case_el.len() - 1)];
-              /* (2) Un-escape any doubled '>>', which should be the only case where '>' remains in
-               * the input. */
-              let mut prior_right_arrow: bool = false;
-              let mut chars: Vec<char> = Vec::new();
-              for c in case_el.chars() {
-                if c == '>' {
-                  if prior_right_arrow {
-                    chars.push(c);
-                    prior_right_arrow = false;
-                  } else {
-                    prior_right_arrow = true;
-                  }
-                } else {
-                  if prior_right_arrow {
-                    /* This is an assertion and not an Err because this should have been
-                     * verified by the CASE regex. */
-                    unreachable!("no unduplicated '>' should be here!");
-                  }
-                  chars.push(c);
-                }
-              }
-              let chars: &[char] = chars.as_ref();
-              CE::Lit(Lit::from(chars))
+              let lit = parse_doubled_escape('>', &case_el[1..]);
+              CE::Lit(Lit::from(lit.as_str()))
             }
           }
 
@@ -955,18 +957,13 @@ pub mod text_backend {
         Ok(SP::from(&cases[..]))
       }
 
-      type SerializeError = GrammarGrammarSerializationError;
+      type SerializeError = ();
       fn serialize(&self) -> Result<Self::Out, Self::SerializeError> {
         use itertools::Itertools; /* for intersperse() */
-        use lazy_static::lazy_static;
-
-        lazy_static! {
-          /* FIXME: remove this requirement and allow $$ as an escape for the $ character! */
-          static ref PROD: Regex = Regex::new("^[A-Z][a-z0-9_-]*$").unwrap();
-        }
 
         let mut lines: Vec<String> = Vec::new();
         for (cur_prod_ref, prod) in self.clone() {
+          let cur_prod_ref = cur_prod_ref.into_string().replace('$', "$$");
           for case in prod {
             let mut case_elements: Vec<String> = Vec::new();
             for case_el in case {
@@ -975,13 +972,7 @@ pub mod text_backend {
                   case_elements.push(format!("<{0}>", lit.into_string().replace('>', ">>")));
                 },
                 CE::Prod(prod_ref) => {
-                  let prod_ref = prod_ref.into_string();
-                  if !PROD.is_match(&prod_ref) {
-                    return Err(GrammarGrammarSerializationError::InvalidProductionName(
-                      prod_ref, &PROD,
-                    ));
-                  }
-                  case_elements.push(format!("${0}", prod_ref));
+                  case_elements.push(format!("${0}$", prod_ref.into_string().replace('$', "$$")));
                 },
               }
             }
@@ -989,7 +980,7 @@ pub mod text_backend {
               .into_iter()
               .intersperse(" -> ".to_string())
               .collect();
-            let case_line = format!("{0}: {1}", cur_prod_ref.into_string(), case_elements);
+            let case_line = format!("${0}$: {1}", cur_prod_ref, case_elements);
             lines.push(case_line);
           }
         }
@@ -1025,11 +1016,40 @@ pub mod text_backend {
         sp.serialize().unwrap(),
         SPTextFormat::from(
           "\
-A: <a>
-A: $A -> <b>"
+$A$: <a>
+$A$: $A$ -> <b>"
             .to_string()
         )
       );
+    }
+
+    #[test]
+    fn test_serialize_escapes_double_cash() {
+      let sp = SP::from(
+        [(
+          ProductionReference::from("A$A"),
+          Production::from(
+            [Case::from(
+              [
+                CE::Prod(ProductionReference::from("A$A")),
+                CE::Lit(Lit::from("b")),
+              ]
+              .as_ref(),
+            )]
+            .as_ref(),
+          ),
+        )]
+        .as_ref(),
+      );
+
+      let text_grammar = sp.serialize().unwrap();
+
+      assert_eq!(
+        &text_grammar,
+        &SPTextFormat::from("$A$$A$: $A$$A$ -> <b>".to_string())
+      );
+
+      assert_eq!(SP::parse(&text_grammar).unwrap(), sp);
     }
 
     #[test]
@@ -1041,7 +1061,7 @@ A: $A -> <b>"
 
     #[test]
     fn test_strips_whitespace() {
-      let sp = SP::parse(&SPTextFormat::from(" A: <a> ".to_string())).unwrap();
+      let sp = SP::parse(&SPTextFormat::from(" $A$: <a> ".to_string())).unwrap();
 
       assert_eq!(
         sp,
@@ -1057,12 +1077,7 @@ A: $A -> <b>"
 
     #[test]
     fn test_escapes_double_right_arrow() {
-      let sp = SP::parse(&SPTextFormat::from(
-        "\
-A: <a>>b>"
-          .to_string(),
-      ))
-      .unwrap();
+      let sp = SP::parse(&SPTextFormat::from("$A$: <a>>b>".to_string())).unwrap();
 
       assert_eq!(
         sp,
@@ -1074,11 +1089,13 @@ A: <a>>b>"
           .as_ref()
         )
       );
+
+      assert_eq!(sp.serialize().unwrap().as_ref(), "$A$: <a>>b>");
     }
 
     #[test]
     fn test_production_ref() {
-      let sp = SP::parse(&SPTextFormat::from("A: $B".to_string())).unwrap();
+      let sp = SP::parse(&SPTextFormat::from("$A$: $B$".to_string())).unwrap();
 
       assert_eq!(
         sp,
@@ -1109,7 +1126,7 @@ A: <a>>b>"
 
     #[test]
     fn test_case_match_fail() {
-      match SP::parse(&SPTextFormat::from("A: asdf".to_string())) {
+      match SP::parse(&SPTextFormat::from("$A$: asdf".to_string())) {
         Err(GrammarGrammarParsingError::CaseMatchFailed(case, _)) => {
           assert_eq!(&case, "asdf");
         },
@@ -1156,9 +1173,9 @@ A: <a>>b>"
   fn non_cyclic_parse() {
     let sp = SP::parse(&SPTextFormat::from(
       "\
-A: <ab>
-B: <ab> -> $A
-B: $A -> <a>
+$A$: <ab>
+$B$: <ab> -> $A$
+$B$: $A$ -> <a>
 "
       .to_string(),
     ))
@@ -1235,12 +1252,12 @@ B: $A -> <a>
   fn basic_parse() {
     let sp = SP::parse(&SPTextFormat::from(
       "\
-P_1: <abc>
-P_1: <a> -> $P_1 -> <c>
-P_1: <bc> -> $P_2
-P_2: $P_1
-P_2: $P_2
-P_2: $P_1 -> <bc>
+$P_1$: <abc>
+$P_1$: <a> -> $P_1$ -> <c>
+$P_1$: <bc> -> $P_2$
+$P_2$: $P_1$
+$P_2$: $P_2$
+$P_2$: $P_1$ -> <bc>
 "
       .to_string(),
     ))
