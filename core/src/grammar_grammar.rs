@@ -793,28 +793,28 @@ mod test {
     #[test]
     fn test_serde(sp in sp(false, false, 1, 20, 1, 5, 1, 5, 3)) {
       let text_grammar = sp.serialize().unwrap();
-      assert_eq!(sp, SP::parse(&text_grammar).unwrap());
+      prop_assert_eq!(sp, SP::parse(&text_grammar).unwrap());
     }
   }
   proptest! {
     #[test]
     fn test_serde_cash(sp in sp(true, false, 1, 20, 1, 5, 1, 5, 3)) {
       let text_grammar = sp.serialize().unwrap();
-      assert_eq!(sp, SP::parse(&text_grammar).unwrap());
+      prop_assert_eq!(sp, SP::parse(&text_grammar).unwrap());
     }
   }
   proptest! {
     #[test]
     fn test_serde_arrow(sp in sp(false, true, 1, 20, 1, 5, 1, 5, 3)) {
       let text_grammar = sp.serialize().unwrap();
-      assert_eq!(sp, SP::parse(&text_grammar).unwrap());
+      prop_assert_eq!(sp, SP::parse(&text_grammar).unwrap());
     }
   }
   proptest! {
     #[test]
     fn test_serde_cash_arrow(sp in sp(true, true, 1, 20, 1, 5, 1, 5, 3)) {
       let text_grammar = sp.serialize().unwrap();
-      assert_eq!(sp, SP::parse(&text_grammar).unwrap());
+      prop_assert_eq!(sp, SP::parse(&text_grammar).unwrap());
     }
   }
 
