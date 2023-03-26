@@ -156,16 +156,15 @@ impl gs::indirect::ProductionReference for ProductionReference {
   type ID = Self;
 }
 
-#[derive(Debug, Clone, Hash, PartialEq, Eq)]
+#[derive(Debug, Clone, Hash, PartialEq, Eq, Default)]
 pub struct Group {
   pub elements: Vec<CE>,
+  pub op: gs::synthesis::GroupOperator,
 }
 
-impl Default for Group {
-  fn default() -> Self {
-    Self {
-      elements: Vec::new(),
-    }
+impl AsRef<gs::synthesis::GroupOperator> for Group {
+  fn as_ref(&self) -> &gs::synthesis::GroupOperator {
+    &self.op
   }
 }
 

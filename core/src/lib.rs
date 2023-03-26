@@ -132,7 +132,16 @@ pub mod grammar_specification {
 
     use core::{fmt, iter::IntoIterator};
 
-    pub trait Group: IntoIterator + Sized {
+    #[derive(Debug, Display, Copy, Clone, PartialEq, Eq, Hash, PartialOrd, Ord, Default)]
+    pub enum GroupOperator {
+      #[default]
+      #[doc = ""]
+      NoOp,
+      /// ?
+      Optional,
+    }
+
+    pub trait Group: IntoIterator + AsRef<GroupOperator> + Sized {
       type Lit: Literal;
       type PR: ProductionReference;
       type Item: Into<CaseElement<Self::Lit, Self::PR, Self>>;

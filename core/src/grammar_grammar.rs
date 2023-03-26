@@ -114,6 +114,22 @@
 //! );
 //!```
 //!
+//! ## `->` are ignored
+//!```
+//! use sp_core::grammar_specification::constraints::SerializableGrammar;
+//! use sp_core::grammar_grammar::*;
+//! use sp_core::text_backend::*;
+//!
+//! let sp1 = SP::parse(&SPTextFormat::from(
+//!   "$A$: (<a> <b>) $C$".to_string()
+//! )).unwrap();
+//! let sp2 = SP::parse(&SPTextFormat::from(
+//!   "$A$: (<a> -> <b>) -> $C$".to_string()
+//! )).unwrap();
+//!
+//! assert_eq!(sp1, sp2);
+//!```
+//!
 //! ## Grouped Elements
 //!```
 //! use sp_core::grammar_specification::constraints::SerializableGrammar;
@@ -134,14 +150,17 @@
 //!       Production::from([
 //!         Case::from([CE::Group(Group {
 //!           elements: vec![CE::Lit(Lit::from("a"))],
+//!           ..Default::default()
 //!         })].as_ref()),
 //!         Case::from([CE::Group(Group {
 //!           elements: vec![
 //!             CE::Prod(ProductionReference::from("A")),
 //!             CE::Group(Group {
 //!               elements: vec![CE::Lit(Lit::from("b"))],
+//!               ..Default::default()
 //!             }),
 //!           ],
+//!           ..Default::default()
 //!         })].as_ref()),
 //!       ].as_ref())
 //!     )]
@@ -150,24 +169,80 @@
 //! );
 //!```
 //!
-//! ## `->` are ignored
+//! ### `?` operator
 //!```
 //! use sp_core::grammar_specification::constraints::SerializableGrammar;
+//! use sp_core::grammar_specification::synthesis::GroupOperator;
 //! use sp_core::grammar_grammar::*;
 //! use sp_core::text_backend::*;
 //!
-//! let sp1 = SP::parse(&SPTextFormat::from(
-//!   "$A$: (<a> <b>) $C$".to_string()
-//! )).unwrap();
-//! let sp2 = SP::parse(&SPTextFormat::from(
-//!   "$A$: (<a> -> <b>) -> $C$".to_string()
+//! let sp = SP::parse(&SPTextFormat::from(
+//!   "\
+//! $A$: <a>?
+//! $A$: <a>??
+//! $A$: (<a>)?
+//! $A$: (<a>?)
+//! $A$: (<a>?)?
+//! $A$: (<a> -> $B$?) -> <c>?".to_string()
 //! )).unwrap();
 //!
-//! assert_eq!(sp1, sp2);
+//! assert_eq!(
+//!   sp,
+//!   SP::from(
+//!     [(
+//!       ProductionReference::from("A"),
+//!       Production::from([
+//!         Case::from([CE::Group(Group {
+//!           elements: vec![CE::Lit(Lit::from("a"))],
+//!           op: GroupOperator::Optional,
+//!         })].as_ref()),
+//!         Case::from([CE::Group(Group {
+//!           elements: vec![CE::Lit(Lit::from("a"))],
+//!           op: GroupOperator::Optional,
+//!         })].as_ref()),
+//!         Case::from([CE::Group(Group {
+//!           elements: vec![CE::Lit(Lit::from("a"))],
+//!           op: GroupOperator::Optional,
+//!         })].as_ref()),
+//!         Case::from([CE::Group(Group {
+//!           elements: vec![CE::Group(Group {
+//!             elements: vec![CE::Lit(Lit::from("a"))],
+//!             op: GroupOperator::Optional,
+//!           })],
+//!           op: GroupOperator::NoOp,
+//!         })].as_ref()),
+//!         Case::from([CE::Group(Group {
+//!           elements: vec![CE::Group(Group {
+//!             elements: vec![CE::Lit(Lit::from("a"))],
+//!             op: GroupOperator::Optional,
+//!           })],
+//!           op: GroupOperator::Optional,
+//!         })].as_ref()),
+//!         Case::from([
+//!           CE::Group(Group {
+//!             elements: vec![
+//!               CE::Lit(Lit::from("a")),
+//!               CE::Group(Group {
+//!                 elements: vec![CE::Prod(ProductionReference::from("B"))],
+//!                 op: GroupOperator::Optional,
+//!               }),
+//!             ],
+//!             op: GroupOperator::NoOp,
+//!           }),
+//!           CE::Group(Group {
+//!             elements: vec![CE::Lit(Lit::from("c"))],
+//!             op: GroupOperator::Optional,
+//!           }),
+//!         ].as_ref()),
+//!       ].as_ref())
+//!     )]
+//!     .as_ref()
+//!   )
+//! );
 //!```
 
 use crate::{
-  grammar_specification::constraints::SerializableGrammar,
+  grammar_specification::{self as gs, constraints::SerializableGrammar},
   text_backend::{Case, Group, Lit, Production, ProductionReference, CE, SP},
 };
 
@@ -190,6 +265,8 @@ pub enum GrammarGrammarParsingError {
   UnmatchedCloseParen,
   /// unmatched open paren
   UnmatchedOpenParen,
+  /// unmatched prefix operator
+  UnmatchedPrefixOperator,
 }
 
 /// grammar definition: "{0}"
@@ -224,18 +301,17 @@ impl SerializableGrammar for SP {
 
     let grammar: &str = out.as_ref();
 
+    const CASE_EL_PATTERN: &str =
+      "\\$(?:[^\\$]|\\$\\$)*\\$|<(?:[^>]|>>)*>|[\\(\\)]|\\?|->|[[:space:]]+";
+
     lazy_static! {
       static ref EMPTY_SPACE: Regex = Regex::new("^[[:space:]]*$").unwrap();
       static ref LINE: Regex = Regex::new(
         "^[[:space:]]*(?P<prod>\\$(?:[^\\$]|\\$\\$)*\\$):[[:space:]]*(?P<rest>.+)[[:space:]]*$"
-      ).unwrap();
-      /* FIXME: allow CASE to parse nested (!) pairs of grouping parens!!! */
-      static ref CASE_EL: Regex = Regex::new(
-        "\\$(?:[^\\$]|\\$\\$)*\\$|<(?:[^>]|>>)*>|[\\(\\)]|->|[[:space:]]+"
-      ).unwrap();
-      static ref CASE: Regex = Regex::new(
-        "^(?:\\$(?:[^\\$]|\\$\\$)*\\$|<(?:[^>]|>>)*>|[\\(\\)]|->|[[:space:]]+)+$"
-      ).unwrap();
+      )
+      .unwrap();
+      static ref CASE_EL: Regex = Regex::new(CASE_EL_PATTERN).unwrap();
+      static ref CASE: Regex = Regex::new(format!("^(?:{0})+$", CASE_EL_PATTERN).as_str()).unwrap();
     }
 
     fn parse_doubled_escape(escape_char: char, s: &str) -> String {
@@ -336,8 +412,41 @@ impl SerializableGrammar for SP {
               .ok_or(GrammarGrammarParsingError::UnmatchedCloseParen)?;
             parent.borrow_mut().case_els.push(CE::Group(Group {
               elements: inner_case_els,
+              op: gs::synthesis::GroupOperator::NoOp,
             }));
             *ctx = parent;
+          },
+          "?" => {
+            let mut ctx = ctx.borrow_mut();
+            let prior_element: &mut CE = ctx
+              .case_els
+              .last_mut()
+              .ok_or(GrammarGrammarParsingError::UnmatchedPrefixOperator)?;
+            *prior_element = match prior_element {
+              CE::Lit(lit) => CE::Group(Group {
+                elements: vec![CE::Lit(lit.clone())],
+                op: gs::synthesis::GroupOperator::Optional,
+              }),
+              CE::Prod(prod_ref) => CE::Group(Group {
+                elements: vec![CE::Prod(prod_ref.clone())],
+                op: gs::synthesis::GroupOperator::Optional,
+              }),
+              CE::Group(ref mut group) => CE::Group(match group.op.clone() {
+                /* Discard repeated ??. */
+                gs::synthesis::GroupOperator::Optional => group.clone(),
+                /* Convert a no-op to a ?. */
+                gs::synthesis::GroupOperator::NoOp => {
+                  group.op = gs::synthesis::GroupOperator::Optional;
+                  group.clone()
+                },
+                /* Otherwise, wrap the group within an outer group with the ?. */
+                _ => {
+                  group.elements = vec![CE::Group(group.clone())];
+                  group.op = gs::synthesis::GroupOperator::Optional;
+                  group.clone()
+                },
+              }),
+            };
           },
           "->" => { /* NB: these arrows are optional and do nothing! */ },
           case_el if case_el.starts_with('$') => {
@@ -408,7 +517,7 @@ impl SerializableGrammar for SP {
             format!("${0}$", prod_ref.into_string().replace('$', "$$"))
           }
           fn format_group(group: Group) -> String {
-            let Group { elements } = group;
+            let Group { elements, op } = group;
             let joined_elements: String = elements
               .into_iter()
               .map(|group_el| match group_el {
@@ -418,7 +527,7 @@ impl SerializableGrammar for SP {
               })
               .intersperse(" -> ".to_string())
               .collect();
-            format!("({0})", joined_elements)
+            format!("({0}){1}", joined_elements, op)
           }
 
           let formatted_case_el = match case_el {
@@ -445,6 +554,7 @@ impl SerializableGrammar for SP {
 #[cfg(test)]
 pub mod proptest_strategies {
   use super::*;
+  use crate::grammar_specification as gs;
 
   use proptest::{prelude::*, strategy::Strategy};
 
@@ -502,6 +612,12 @@ pub mod proptest_strategies {
         refs[ref_index].clone()
       }
   }
+  pub fn group_op() -> impl Strategy<Value = gs::synthesis::GroupOperator> {
+    prop_oneof![
+      Just(gs::synthesis::GroupOperator::NoOp),
+      Just(gs::synthesis::GroupOperator::Optional),
+    ]
+  }
   pub fn case_element(
     refs: Vec<ProductionReference>,
     ensure_arrow: bool,
@@ -553,9 +669,15 @@ pub mod proptest_strategies {
       max_length: usize,
       remaining_depth: usize,
       /* NB: we reduce remaining_depth by 1 here! */
-    )(c in case(refs, ensure_arrow, min_length, max_length, remaining_depth - 1).boxed()) -> Group {
+    )(
+      c in case(refs, ensure_arrow, min_length, max_length, remaining_depth - 1).boxed(),
+      op in group_op(),
+    ) -> Group {
+      let c: Case = c;
+      let elements: Vec<CE> = c.into_iter().collect();
       Group {
-        elements: c.into_iter().collect(),
+        elements,
+        op,
       }
     }
   }
@@ -690,7 +812,7 @@ mod test {
   }
   proptest! {
     #[test]
-    fn test_serde_cash_arrwo(sp in sp(true, true, 1, 20, 1, 5, 1, 5, 3)) {
+    fn test_serde_cash_arrow(sp in sp(true, true, 1, 20, 1, 5, 1, 5, 3)) {
       let text_grammar = sp.serialize().unwrap();
       assert_eq!(sp, SP::parse(&text_grammar).unwrap());
     }
@@ -838,5 +960,24 @@ $A$: $A$ -> <b>"
       },
       _ => unreachable!(),
     }
+  }
+
+  /* FIXME: make proptest versions to generate strings that fail here too! */
+  #[test]
+  fn test_unmatched_open_paren() {
+    let sp = SP::parse(&SPTextFormat::from("$A$: (()".to_string()));
+    assert!(matches![sp, Err(GrammarGrammarParsingError::UnmatchedOpenParen)]);
+  }
+
+  #[test]
+  fn test_unmatched_close_paren() {
+    let sp = SP::parse(&SPTextFormat::from("$A$: ())".to_string()));
+    assert!(matches![sp, Err(GrammarGrammarParsingError::UnmatchedCloseParen)]);
+  }
+
+  #[test]
+  fn test_unmatched_prefix_operator() {
+    let sp = SP::parse(&SPTextFormat::from("$A$: ?".to_string()));
+    assert!(matches![sp, Err(GrammarGrammarParsingError::UnmatchedPrefixOperator)]);
   }
 }
