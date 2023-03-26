@@ -646,11 +646,18 @@ pub mod proptest_strategies {
     ensure_arrow: bool,
     min_length: usize,
     max_length: usize,
+    min_group_length: usize,
+    max_group_length: usize,
     remaining_depth: usize,
   ) -> impl Strategy<Value = Case> {
     prop::collection::vec(
-      /* NB: we reuse {min,max}_length for case length and group length for simplicity! */
-      case_element(refs, ensure_arrow, min_length, max_length, remaining_depth),
+      case_element(
+        refs,
+        ensure_arrow,
+        min_group_length,
+        max_group_length,
+        remaining_depth,
+      ),
       min_length..=max_length,
     )
     .prop_map(|elements| Case::via_into_iter(elements.into_iter()))
@@ -662,9 +669,18 @@ pub mod proptest_strategies {
       min_length: usize,
       max_length: usize,
       remaining_depth: usize,
-      /* NB: we reduce remaining_depth by 1 here! */
     )(
-      c in case(refs, ensure_arrow, min_length, max_length, remaining_depth - 1).boxed(),
+      /* NB: we reduce remaining_depth by 1 here! */
+      /* NB: we reuse {min,max}_length here for total case length as well as group length! */
+      c in case(
+        refs,
+        ensure_arrow,
+        min_length,
+        max_length,
+        min_length,
+        max_length,
+        remaining_depth - 1,
+      ).boxed(),
       op in group_op(),
     ) -> Group {
       let c: Case = c;
@@ -680,6 +696,8 @@ pub mod proptest_strategies {
     ensure_arrow: bool,
     min_case_length: usize,
     max_case_length: usize,
+    min_group_length: usize,
+    max_group_length: usize,
     min_size: usize,
     max_size: usize,
     max_group_depth: usize,
@@ -690,6 +708,8 @@ pub mod proptest_strategies {
         ensure_arrow,
         min_case_length,
         max_case_length,
+        min_group_length,
+        max_group_length,
         max_group_depth,
       ),
       min_size..=max_size,
@@ -705,6 +725,8 @@ pub mod proptest_strategies {
     max_cases: usize,
     min_case_els: usize,
     max_case_els: usize,
+    min_group_els: usize,
+    max_group_els: usize,
     max_group_depth: usize,
   ) -> impl Strategy<Value = SP> {
     prod_names(ensure_cash, min_prods, max_prods)
@@ -718,6 +740,8 @@ pub mod proptest_strategies {
               ensure_arrow.clone(),
               min_case_els,
               max_case_els,
+              min_group_els,
+              max_group_els,
               min_cases,
               max_cases,
               max_group_depth,
@@ -765,7 +789,7 @@ pub mod proptest_strategies {
     pub fn constrained_sp_example()(
       ensure_cash in any::<bool>(),
       ensure_arrow in any::<bool>(),
-    )(sp in sp(ensure_cash, ensure_arrow, 1, 20, 1, 5, 0, 5, 3)) -> SP {
+    )(sp in sp(ensure_cash, ensure_arrow, 1, 20, 1, 5, 0, 5, 0, 5, 3)) -> SP {
       sp
     }
   }
