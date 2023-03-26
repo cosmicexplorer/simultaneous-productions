@@ -250,6 +250,15 @@ pub mod grammar_building {
         self.locations
       }
     }
+
+    impl<Tok, Key> InternedLookupTable<Tok, Key>
+    where
+      Key: From<usize> + Eq + ::core::hash::Hash,
+    {
+      pub fn into_alphabet_index_map(self) -> IndexMap<Key, Tok> {
+        self.alphabet.into_vec_with_keys().into_iter().collect()
+      }
+    }
   }
 
   pub(super) mod result {
@@ -582,6 +591,201 @@ pub mod grammar_building {
         })
       }
     }
+
+    impl<Tok> graphvizier::Graphable for TokenGrammar<Tok>
+    where
+      Tok: ::core::fmt::Display,
+    {
+      fn build_graph(self) -> graphvizier::generator::GraphBuilder {
+        use graphvizier::entities as gv;
+
+        let mut gb = graphvizier::generator::GraphBuilder::new();
+
+        let Self {
+          graph,
+          tokens,
+          groups,
+        } = self;
+
+        let mut token_edges: Vec<gv::Edge> = Vec::new();
+        let mut token_vertices: Vec<gv::Vertex> = Vec::new();
+        let mut tok_ref_vertices: IndexMap<gc::TokRef, gv::Vertex> = IndexMap::new();
+        for (tok_ind, (tok_ref, tok)) in tokens.into_alphabet_index_map().into_iter().enumerate() {
+          let tok_id = gv::Id::new(format!("token_{}", tok_ind));
+          let tok_vertex = gv::Vertex {
+            id: tok_id.clone(),
+            label: Some(gv::Label(format!("<{}>", &tok))),
+            ..Default::default()
+          };
+          token_vertices.push(tok_vertex);
+
+          let gv::Vertex {
+            id: ref mut tok_ref_id,
+            ..
+          } = tok_ref_vertices
+            .entry(tok_ref.clone())
+            .or_insert_with(|| gv::Vertex {
+              id: gv::Id::new(format!("tok_ref_{}", &tok_ref)),
+              label: Some(gv::Label(format!("{:?}", &tok_ref))),
+              ..Default::default()
+            });
+          let tok_ref_edge = gv::Edge {
+            source: tok_id.clone(),
+            target: tok_ref_id.clone(),
+            ..Default::default()
+          };
+          token_edges.push(tok_ref_edge);
+        }
+
+        let mut prod_ref_vertices: IndexMap<gc::ProdRef, gv::Vertex> = IndexMap::new();
+
+        let mut group_edges: Vec<gv::Edge> = Vec::new();
+        let mut group_ref_vertices: IndexMap<gc::GroupRef, gv::Vertex> = IndexMap::new();
+        for (group_ref, prod_ref) in groups.into_iter() {
+          let group_id = gv::Id::new(format!("group_{}", &group_ref));
+          let group_vertex = gv::Vertex {
+            id: group_id.clone(),
+            label: Some(gv::Label(format!("({})", &group_ref))),
+            ..Default::default()
+          };
+          assert!(group_ref_vertices
+            .insert(group_ref.clone(), group_vertex)
+            .is_none());
+
+          let gv::Vertex {
+            id: ref mut prod_ref_id,
+            ..
+          } = prod_ref_vertices
+            .entry(prod_ref.clone())
+            .or_insert_with(|| gv::Vertex {
+              id: gv::Id::new(format!("prod_ref_{}", &prod_ref)),
+              label: Some(gv::Label(format!("{:?}", &prod_ref))),
+              ..Default::default()
+            });
+          let group_ref_edge = gv::Edge {
+            source: group_id,
+            target: prod_ref_id.clone(),
+            ..Default::default()
+          };
+          group_edges.push(group_ref_edge);
+        }
+
+        let mut case_el_index: usize = 0;
+        let mut case_el_vertices: Vec<gv::Vertex> = Vec::new();
+        let mut case_el_edges: Vec<gv::Edge> = Vec::new();
+        for (prod_ref, prod) in graph.into_index_map().into_iter() {
+          let gv::Vertex {
+            id: ref mut prod_ref_id,
+            ..
+          } = prod_ref_vertices
+            .entry(prod_ref.clone())
+            .or_insert_with(|| gv::Vertex {
+              id: gv::Id::new(format!("prod_ref_{}", &prod_ref)),
+              label: Some(gv::Label(format!("{:?}", &prod_ref))),
+              ..Default::default()
+            });
+
+          for case in prod.0.into_iter() {
+            let mut prev = prod_ref_id.clone();
+            for case_el in case.0.into_iter() {
+              let cur_id = {
+                let id = gv::Id::new(format!("case_el_{}", case_el_index));
+                case_el_index += 1;
+                id
+              };
+              let cur_vertex = gv::Vertex {
+                id: cur_id.clone(),
+                label: Some(gv::Label(format!("{:?}", &case_el))),
+                ..Default::default()
+              };
+              case_el_vertices.push(cur_vertex);
+
+              let next_edge = gv::Edge {
+                source: prev.clone(),
+                target: cur_id.clone(),
+                ..Default::default()
+              };
+              case_el_edges.push(next_edge);
+
+              prev = cur_id;
+            }
+
+            let final_edge = gv::Edge {
+              source: prev,
+              target: prod_ref_id.clone(),
+              ..Default::default()
+            };
+            case_el_edges.push(final_edge);
+          }
+        }
+
+        /* Plot things now. */
+        let token_vertices = gv::Subgraph {
+          id: gv::Id::new("token_vertices"),
+          label: Some(gv::Label("tokens".to_string())),
+          color: Some(gv::Color("purple".to_string())),
+          fontcolor: Some(gv::Color("purple".to_string())),
+          entities: token_vertices.into_iter().map(gv::Entity::Vertex).collect(),
+          ..Default::default()
+        };
+        gb.accept_entity(gv::Entity::Subgraph(token_vertices));
+
+        let tok_ref_vertices = gv::Subgraph {
+          id: gv::Id::new("tok_ref_vertices"),
+          label: Some(gv::Label("TokRefs".to_string())),
+          color: Some(gv::Color("green4".to_string())),
+          fontcolor: Some(gv::Color("green4".to_string())),
+          entities: tok_ref_vertices
+            .into_iter()
+            .map(|(_, vtx)| gv::Entity::Vertex(vtx))
+            .collect(),
+          ..Default::default()
+        };
+        gb.accept_entity(gv::Entity::Subgraph(tok_ref_vertices));
+
+        let group_ref_vertices = gv::Subgraph {
+          id: gv::Id::new("group_ref_vertices"),
+          label: Some(gv::Label("group refs".to_string())),
+          color: Some(gv::Color("red".to_string())),
+          fontcolor: Some(gv::Color("red".to_string())),
+          entities: group_ref_vertices
+            .into_iter()
+            .map(|(_, vtx)| gv::Entity::Vertex(vtx))
+            .collect(),
+          ..Default::default()
+        };
+        gb.accept_entity(gv::Entity::Subgraph(group_ref_vertices));
+
+        let prod_ref_vertices = gv::Subgraph {
+          id: gv::Id::new("prod_ref_vertices"),
+          label: Some(gv::Label("prod refs".to_string())),
+          color: Some(gv::Color("aqua".to_string())),
+          fontcolor: Some(gv::Color("aqua".to_string())),
+          entities: prod_ref_vertices
+            .into_iter()
+            .map(|(_, vtx)| gv::Entity::Vertex(vtx))
+            .collect(),
+          ..Default::default()
+        };
+        gb.accept_entity(gv::Entity::Subgraph(prod_ref_vertices));
+
+        for case_el_vertex in case_el_vertices.into_iter() {
+          gb.accept_entity(gv::Entity::Vertex(case_el_vertex));
+        }
+
+        for token_edge in token_edges.into_iter() {
+          gb.accept_entity(gv::Entity::Edge(token_edge));
+        }
+        for group_edge in group_edges.into_iter() {
+          gb.accept_entity(gv::Entity::Edge(group_edge));
+        }
+        for case_el_edge in case_el_edges.into_iter() {
+          gb.accept_entity(gv::Entity::Edge(case_el_edge));
+        }
+
+        gb
+      }
+    }
   }
 }
 
@@ -734,5 +938,51 @@ mod tests {
         gb::GrammarConstructionError::UnrecognizedProdRefId(ProductionReference::from("c"))
       )
     );
+  }
+
+  #[test]
+  fn non_cyclic_tokenized_graphviz() {
+    use graphvizier::entities as gv;
+    use graphvizier::Graphable;
+
+    let prods = non_cyclic_productions();
+    let state::preprocessing::Detokenized(token_grammar) =
+      state::preprocessing::Init(prods).try_index().unwrap();
+
+    let gb = token_grammar.build_graph();
+    let graphvizier::generator::DotOutput(output) = gb.build(gv::Id::new("test_graph"));
+
+    assert_eq!(output, "digraph test_graph {\n  compound = true;\n\n  subgraph token_vertices {\n    label = \"tokens\";\n    cluster = true;\n    rank = same;\n\n    color = \"purple\";\n    fontcolor = \"purple\";\n\n    token_0[label=\"<a>\", ];\n    token_1[label=\"<b>\", ];\n  }\n\n  subgraph tok_ref_vertices {\n    label = \"TokRefs\";\n    cluster = true;\n    rank = same;\n\n    color = \"green4\";\n    fontcolor = \"green4\";\n\n    tok_ref_0[label=\"TokRef(0)\", ];\n    tok_ref_1[label=\"TokRef(1)\", ];\n  }\n\n  subgraph group_ref_vertices {\n    label = \"group refs\";\n    cluster = true;\n    rank = same;\n\n    color = \"red\";\n    fontcolor = \"red\";\n\n  }\n\n  subgraph prod_ref_vertices {\n    label = \"prod refs\";\n    cluster = true;\n    rank = same;\n\n    color = \"aqua\";\n    fontcolor = \"aqua\";\n\n    prod_ref_0[label=\"ProdRef(0)\", ];\n    prod_ref_1[label=\"ProdRef(1)\", ];\n  }\n\n  case_el_0[label=\"Tok(TokRef(0))\", ];\n\n  case_el_1[label=\"Tok(TokRef(1))\", ];\n\n  case_el_2[label=\"Tok(TokRef(0))\", ];\n\n  case_el_3[label=\"Tok(TokRef(1))\", ];\n\n  case_el_4[label=\"Prod(ProdRef(0))\", ];\n\n  case_el_5[label=\"Prod(ProdRef(0))\", ];\n\n  case_el_6[label=\"Tok(TokRef(0))\", ];\n\n  token_0 -> tok_ref_0;\n\n  token_1 -> tok_ref_1;\n\n  prod_ref_0 -> case_el_0;\n\n  case_el_0 -> case_el_1;\n\n  case_el_1 -> prod_ref_0;\n\n  prod_ref_1 -> case_el_2;\n\n  case_el_2 -> case_el_3;\n\n  case_el_3 -> case_el_4;\n\n  case_el_4 -> prod_ref_1;\n\n  prod_ref_1 -> case_el_5;\n\n  case_el_5 -> case_el_6;\n\n  case_el_6 -> prod_ref_1;\n}\n");
+  }
+
+  #[test]
+  fn basic_tokenized_graphviz() {
+    use graphvizier::entities as gv;
+    use graphvizier::Graphable;
+
+    let prods = basic_productions();
+    let state::preprocessing::Detokenized(token_grammar) =
+      state::preprocessing::Init(prods).try_index().unwrap();
+
+    let gb = token_grammar.build_graph();
+    let graphvizier::generator::DotOutput(output) = gb.build(gv::Id::new("test_graph"));
+
+    assert_eq!(output, "digraph test_graph {\n  compound = true;\n\n  subgraph token_vertices {\n    label = \"tokens\";\n    cluster = true;\n    rank = same;\n\n    color = \"purple\";\n    fontcolor = \"purple\";\n\n    token_0[label=\"<a>\", ];\n    token_1[label=\"<b>\", ];\n    token_2[label=\"<c>\", ];\n  }\n\n  subgraph tok_ref_vertices {\n    label = \"TokRefs\";\n    cluster = true;\n    rank = same;\n\n    color = \"green4\";\n    fontcolor = \"green4\";\n\n    tok_ref_0[label=\"TokRef(0)\", ];\n    tok_ref_1[label=\"TokRef(1)\", ];\n    tok_ref_2[label=\"TokRef(2)\", ];\n  }\n\n  subgraph group_ref_vertices {\n    label = \"group refs\";\n    cluster = true;\n    rank = same;\n\n    color = \"red\";\n    fontcolor = \"red\";\n\n  }\n\n  subgraph prod_ref_vertices {\n    label = \"prod refs\";\n    cluster = true;\n    rank = same;\n\n    color = \"aqua\";\n    fontcolor = \"aqua\";\n\n    prod_ref_0[label=\"ProdRef(0)\", ];\n    prod_ref_1[label=\"ProdRef(1)\", ];\n  }\n\n  case_el_0[label=\"Tok(TokRef(0))\", ];\n\n  case_el_1[label=\"Tok(TokRef(1))\", ];\n\n  case_el_2[label=\"Tok(TokRef(2))\", ];\n\n  case_el_3[label=\"Tok(TokRef(0))\", ];\n\n  case_el_4[label=\"Prod(ProdRef(0))\", ];\n\n  case_el_5[label=\"Tok(TokRef(2))\", ];\n\n  case_el_6[label=\"Tok(TokRef(1))\", ];\n\n  case_el_7[label=\"Tok(TokRef(2))\", ];\n\n  case_el_8[label=\"Prod(ProdRef(1))\", ];\n\n  case_el_9[label=\"Prod(ProdRef(0))\", ];\n\n  case_el_10[label=\"Prod(ProdRef(1))\", ];\n\n  case_el_11[label=\"Prod(ProdRef(0))\", ];\n\n  case_el_12[label=\"Tok(TokRef(1))\", ];\n\n  case_el_13[label=\"Tok(TokRef(2))\", ];\n\n  token_0 -> tok_ref_0;\n\n  token_1 -> tok_ref_1;\n\n  token_2 -> tok_ref_2;\n\n  prod_ref_0 -> case_el_0;\n\n  case_el_0 -> case_el_1;\n\n  case_el_1 -> case_el_2;\n\n  case_el_2 -> prod_ref_0;\n\n  prod_ref_0 -> case_el_3;\n\n  case_el_3 -> case_el_4;\n\n  case_el_4 -> case_el_5;\n\n  case_el_5 -> prod_ref_0;\n\n  prod_ref_0 -> case_el_6;\n\n  case_el_6 -> case_el_7;\n\n  case_el_7 -> case_el_8;\n\n  case_el_8 -> prod_ref_0;\n\n  prod_ref_1 -> case_el_9;\n\n  case_el_9 -> prod_ref_1;\n\n  prod_ref_1 -> case_el_10;\n\n  case_el_10 -> prod_ref_1;\n\n  prod_ref_1 -> case_el_11;\n\n  case_el_11 -> case_el_12;\n\n  case_el_12 -> case_el_13;\n\n  case_el_13 -> prod_ref_1;\n}\n");
+  }
+
+  #[test]
+  fn group_tokenized_graphviz() {
+    use graphvizier::entities as gv;
+    use graphvizier::Graphable;
+
+    let prods = group_productions();
+    let state::preprocessing::Detokenized(token_grammar) =
+      state::preprocessing::Init(prods).try_index().unwrap();
+
+    let gb = token_grammar.build_graph();
+    let graphvizier::generator::DotOutput(output) = gb.build(gv::Id::new("test_graph"));
+
+    /* FIXME: the ::Optional operator isn't getting synced here! */
+    assert_eq!(output, "asfd");
   }
 }

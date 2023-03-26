@@ -209,7 +209,7 @@ impl gs::synthesis::SimultaneousProductions for SP {
 }
 
 #[cfg(test)]
-pub use test_utils::{basic_productions, non_cyclic_productions};
+pub use test_utils::{basic_productions, group_productions, non_cyclic_productions};
 #[cfg(test)]
 pub mod test_utils {
   use super::*;
@@ -293,6 +293,25 @@ pub mod test_utils {
           ),
         ),
       ]
+      .as_ref(),
+    )
+  }
+
+  pub fn group_productions() -> SP {
+    SP::from(
+      [(
+        ProductionReference::from("A"),
+        Production::from(
+          [Case::from(
+            [CE::Group(Group {
+              elements: vec![CE::Lit(Lit::from("a"))],
+              op: gs::synthesis::GroupOperator::Optional,
+            })]
+            .as_ref(),
+          )]
+          .as_ref(),
+        ),
+      )]
       .as_ref(),
     )
   }
@@ -624,5 +643,30 @@ $P_2$: $P_1$ -> <bc>
     let graphvizier::generator::DotOutput(output) = gb.build(gv::Id::new("test_sp_graph"));
 
     assert_eq!(output, "digraph test_sp_graph {\n  compound = true;\n\n  subgraph prods {\n    label = \"Productions\";\n    cluster = true;\n    rank = same;\n\n    color = \"blue\";\n    fontcolor = \"blue\";\n    node [color=\"blue\", fontcolor=\"blue\", ];\n\n    prod_P_1[label=\"#P_1\", ];\n    prod_P_2[label=\"#P_2\", ];\n  }\n\n  subgraph P_1_prod {\n    label = \"Cases: \\#P_1\";\n    cluster = true;\n    rank = same;\n\n    color = \"purple\";\n    fontcolor = \"purple\";\n\n    subgraph P_1_case_0 {\n      label = \"0\";\n      cluster = true;\n      rank = same;\n\n      color = \"green4\";\n      fontcolor = \"green4\";\n\n      vertex_0[label=\"<abc>\", color=\"brown\", fontcolor=\"brown\", ];\n    }\n    subgraph P_1_case_1 {\n      label = \"1\";\n      cluster = true;\n      rank = same;\n\n      color = \"green4\";\n      fontcolor = \"green4\";\n\n      vertex_1[label=\"<a>\", color=\"brown\", fontcolor=\"brown\", ];\n      vertex_2[label=\"ref: P_1\", color=\"darkgoldenrod\", fontcolor=\"darkgoldenrod\", ];\n      vertex_3[label=\"<c>\", color=\"brown\", fontcolor=\"brown\", ];\n    }\n    subgraph P_1_case_2 {\n      label = \"2\";\n      cluster = true;\n      rank = same;\n\n      color = \"green4\";\n      fontcolor = \"green4\";\n\n      vertex_4[label=\"<bc>\", color=\"brown\", fontcolor=\"brown\", ];\n      vertex_5[label=\"ref: P_2\", color=\"darkgoldenrod\", fontcolor=\"darkgoldenrod\", ];\n    }\n  }\n\n  prod_P_1 -> vertex_0[color=\"red\", ];\n\n  vertex_0 -> prod_P_1[color=\"black\", ];\n\n  prod_P_1 -> vertex_1[color=\"red\", ];\n\n  vertex_2 -> prod_P_1[color=\"darkgoldenrod\", ];\n\n  vertex_1 -> vertex_2[color=\"aqua\", ];\n\n  vertex_2 -> vertex_3[color=\"aqua\", ];\n\n  vertex_3 -> prod_P_1[color=\"black\", ];\n\n  prod_P_1 -> vertex_4[color=\"red\", ];\n\n  vertex_5 -> prod_P_2[color=\"darkgoldenrod\", ];\n\n  vertex_4 -> vertex_5[color=\"aqua\", ];\n\n  vertex_5 -> prod_P_1[color=\"black\", ];\n\n  subgraph P_2_prod {\n    label = \"Cases: \\#P_2\";\n    cluster = true;\n    rank = same;\n\n    color = \"purple\";\n    fontcolor = \"purple\";\n\n    subgraph P_2_case_0 {\n      label = \"0\";\n      cluster = true;\n      rank = same;\n\n      color = \"green4\";\n      fontcolor = \"green4\";\n\n      vertex_6[label=\"ref: P_1\", color=\"darkgoldenrod\", fontcolor=\"darkgoldenrod\", ];\n    }\n    subgraph P_2_case_1 {\n      label = \"1\";\n      cluster = true;\n      rank = same;\n\n      color = \"green4\";\n      fontcolor = \"green4\";\n\n      vertex_7[label=\"ref: P_2\", color=\"darkgoldenrod\", fontcolor=\"darkgoldenrod\", ];\n    }\n    subgraph P_2_case_2 {\n      label = \"2\";\n      cluster = true;\n      rank = same;\n\n      color = \"green4\";\n      fontcolor = \"green4\";\n\n      vertex_8[label=\"ref: P_1\", color=\"darkgoldenrod\", fontcolor=\"darkgoldenrod\", ];\n      vertex_9[label=\"<bc>\", color=\"brown\", fontcolor=\"brown\", ];\n    }\n  }\n\n  vertex_6 -> prod_P_1[color=\"darkgoldenrod\", ];\n\n  prod_P_2 -> vertex_6[color=\"red\", ];\n\n  vertex_6 -> prod_P_2[color=\"black\", ];\n\n  vertex_7 -> prod_P_2[color=\"darkgoldenrod\", ];\n\n  prod_P_2 -> vertex_7[color=\"red\", ];\n\n  vertex_7 -> prod_P_2[color=\"black\", ];\n\n  vertex_8 -> prod_P_1[color=\"darkgoldenrod\", ];\n\n  prod_P_2 -> vertex_8[color=\"red\", ];\n\n  vertex_8 -> vertex_9[color=\"aqua\", ];\n\n  vertex_9 -> prod_P_2[color=\"black\", ];\n}\n");
+  }
+
+  #[test]
+  fn group_parse() {
+    use crate::grammar_grammar::SPTextFormat;
+    use gs::constraints::SerializableGrammar;
+
+    let sp = SP::parse(&SPTextFormat::from(
+      "$A$: <a>?".to_string(),
+    ))
+    .unwrap();
+
+    assert_eq!(sp, group_productions());
+  }
+
+  #[test]
+  fn group_graphviz() {
+    use graphvizier::{entities as gv, Graphable};
+
+    let sp = group_productions();
+    let grapher = gs::synthesis::SPGrapher(sp);
+    let gb = grapher.build_graph();
+    let graphvizier::generator::DotOutput(output) = gb.build(gv::Id::new("test_sp_graph"));
+
+    assert_eq!(output, "asdf");
   }
 }
