@@ -33,14 +33,15 @@
       2. [X] enable grouping with arbitrary depth in ~SPTextFormat~
          - e.g. ~(<ab> -> $A$)~ to group ~CaseHead~ lists
          - *THIS WAS CRAZY HARD AND EXTREMELY USEFUL!!!*
-      3. [-] suffix [1/4]
+      3. [ ] *VERIFY THAT ALL OF THESE TRANSFORMATIONS PARSE CORRECTLY ONCE PARSING WORKS!*
+         - /i.e.: make parsing with stack cycles work first!!!/
+      4. [-] suffix [1/4]
          1. [X] ~?~
          2. [ ] ~*~
          3. [ ] ~+~
          4. [ ] ~{n,m}~
-      4. [ ] literal
+      5. [ ] literal
          - e.g. ~/a(b)+/~, with ~//~ as a new type of ~CaseHead~
-      5. [ ] *VERIFY THAT ALL OF THESE TRANSFORMATIONS PARSE CORRECTLY ONCE PARSING WORKS!*
 4. [ ] implement typed callbacks [0/4]
    1. [ ] execute a callback whenever a sub-parse succeeds
    2. [ ] signal parse failures
