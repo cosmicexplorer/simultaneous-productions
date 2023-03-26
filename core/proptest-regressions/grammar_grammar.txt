@@ -1,0 +1,7 @@
+# Seeds for failure cases proptest has generated in the past. It is
+# automatically read and these particular cases re-run before any
+# novel cases are generated.
+#
+# It is recommended to check this file in to source control so that
+# everyone who runs the test benefits from these saved cases.
+cc 40869a7264d0e5beb8a21a73f050952adfc0fd36292e8346e056a40a9e34e90f # shrinks to sp = SP(IntoIter([(ProductionReference(IntoIter(['$'])), Production(IntoIter([Case(IntoIter([Prod(ProductionReference(IntoIter(['\u{b16fb}', '\\', '\u{9a05c}', '\r', '2', '$', '\r', '*', '\t', '.', 'Q', '¥', '\\', 'O', '\u{df35f}', '\r', '\u{1b}'])))]))]))), (ProductionReference(IntoIter(['\u{b16fb}', '\\', '\u{9a05c}', '\r', '2', '$', '\r', '*', '\t', '.', 'Q', '¥', '\\', 'O', '\u{df35f}', '\r', '\u{1b}'])), Production(IntoIter([])))]))

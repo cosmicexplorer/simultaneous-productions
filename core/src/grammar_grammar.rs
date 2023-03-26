@@ -577,16 +577,10 @@ pub mod proptest_strategies {
   }
   prop_compose! {
     pub fn prod_names(ensure_cash: bool, min_size: usize, max_size: usize)
-      (all_names in prop::collection::vec(production_name(ensure_cash), min_size..=max_size)
-       .prop_filter("no duplicate prod names allowed",
-                    |v| {
-                      let mut v_unique = v.clone();
-                      v_unique.sort_unstable();
-                      v_unique.dedup();
-                      v_unique.len() == v.len()
-                    })
+      (
+        all_names in prop::collection::hash_set(production_name(ensure_cash), min_size..=max_size)
       ) -> Vec<ProductionReference> {
-      all_names
+      all_names.into_iter().collect()
     }
   }
   prop_compose! {
@@ -771,7 +765,7 @@ pub mod proptest_strategies {
     pub fn constrained_sp_example()(
       ensure_cash in any::<bool>(),
       ensure_arrow in any::<bool>(),
-    )(sp in sp(ensure_cash, ensure_arrow, 1, 20, 1, 5, 1, 5, 3)) -> SP {
+    )(sp in sp(ensure_cash, ensure_arrow, 1, 20, 1, 5, 0, 5, 3)) -> SP {
       sp
     }
   }
