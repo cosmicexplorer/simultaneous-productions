@@ -767,6 +767,14 @@ pub mod proptest_strategies {
         }
       })
   }
+  prop_compose! {
+    pub fn constrained_sp_example()(
+      ensure_cash in any::<bool>(),
+      ensure_arrow in any::<bool>(),
+    )(sp in sp(ensure_cash, ensure_arrow, 1, 20, 1, 5, 1, 5, 3)) -> SP {
+      sp
+    }
+  }
 
   #[test]
   fn test_prod_vec() {
@@ -791,28 +799,7 @@ mod test {
 
   proptest! {
     #[test]
-    fn test_serde(sp in sp(false, false, 1, 20, 1, 5, 1, 5, 3)) {
-      let text_grammar = sp.serialize().unwrap();
-      prop_assert_eq!(sp, SP::parse(&text_grammar).unwrap());
-    }
-  }
-  proptest! {
-    #[test]
-    fn test_serde_cash(sp in sp(true, false, 1, 20, 1, 5, 1, 5, 3)) {
-      let text_grammar = sp.serialize().unwrap();
-      prop_assert_eq!(sp, SP::parse(&text_grammar).unwrap());
-    }
-  }
-  proptest! {
-    #[test]
-    fn test_serde_arrow(sp in sp(false, true, 1, 20, 1, 5, 1, 5, 3)) {
-      let text_grammar = sp.serialize().unwrap();
-      prop_assert_eq!(sp, SP::parse(&text_grammar).unwrap());
-    }
-  }
-  proptest! {
-    #[test]
-    fn test_serde_cash_arrow(sp in sp(true, true, 1, 20, 1, 5, 1, 5, 3)) {
+    fn test_serde(sp in constrained_sp_example()) {
       let text_grammar = sp.serialize().unwrap();
       prop_assert_eq!(sp, SP::parse(&text_grammar).unwrap());
     }
@@ -966,18 +953,27 @@ $A$: $A$ -> <b>"
   #[test]
   fn test_unmatched_open_paren() {
     let sp = SP::parse(&SPTextFormat::from("$A$: (()".to_string()));
-    assert!(matches![sp, Err(GrammarGrammarParsingError::UnmatchedOpenParen)]);
+    assert!(matches![
+      sp,
+      Err(GrammarGrammarParsingError::UnmatchedOpenParen)
+    ]);
   }
 
   #[test]
   fn test_unmatched_close_paren() {
     let sp = SP::parse(&SPTextFormat::from("$A$: ())".to_string()));
-    assert!(matches![sp, Err(GrammarGrammarParsingError::UnmatchedCloseParen)]);
+    assert!(matches![
+      sp,
+      Err(GrammarGrammarParsingError::UnmatchedCloseParen)
+    ]);
   }
 
   #[test]
   fn test_unmatched_prefix_operator() {
     let sp = SP::parse(&SPTextFormat::from("$A$: ?".to_string()));
-    assert!(matches![sp, Err(GrammarGrammarParsingError::UnmatchedPrefixOperator)]);
+    assert!(matches![
+      sp,
+      Err(GrammarGrammarParsingError::UnmatchedPrefixOperator)
+    ]);
   }
 }
