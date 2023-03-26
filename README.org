@@ -14,8 +14,9 @@
       1. [X] implement graphvis for basic S.P. in ~text_backend~
       2. [X] expose basic S.P. and rest of ~text_backend~ publicly!
    2. [X] ~PreprocessedGrammar~
-   3. [ ] ~ParseableGrammar~ [0/1]
+   3. [ ] ~ParseableGrammar~ [0/2]
       - [ ] first make parsing understand stack cycles!!!
+      - [ ] then figure out how to represent stack cycles in graphvis!
 3. [-] text-based grammar input format (for generating test cases)! [4/5]
    1. [X] make basic grammar format
    2. [X] expose it publicly!
