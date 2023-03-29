@@ -2,7 +2,7 @@
 #+STARTUP: showall
 
 * TODO [0/3] overall timeline
-- [ ] implement S.P.
+- [ ] implement S.P. (see [[code TODO]])
 - [ ] begin [[S.P. real benchmarking]], potentially alongside [[rsc]] pre-parsing
 - [ ] hack up a [[P.S. prototype]] and develop a pitch
   - the pitch should explain that i haven't published yet because i didn't want to get scooped on [[the real prize]]
