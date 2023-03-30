@@ -805,7 +805,7 @@ pub struct PreprocessedGrammar<Tok> {
   /// These don't need to be quick to access or otherwise optimized for the
   /// algorithm until we create a `Parse` -- these are chosen to reduce
   /// redundancy.
-  pub token_states_mapping: gb::InternedLookupTable<Tok, gc::TokRef>,
+  pub token_states_mapping: gb::InternedLookupTable<Tok, gc::TokRef, gc::TokenPosition>,
 }
 
 impl<Tok> PreprocessedGrammar<Tok> {
@@ -814,7 +814,7 @@ impl<Tok> PreprocessedGrammar<Tok> {
     grammar: gb::TokenGrammar<Tok>,
   ) -> (
     EpsilonIntervalGraph,
-    gb::InternedLookupTable<Tok, gc::TokRef>,
+    gb::InternedLookupTable<Tok, gc::TokRef, gc::TokenPosition>,
   ) {
     fn make_pos_neg_anon_steps(
       cur_index: &mut usize,

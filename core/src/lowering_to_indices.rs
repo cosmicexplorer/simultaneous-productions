@@ -186,29 +186,31 @@ pub mod grammar_building {
     /// Merge an intern table with a mapping of locations in the input where the
     /// interned object is found.
     #[derive(Debug, Clone)]
-    pub struct InternedLookupTable<Tok, Key> {
+    pub struct InternedLookupTable<Tok, Key, Value> {
       alphabet: InternArena<Tok, Key>,
-      locations: IndexMap<Key, Vec<gc::TokenPosition>>,
+      locations: IndexMap<Key, Vec<Value>>,
     }
 
-    impl<Tok, Key> PartialEq for InternedLookupTable<Tok, Key>
+    impl<Tok, Key, Value> PartialEq for InternedLookupTable<Tok, Key, Value>
     where
       Tok: Eq,
       Key: Hash + Eq,
+      Value: Eq,
     {
       fn eq(&self, other: &Self) -> bool {
         self.alphabet == other.alphabet && self.locations == other.locations
       }
     }
 
-    impl<Tok, Key> Eq for InternedLookupTable<Tok, Key>
+    impl<Tok, Key, Value> Eq for InternedLookupTable<Tok, Key, Value>
     where
       Tok: Eq,
       Key: Hash + Eq,
+      Value: Eq,
     {
     }
 
-    impl<Tok, Key> InternedLookupTable<Tok, Key>
+    impl<Tok, Key, Value> InternedLookupTable<Tok, Key, Value>
     where
       Tok: Eq,
       Key: From<usize>,
@@ -222,23 +224,23 @@ pub mod grammar_building {
       }
     }
 
-    impl<Tok, Key> InternedLookupTable<Tok, Key>
+    impl<Tok, Key, Value> InternedLookupTable<Tok, Key, Value>
     where
       Tok: Eq,
       Key: Hash + Eq,
     {
-      pub fn insert_new_position(&mut self, entry: (Key, gc::TokenPosition)) {
+      pub fn insert_new_position(&mut self, entry: (Key, Value)) {
         let (key, new_value) = entry;
         let entry = self.locations.entry(key).or_insert_with(|| Vec::new());
         (*entry).push(new_value);
       }
 
-      pub fn get(&self, tok_ref: Key) -> Option<&[gc::TokenPosition]> {
+      pub fn get(&self, tok_ref: Key) -> Option<&[Value]> {
         self.locations.get(&tok_ref).map(|ps| ps.as_ref())
       }
     }
 
-    impl<Tok, Key> InternedLookupTable<Tok, Key> {
+    impl<Tok, Key, Value> InternedLookupTable<Tok, Key, Value> {
       pub fn new() -> Self {
         Self {
           alphabet: InternArena::new(),
@@ -246,14 +248,14 @@ pub mod grammar_building {
         }
       }
 
-      pub fn into_index_map(self) -> IndexMap<Key, Vec<gc::TokenPosition>> {
+      pub fn into_index_map(self) -> IndexMap<Key, Vec<Value>> {
         self.locations
       }
     }
 
-    impl<Tok, Key> InternedLookupTable<Tok, Key>
+    impl<Tok, Key, Value> InternedLookupTable<Tok, Key, Value>
     where
-      Key: From<usize> + Eq + ::core::hash::Hash,
+      Key: From<usize> + Eq + Hash,
     {
       pub fn into_alphabet_index_map(self) -> IndexMap<Key, Tok> {
         self.alphabet.into_vec_with_keys().into_iter().collect()
@@ -357,7 +359,7 @@ pub mod grammar_building {
     #[derive(Debug, Clone)]
     pub struct TokenGrammar<Tok> {
       pub graph: DetokenizedProductions,
-      pub tokens: InternedLookupTable<Tok, gc::TokRef>,
+      pub tokens: InternedLookupTable<Tok, gc::TokRef, gc::TokenPosition>,
       pub groups: IndexMap<gc::GroupRef, gc::ProdRef>,
     }
 
@@ -414,7 +416,7 @@ pub mod grammar_building {
         // Collect all the tokens (splitting up literals) as we traverse the
         // productions. So literal strings are "flattened" into their individual
         // tokens.
-        let mut tokens: InternedLookupTable<Tok, gc::TokRef> = InternedLookupTable::new();
+        let mut tokens: InternedLookupTable<Tok, gc::TokRef, gc::TokenPosition> = InternedLookupTable::new();
         /* Collect all the recursive groups, and replace them with CaseElement::GroupRef. */
         let mut groups: InternArena<gc::ProdRef, gc::GroupRef> = InternArena::new();
         let mut ret_prods: DetokenizedProductions = DetokenizedProductions::new();
@@ -435,7 +437,7 @@ pub mod grammar_building {
                 Lit: gs::direct::Literal<Tok = Tok> + IntoIterator<Item = Tok>,
               >(
                 ret_els: &mut Vec<gc::CaseEl>,
-                tokens: &mut InternedLookupTable<Tok, gc::TokRef>,
+                tokens: &mut InternedLookupTable<Tok, gc::TokRef, gc::TokenPosition>,
                 case_el_ind: &mut usize,
                 cur_prod_ref: gc::ProdRef,
                 cur_case_ref: gc::CaseRef,
@@ -489,7 +491,7 @@ pub mod grammar_building {
                 id_prod_mapping: &IndexMap<ID, gc::ProdRef>,
                 ret_prods: &mut DetokenizedProductions,
                 ret_els: &mut Vec<gc::CaseEl>,
-                tokens: &mut InternedLookupTable<Tok, gc::TokRef>,
+                tokens: &mut InternedLookupTable<Tok, gc::TokRef, gc::TokenPosition>,
                 group_prods_index: &mut usize,
                 groups: &mut InternArena<gc::ProdRef, gc::GroupRef>,
                 case_el_ind: &mut usize,
@@ -891,7 +893,7 @@ mod tests {
         .to_vec(),
       ),
     ));
-    let mut ts = gb::InternedLookupTable::<char, gc::TokRef>::new();
+    let mut ts = gb::InternedLookupTable::<char, gc::TokRef, gc::TokenPosition>::new();
     /* NB: The tokens are allocated in the order they are encountered in the
      * grammar! */
     let c_ref = ts.intern_exclusive('c');
@@ -959,7 +961,7 @@ mod tests {
         .to_vec(),
       ),
     ));
-    let mut ts = gb::InternedLookupTable::<char, gc::TokRef>::new();
+    let mut ts = gb::InternedLookupTable::<char, gc::TokRef, gc::TokenPosition>::new();
     let a_ref = ts.intern_exclusive('a');
     assert_eq!(a_ref, ts.intern_exclusive('a'));
     let b_ref = ts.intern_exclusive('b');

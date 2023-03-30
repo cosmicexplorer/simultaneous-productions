@@ -210,7 +210,7 @@ impl ParseableGrammar {
   }
 
   fn get_possible_states_for_input<Tok>(
-    tokens: &gb::InternedLookupTable<Tok, gc::TokRef>,
+    tokens: &gb::InternedLookupTable<Tok, gc::TokRef, gc::TokenPosition>,
     input: &Input<Tok>,
   ) -> Result<Vec<PossibleStates>, ParsingInputFailure<Tok>>
   where
