@@ -132,9 +132,9 @@ impl AsUnsignedStep for AnonStep {
 #[derive(Debug, Display, Copy, Clone, PartialEq, Eq, Hash)]
 pub enum LoweredState {
   /// Start
-  Start,
+  Start(gc::ProdRef),
   /// End
-  End,
+  End(gc::ProdRef),
   /// {0}
   Within(gc::TokenPosition),
 }
@@ -142,10 +142,18 @@ pub enum LoweredState {
 impl LoweredState {
   pub fn from_vertex(vtx: EpsilonGraphVertex) -> Option<Self> {
     match vtx {
-      EpsilonGraphVertex::Start(_) => Some(LoweredState::Start),
-      EpsilonGraphVertex::End(_) => Some(LoweredState::End),
+      EpsilonGraphVertex::Start(x) => Some(LoweredState::Start(x)),
+      EpsilonGraphVertex::End(x) => Some(LoweredState::End(x)),
       EpsilonGraphVertex::State(pos) => Some(LoweredState::Within(pos)),
       EpsilonGraphVertex::Anon(_) => None,
+    }
+  }
+
+  pub fn into_vertex(self) -> EpsilonGraphVertex {
+    match self {
+      Self::Start(x) => EpsilonGraphVertex::Start(x),
+      Self::End(x) => EpsilonGraphVertex::End(x),
+      Self::Within(x) => EpsilonGraphVertex::State(x),
     }
   }
 }
@@ -342,8 +350,6 @@ pub struct CyclicGraphDecomposition {
   /* TODO: this isn't just the "cyclic" subgraph, it's needed to interpret the value of
    * pairwise_state_transitions! */
   pub trie_graph: EpsilonNodeStateSubgraph,
-  /* TODO: document how/why this is used in parse reconstruction.rs! */
-  pub anon_step_mapping: IndexMap<AnonSym, UnflattenedProdCaseRef>,
 }
 
 /* Pointers to the appropriate "forests" of stack transitions
@@ -357,7 +363,6 @@ pub struct CyclicGraphDecomposition {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct EpsilonIntervalGraph {
   pub all_cases: Vec<EpsilonGraphCase>,
-  pub anon_step_mapping: IndexMap<AnonSym, UnflattenedProdCaseRef>,
 }
 
 impl EpsilonIntervalGraph {
@@ -400,10 +405,7 @@ impl EpsilonIntervalGraph {
   }
 
   pub fn connect_all_vertices(self) -> CyclicGraphDecomposition {
-    let EpsilonIntervalGraph {
-      all_cases,
-      anon_step_mapping,
-    } = self;
+    let EpsilonIntervalGraph { all_cases } = self;
     let all_cases = Self::find_start_end_indices(all_cases);
 
     let trie_graph: EpsilonNodeStateSubgraph = {
@@ -461,10 +463,7 @@ impl EpsilonIntervalGraph {
       ret
     };
 
-    CyclicGraphDecomposition {
-      trie_graph,
-      anon_step_mapping,
-    }
+    CyclicGraphDecomposition { trie_graph }
   }
 }
 
@@ -502,7 +501,7 @@ pub struct PreprocessedGrammar<Tok> {
   ///
   /// where `{S}^+_-` (LaTeX formatting) is ordered sequences of signed
   /// stack symbols!
-  pub cyclic_graph_decomposition: CyclicGraphDecomposition,
+  pub graph_transitions: transitions::IndexedTrie,
   /// `M: T -> {Q}`, where `{Q}` is sets of states!
   ///
   /// These don't need to be quick to access or otherwise optimized for the
@@ -519,14 +518,9 @@ impl<Tok> PreprocessedGrammar<Tok> {
     EpsilonIntervalGraph,
     gb::InternedLookupTable<Tok, gc::TokRef, gc::TokenPosition>,
   ) {
-    fn make_pos_neg_anon_steps(
-      cur_index: &mut usize,
-      anon_step_mapping: &mut IndexMap<AnonSym, UnflattenedProdCaseRef>,
-      cur_case: UnflattenedProdCaseRef,
-    ) -> (EpsilonGraphVertex, EpsilonGraphVertex) {
+    fn make_pos_neg_anon_steps(cur_index: &mut usize) -> (EpsilonGraphVertex, EpsilonGraphVertex) {
       let the_sym = AnonSym(*cur_index);
       *cur_index += 1;
-      anon_step_mapping.insert(the_sym, cur_case);
       (
         EpsilonGraphVertex::Anon(AnonStep::Positive(the_sym)),
         EpsilonGraphVertex::Anon(AnonStep::Negative(the_sym)),
@@ -550,7 +544,6 @@ impl<Tok> PreprocessedGrammar<Tok> {
      * outer loop. */
     let mut cur_anon_sym_index: usize = 0;
     let mut really_all_intervals: Vec<EpsilonGraphCase> = Vec::new();
-    let mut anon_step_mapping: IndexMap<AnonSym, UnflattenedProdCaseRef> = IndexMap::new();
     for (cur_prod_ref, the_prod) in prods.iter() {
       let gb::Production(cases) = the_prod;
       for (case_ind, the_case) in cases.iter().enumerate() {
@@ -559,15 +552,7 @@ impl<Tok> PreprocessedGrammar<Tok> {
         let mut all_intervals_from_this_case: Vec<EpsilonGraphCase> = Vec::new();
 
         /* NB: make an anon sym whenever stepping onto a case! */
-        let cur_prod_case = gc::ProdCaseRef {
-          prod: *cur_prod_ref,
-          case: cur_case_ref,
-        };
-        let (pos_case_anon, neg_case_anon) = make_pos_neg_anon_steps(
-          &mut cur_anon_sym_index,
-          &mut anon_step_mapping,
-          UnflattenedProdCaseRef::Case(cur_prod_case),
-        );
+        let (pos_case_anon, neg_case_anon) = make_pos_neg_anon_steps(&mut cur_anon_sym_index);
 
         let mut cur_elements: Vec<EpsilonGraphVertex> = Vec::new();
         cur_elements.push(EpsilonGraphVertex::Start(*cur_prod_ref));
@@ -587,17 +572,12 @@ impl<Tok> PreprocessedGrammar<Tok> {
           }
           fn process_prod_ref(
             cur_anon_sym_index: &mut usize,
-            anon_step_mapping: &mut IndexMap<AnonSym, UnflattenedProdCaseRef>,
             cur_elements: &mut Vec<EpsilonGraphVertex>,
             all_intervals_from_this_case: &mut Vec<EpsilonGraphCase>,
             target_subprod_ref: gc::ProdRef,
           ) {
             /* Generate anonymous steps for the current subprod split. */
-            let (pos_anon, neg_anon) = make_pos_neg_anon_steps(
-              cur_anon_sym_index,
-              anon_step_mapping,
-              UnflattenedProdCaseRef::PassThrough,
-            );
+            let (pos_anon, neg_anon) = make_pos_neg_anon_steps(cur_anon_sym_index);
 
             /* Generate the interval terminating at the current subprod split. */
             let mut interval_upto_subprod: Vec<EpsilonGraphVertex> =
@@ -622,7 +602,6 @@ impl<Tok> PreprocessedGrammar<Tok> {
           }
           fn process_group(
             cur_anon_sym_index: &mut usize,
-            anon_step_mapping: &mut IndexMap<AnonSym, UnflattenedProdCaseRef>,
             cur_elements: &mut Vec<EpsilonGraphVertex>,
             all_intervals_from_this_case: &mut Vec<EpsilonGraphCase>,
             groups: &IndexMap<gc::GroupRef, gc::ProdRef>,
@@ -631,7 +610,6 @@ impl<Tok> PreprocessedGrammar<Tok> {
             let target_prod_ref: gc::ProdRef = groups.get(&target_group_ref).unwrap().clone();
             process_prod_ref(
               cur_anon_sym_index,
-              anon_step_mapping,
               cur_elements,
               all_intervals_from_this_case,
               target_prod_ref,
@@ -650,7 +628,6 @@ impl<Tok> PreprocessedGrammar<Tok> {
             gc::CaseEl::Prod(target_subprod_ref) => {
               process_prod_ref(
                 &mut cur_anon_sym_index,
-                &mut anon_step_mapping,
                 &mut cur_elements,
                 &mut all_intervals_from_this_case,
                 *target_subprod_ref,
@@ -659,7 +636,6 @@ impl<Tok> PreprocessedGrammar<Tok> {
             gc::CaseEl::Group(target_group_ref) => {
               process_group(
                 &mut cur_anon_sym_index,
-                &mut anon_step_mapping,
                 &mut cur_elements,
                 &mut all_intervals_from_this_case,
                 &groups,
@@ -687,19 +663,20 @@ impl<Tok> PreprocessedGrammar<Tok> {
     (
       EpsilonIntervalGraph {
         all_cases: really_all_intervals,
-        anon_step_mapping,
       },
       tokens,
     )
   }
 
   pub fn new(grammar: gb::TokenGrammar<Tok>) -> Self {
-    let (terminals_interval_graph, tokens) = Self::produce_terminals_interval_graph(grammar);
-    let cyclic_graph_decomposition: CyclicGraphDecomposition =
-      terminals_interval_graph.connect_all_vertices();
+    let (terminals_interval_graph, token_states_mapping) =
+      Self::produce_terminals_interval_graph(grammar);
+    let CyclicGraphDecomposition { trie_graph } = terminals_interval_graph.connect_all_vertices();
+    let graph_transitions = transitions::IndexedTrie::from_epsilon_graph(trie_graph);
+
     PreprocessedGrammar {
-      token_states_mapping: tokens,
-      cyclic_graph_decomposition,
+      token_states_mapping,
+      graph_transitions,
     }
   }
 }
@@ -1045,34 +1022,6 @@ mod tests {
         ]
         .as_ref()
         .to_vec(),
-        anon_step_mapping: [
-          (
-            AnonSym(0),
-            UnflattenedProdCaseRef::Case(gc::ProdCaseRef {
-              prod: gc::ProdRef(0),
-              case: gc::CaseRef(0)
-            })
-          ),
-          (
-            AnonSym(1),
-            UnflattenedProdCaseRef::Case(gc::ProdCaseRef {
-              prod: gc::ProdRef(1),
-              case: gc::CaseRef(0)
-            })
-          ),
-          (AnonSym(2), UnflattenedProdCaseRef::PassThrough),
-          (
-            AnonSym(3),
-            UnflattenedProdCaseRef::Case(gc::ProdCaseRef {
-              prod: gc::ProdRef(1),
-              case: gc::CaseRef(1)
-            })
-          ),
-          (AnonSym(4), UnflattenedProdCaseRef::PassThrough),
-        ]
-        .iter()
-        .cloned()
-        .collect::<IndexMap<_, _>>(),
       }
     );
 
@@ -1109,10 +1058,7 @@ mod tests {
     );
 
     /* Now check that the transition graph is as we expect. */
-    let CyclicGraphDecomposition {
-      trie_graph,
-      anon_step_mapping,
-    } = noncyclic_interval_graph.connect_all_vertices();
+    let CyclicGraphDecomposition { trie_graph } = noncyclic_interval_graph.connect_all_vertices();
     /* There are no stack cycles in the noncyclic graph. */
     /* assert_eq!( */
     /*      trie_graph, */
@@ -1150,37 +1096,6 @@ mod tests {
     /*            prev_nodes: {Completed(Start)} }, StackTrieNode { step: None, next_nodes: {Completed(Within(TokenPosition { prod: ProdRef(0), case: CaseRef(0), el: CaseElRef(1) }))}, prev_nodes: {Incomplete(TrieNodeRef(1))} }, StackTrieNode { step: None, next_nodes: {Incomplete(TrieNodeRef(4))}, prev_nodes: {Completed(Within(TokenPosition { prod: ProdRef(0), case: CaseRef(0), el: CaseElRef(0) }))} }, StackTrieNode { step: Some(Anon(Negative(AnonSym(0)))), next_nodes: {Completed(End)}, prev_nodes: {Completed(Within(TokenPosition { prod: ProdRef(0), case: CaseRef(0), el: CaseElRef(1) }))} }, StackTrieNode { step: Some(Named(Negative(StackSym(ProdRef(0))))), next_nodes: {Incomplete(TrieNodeRef(6)), Incomplete(TrieNodeRef(9))}, prev_nodes: {Incomplete(TrieNodeRef(4))} }, StackTrieNode { step: Some(Anon(Negative(AnonSym(2)))), next_nodes: {Incomplete(TrieNodeRef(7))}, prev_nodes: {Completed(End)} }, StackTrieNode { step: Some(Anon(Negative(AnonSym(1)))), next_nodes: {Completed(End)}, prev_nodes: {Incomplete(TrieNodeRef(6))} }, StackTrieNode { step: Some(Named(Negative(StackSym(ProdRef(1))))), next_nodes: {}, prev_nodes: {Incomplete(TrieNodeRef(7)), Incomplete(TrieNodeRef(11))} }, StackTrieNode { step: Some(Anon(Negative(AnonSym(4)))), next_nodes: {Completed(Within(TokenPosition { prod: ProdRef(1), case: CaseRef(1), el: CaseElRef(1) }))}, prev_nodes: {Completed(End)} }, StackTrieNode { step: None, next_nodes: {Incomplete(TrieNodeRef(11))}, prev_nodes: {Incomplete(TrieNodeRef(9))} }, StackTrieNode { step: Some(Anon(Negative(AnonSym(3)))), next_nodes: {Completed(End)}, prev_nodes: {Completed(Within(TokenPosition { prod: ProdRef(1), case: CaseRef(1), el: CaseElRef(1) }))} }, StackTrieNode { step: Some(Named(Positive(StackSym(ProdRef(1))))), next_nodes: {Incomplete(TrieNodeRef(13)), Incomplete(TrieNodeRef(17))}, prev_nodes: {} }, StackTrieNode { step: Some(Anon(Positive(AnonSym(1)))), next_nodes: {Completed(Within(TokenPosition { prod: ProdRef(1), case: CaseRef(0), el: CaseElRef(0) }))}, prev_nodes: {Completed(Start)} }, StackTrieNode { step: None, next_nodes: {Completed(Within(TokenPosition { prod: ProdRef(1), case: CaseRef(0), el: CaseElRef(1) }))}, prev_nodes: {Incomplete(TrieNodeRef(13))} }, StackTrieNode { step: None, next_nodes: {Incomplete(TrieNodeRef(16))}, prev_nodes: {Completed(Within(TokenPosition { prod: ProdRef(1), case: CaseRef(0), el: CaseElRef(0) }))} }, StackTrieNode { step: Some(Anon(Positive(AnonSym(2)))), next_nodes: {Completed(Start)}, prev_nodes: {Completed(Within(TokenPosition { prod: ProdRef(1), case: CaseRef(0), el: CaseElRef(1) }))} }, StackTrieNode { step: Some(Anon(Positive(AnonSym(3)))), next_nodes: {Incomplete(TrieNodeRef(18))}, prev_nodes: {Completed(Start)} }, StackTrieNode { step: Some(Anon(Positive(AnonSym(4)))), next_nodes: {Completed(Start)}, prev_nodes: {Incomplete(TrieNodeRef(17))} }].iter().cloned().collect(), */
     /* } */
     /*    ); */
-    assert_eq!(
-      anon_step_mapping,
-      [
-        (
-          AnonSym(0),
-          UnflattenedProdCaseRef::Case(gc::ProdCaseRef {
-            prod: gc::ProdRef(0),
-            case: gc::CaseRef(0)
-          })
-        ),
-        (
-          AnonSym(1),
-          UnflattenedProdCaseRef::Case(gc::ProdCaseRef {
-            prod: gc::ProdRef(1),
-            case: gc::CaseRef(0)
-          })
-        ),
-        (AnonSym(2), UnflattenedProdCaseRef::PassThrough),
-        (
-          AnonSym(3),
-          UnflattenedProdCaseRef::Case(gc::ProdCaseRef {
-            prod: gc::ProdRef(1),
-            case: gc::CaseRef(1)
-          })
-        ),
-        (AnonSym(4), UnflattenedProdCaseRef::PassThrough),
-      ]
-      .iter()
-      .cloned()
-      .collect::<IndexMap<_, _>>()
-    );
 
     /* Now do the same, but for `basic_productions()`. */
     /* TODO: test `.find_start_end_indices()` and `.connect_all_vertices()` here
@@ -1315,515 +1230,435 @@ mod tests {
         ]
         .as_ref()
         .to_vec(),
-        anon_step_mapping: [
-          (
-            AnonSym(0),
-            UnflattenedProdCaseRef::Case(gc::ProdCaseRef {
-              prod: gc::ProdRef(0),
-              case: gc::CaseRef(0)
-            })
-          ),
-          (
-            AnonSym(1),
-            UnflattenedProdCaseRef::Case(gc::ProdCaseRef {
-              prod: gc::ProdRef(0),
-              case: gc::CaseRef(1)
-            })
-          ),
-          (AnonSym(2), UnflattenedProdCaseRef::PassThrough),
-          (
-            AnonSym(3),
-            UnflattenedProdCaseRef::Case(gc::ProdCaseRef {
-              prod: gc::ProdRef(0),
-              case: gc::CaseRef(2)
-            })
-          ),
-          (AnonSym(4), UnflattenedProdCaseRef::PassThrough),
-          (
-            AnonSym(5),
-            UnflattenedProdCaseRef::Case(gc::ProdCaseRef {
-              prod: gc::ProdRef(1),
-              case: gc::CaseRef(0)
-            })
-          ),
-          (AnonSym(6), UnflattenedProdCaseRef::PassThrough),
-          (
-            AnonSym(7),
-            UnflattenedProdCaseRef::Case(gc::ProdCaseRef {
-              prod: gc::ProdRef(1),
-              case: gc::CaseRef(1)
-            })
-          ),
-          (AnonSym(8), UnflattenedProdCaseRef::PassThrough),
-          (
-            AnonSym(9),
-            UnflattenedProdCaseRef::Case(gc::ProdCaseRef {
-              prod: gc::ProdRef(1),
-              case: gc::CaseRef(2)
-            })
-          ),
-          (AnonSym(10), UnflattenedProdCaseRef::PassThrough),
-        ]
-        .iter()
-        .cloned()
-        .collect(),
       }
     );
   }
 
-  /* TODO: consider creating/using a generic tree diffing algorithm in case
-   * that speeds up debugging (this might conflict with the benefits of using
-   * totally ordered IndexMaps though, namely determinism, as well as knowing
-   * exactly which order your subtrees are created in)! */
-  #[ignore]
-  #[test]
-  fn noncyclic_transition_graph() {
-    let prods = non_cyclic_productions();
-    let detokenized = state::preprocessing::Init(prods).try_index().unwrap();
-    let state::preprocessing::Indexed(preprocessed_grammar) = detokenized.index();
+  /* /\* TODO: consider creating/using a generic tree diffing algorithm in case */
+  /*  * that speeds up debugging (this might conflict with the benefits of using */
+  /*  * totally ordered IndexMaps though, namely determinism, as well as knowing */
+  /*  * exactly which order your subtrees are created in)! *\/ */
+  /* #[ignore] */
+  /* #[test] */
+  /* fn noncyclic_transition_graph() { */
+  /*   let prods = non_cyclic_productions(); */
+  /*   let detokenized = state::preprocessing::Init(prods).try_index().unwrap(); */
+  /*   let state::preprocessing::Indexed(preprocessed_grammar) = detokenized.index(); */
 
-    let first_a = new_token_position(0, 0, 0);
-    let first_b = new_token_position(0, 0, 1);
-    let second_a = new_token_position(1, 0, 0);
-    let second_b = new_token_position(1, 0, 1);
-    let third_a = new_token_position(1, 1, 1);
-    let a_prod = gc::ProdRef(0);
-    let b_prod = gc::ProdRef(1);
-    assert_eq!(
-      preprocessed_grammar.token_states_mapping.into_index_map(),
-      [
-        (
-          gc::TokRef(0),
-          [first_a, second_a, third_a].as_ref().to_vec()
-        ),
-        (gc::TokRef(1), [first_b, second_b].as_ref().to_vec()),
-      ]
-      .iter()
-      .cloned()
-      .collect::<IndexMap<_, _>>(),
-    );
+  /*   let first_a = new_token_position(0, 0, 0); */
+  /*   let first_b = new_token_position(0, 0, 1); */
+  /*   let second_a = new_token_position(1, 0, 0); */
+  /*   let second_b = new_token_position(1, 0, 1); */
+  /*   let third_a = new_token_position(1, 1, 1); */
+  /*   let a_prod = gc::ProdRef(0); */
+  /*   let b_prod = gc::ProdRef(1); */
+  /*   assert_eq!( */
+  /*     preprocessed_grammar.token_states_mapping.into_index_map(), */
+  /*     [ */
+  /*       ( */
+  /*         gc::TokRef(0), */
+  /*         [first_a, second_a, third_a].as_ref().to_vec() */
+  /*       ), */
+  /*       (gc::TokRef(1), [first_b, second_b].as_ref().to_vec()), */
+  /*     ] */
+  /*     .iter() */
+  /*     .cloned() */
+  /*     .collect::<IndexMap<_, _>>(), */
+  /*   ); */
 
-    let other_cyclic_graph_decomposition = CyclicGraphDecomposition {
-      trie_graph: EpsilonNodeStateSubgraph {
-        vertex_mapping: IndexMap::<_, _>::new(),
-        trie_node_universe: Vec::new(),
-      },
-      anon_step_mapping: [
-        (
-          AnonSym(0),
-          UnflattenedProdCaseRef::Case(gc::ProdCaseRef {
-            prod: a_prod,
-            case: gc::CaseRef(0),
-          }),
-        ),
-        (
-          AnonSym(1),
-          UnflattenedProdCaseRef::Case(gc::ProdCaseRef {
-            prod: b_prod,
-            case: gc::CaseRef(0),
-          }),
-        ),
-        (AnonSym(2), UnflattenedProdCaseRef::PassThrough),
-        (
-          AnonSym(3),
-          UnflattenedProdCaseRef::Case(gc::ProdCaseRef {
-            prod: b_prod,
-            case: gc::CaseRef(1),
-          }),
-        ),
-        (AnonSym(4), UnflattenedProdCaseRef::PassThrough),
-      ]
-      .iter()
-      .cloned()
-      .collect::<IndexMap<_, _>>(),
-    };
+  /*   let other_cyclic_graph_decomposition = CyclicGraphDecomposition { */
+  /*     trie_graph: EpsilonNodeStateSubgraph { */
+  /*       vertex_mapping: IndexMap::<_, _>::new(), */
+  /*       trie_node_universe: Vec::new(), */
+  /*     }, */
+  /*   }; */
 
-    assert_eq!(
-      preprocessed_grammar.cyclic_graph_decomposition,
-      other_cyclic_graph_decomposition,
-    );
-  }
+  /*   assert_eq!( */
+  /*     preprocessed_grammar.graph_transitions, */
+  /*     other_cyclic_graph_decomposition, */
+  /*   ); */
+  /* } */
 
-  #[ignore]
-  #[test]
-  fn cyclic_transition_graph() {
-    let prods = basic_productions();
-    let detokenized = state::preprocessing::Init(prods).try_index().unwrap();
-    let state::preprocessing::Indexed(preprocessed_grammar) = detokenized.index();
+  /* #[ignore] */
+  /* #[test] */
+  /* fn cyclic_transition_graph() { */
+  /*   let prods = basic_productions(); */
+  /*   let detokenized = state::preprocessing::Init(prods).try_index().unwrap(); */
+  /*   let state::preprocessing::Indexed(preprocessed_grammar) = detokenized.index(); */
 
-    let first_a = new_token_position(0, 0, 0);
-    let second_a = new_token_position(0, 1, 0);
+  /*   let first_a = new_token_position(0, 0, 0); */
+  /*   let second_a = new_token_position(0, 1, 0); */
 
-    let first_b = new_token_position(0, 0, 1);
-    let second_b = new_token_position(0, 2, 0);
-    let third_b = new_token_position(1, 2, 1);
+  /*   let first_b = new_token_position(0, 0, 1); */
+  /*   let second_b = new_token_position(0, 2, 0); */
+  /*   let third_b = new_token_position(1, 2, 1); */
 
-    let first_c = new_token_position(0, 0, 2);
-    let second_c = new_token_position(0, 1, 2);
-    let third_c = new_token_position(0, 2, 1);
-    let fourth_c = new_token_position(1, 2, 2);
+  /*   let first_c = new_token_position(0, 0, 2); */
+  /*   let second_c = new_token_position(0, 1, 2); */
+  /*   let third_c = new_token_position(0, 2, 1); */
+  /*   let fourth_c = new_token_position(1, 2, 2); */
 
-    let a_prod = gc::ProdRef(0);
-    let b_prod = gc::ProdRef(1);
-    let _c_prod = gc::ProdRef(2); /* unused */
+  /*   let a_prod = gc::ProdRef(0); */
+  /*   let b_prod = gc::ProdRef(1); */
+  /*   let _c_prod = gc::ProdRef(2); /\* unused *\/ */
 
-    assert_eq!(
-      preprocessed_grammar.token_states_mapping.into_index_map(),
-      [
-        (gc::TokRef(0), [first_a, second_a].as_ref().to_vec()),
-        (
-          gc::TokRef(1),
-          [first_b, second_b, third_b].as_ref().to_vec()
-        ),
-        (
-          gc::TokRef(2),
-          [first_c, second_c, third_c, fourth_c].as_ref().to_vec()
-        ),
-      ]
-      .iter()
-      .cloned()
-      .collect::<IndexMap<_, _>>()
-    );
+  /*   assert_eq!( */
+  /*     preprocessed_grammar.token_states_mapping.into_index_map(), */
+  /*     [ */
+  /*       (gc::TokRef(0), [first_a, second_a].as_ref().to_vec()), */
+  /*       ( */
+  /*         gc::TokRef(1), */
+  /*         [first_b, second_b, third_b].as_ref().to_vec() */
+  /*       ), */
+  /*       ( */
+  /*         gc::TokRef(2), */
+  /*         [first_c, second_c, third_c, fourth_c].as_ref().to_vec() */
+  /*       ), */
+  /*     ] */
+  /*     .iter() */
+  /*     .cloned() */
+  /*     .collect::<IndexMap<_, _>>() */
+  /*   ); */
 
-    assert_eq!(
-      preprocessed_grammar
-        .cyclic_graph_decomposition
-        .trie_graph
-        .vertex_mapping
-        .clone(),
-      [
-        /* 0 */
-        (EpsilonGraphVertex::Start(b_prod), TrieNodeRef(0)),
-        /* 1 */
-        (
-          EpsilonGraphVertex::Anon(AnonStep::Positive(AnonSym(7))),
-          TrieNodeRef(1)
-        ),
-        /* 2 */
-        (
-          EpsilonGraphVertex::Anon(AnonStep::Positive(AnonSym(8))),
-          TrieNodeRef(2)
-        ),
-        /* 3 */
-        (EpsilonGraphVertex::End(b_prod), TrieNodeRef(3)),
-        /* 4 */
-        (
-          EpsilonGraphVertex::Anon(AnonStep::Negative(AnonSym(8))),
-          TrieNodeRef(4)
-        ),
-        /* 5 */
-        (
-          EpsilonGraphVertex::Anon(AnonStep::Negative(AnonSym(7))),
-          TrieNodeRef(5)
-        ),
-        /* 6 */
-        (
-          EpsilonGraphVertex::State(new_token_position(a_prod.0, 1, 0)),
-          TrieNodeRef(6)
-        ),
-        /* 7 */
-        (
-          EpsilonGraphVertex::Anon(AnonStep::Positive(AnonSym(2))),
-          TrieNodeRef(7)
-        ),
-        /* 8 */
-        (EpsilonGraphVertex::Start(a_prod), TrieNodeRef(8)),
-        /* 9 */
-        (
-          EpsilonGraphVertex::Anon(AnonStep::Positive(AnonSym(1))),
-          TrieNodeRef(9)
-        ),
-        /* 10 */
-        (
-          EpsilonGraphVertex::State(new_token_position(a_prod.0, 1, 2)),
-          TrieNodeRef(10)
-        ),
-        /* 11 */
-        (
-          EpsilonGraphVertex::Anon(AnonStep::Negative(AnonSym(1))),
-          TrieNodeRef(11)
-        ),
-        /* 12 */
-        (EpsilonGraphVertex::End(a_prod), TrieNodeRef(12)),
-        /* 13 */
-        (
-          EpsilonGraphVertex::Anon(AnonStep::Negative(AnonSym(2))),
-          TrieNodeRef(13)
-        ),
-        /* 14 */
-        (
-          EpsilonGraphVertex::Anon(AnonStep::Negative(AnonSym(4))),
-          TrieNodeRef(14)
-        ),
-        /* 15 */
-        (
-          EpsilonGraphVertex::Anon(AnonStep::Negative(AnonSym(3))),
-          TrieNodeRef(15)
-        ),
-        /* 16 */
-        (
-          EpsilonGraphVertex::Anon(AnonStep::Negative(AnonSym(6))),
-          TrieNodeRef(16)
-        ),
-        /* 17 */
-        (
-          EpsilonGraphVertex::Anon(AnonStep::Negative(AnonSym(5))),
-          TrieNodeRef(17)
-        )
-      ]
-      .iter()
-      .cloned()
-      .collect::<IndexMap<_, _>>()
-    );
+  /*   assert_eq!( */
+  /*     preprocessed_grammar */
+  /*       .cyclic_graph_decomposition */
+  /*       .trie_graph */
+  /*       .vertex_mapping */
+  /*       .clone(), */
+  /*     [ */
+  /*       /\* 0 *\/ */
+  /*       (EpsilonGraphVertex::Start(b_prod), TrieNodeRef(0)), */
+  /*       /\* 1 *\/ */
+  /*       ( */
+  /*         EpsilonGraphVertex::Anon(AnonStep::Positive(AnonSym(7))), */
+  /*         TrieNodeRef(1) */
+  /*       ), */
+  /*       /\* 2 *\/ */
+  /*       ( */
+  /*         EpsilonGraphVertex::Anon(AnonStep::Positive(AnonSym(8))), */
+  /*         TrieNodeRef(2) */
+  /*       ), */
+  /*       /\* 3 *\/ */
+  /*       (EpsilonGraphVertex::End(b_prod), TrieNodeRef(3)), */
+  /*       /\* 4 *\/ */
+  /*       ( */
+  /*         EpsilonGraphVertex::Anon(AnonStep::Negative(AnonSym(8))), */
+  /*         TrieNodeRef(4) */
+  /*       ), */
+  /*       /\* 5 *\/ */
+  /*       ( */
+  /*         EpsilonGraphVertex::Anon(AnonStep::Negative(AnonSym(7))), */
+  /*         TrieNodeRef(5) */
+  /*       ), */
+  /*       /\* 6 *\/ */
+  /*       ( */
+  /*         EpsilonGraphVertex::State(new_token_position(a_prod.0, 1, 0)), */
+  /*         TrieNodeRef(6) */
+  /*       ), */
+  /*       /\* 7 *\/ */
+  /*       ( */
+  /*         EpsilonGraphVertex::Anon(AnonStep::Positive(AnonSym(2))), */
+  /*         TrieNodeRef(7) */
+  /*       ), */
+  /*       /\* 8 *\/ */
+  /*       (EpsilonGraphVertex::Start(a_prod), TrieNodeRef(8)), */
+  /*       /\* 9 *\/ */
+  /*       ( */
+  /*         EpsilonGraphVertex::Anon(AnonStep::Positive(AnonSym(1))), */
+  /*         TrieNodeRef(9) */
+  /*       ), */
+  /*       /\* 10 *\/ */
+  /*       ( */
+  /*         EpsilonGraphVertex::State(new_token_position(a_prod.0, 1, 2)), */
+  /*         TrieNodeRef(10) */
+  /*       ), */
+  /*       /\* 11 *\/ */
+  /*       ( */
+  /*         EpsilonGraphVertex::Anon(AnonStep::Negative(AnonSym(1))), */
+  /*         TrieNodeRef(11) */
+  /*       ), */
+  /*       /\* 12 *\/ */
+  /*       (EpsilonGraphVertex::End(a_prod), TrieNodeRef(12)), */
+  /*       /\* 13 *\/ */
+  /*       ( */
+  /*         EpsilonGraphVertex::Anon(AnonStep::Negative(AnonSym(2))), */
+  /*         TrieNodeRef(13) */
+  /*       ), */
+  /*       /\* 14 *\/ */
+  /*       ( */
+  /*         EpsilonGraphVertex::Anon(AnonStep::Negative(AnonSym(4))), */
+  /*         TrieNodeRef(14) */
+  /*       ), */
+  /*       /\* 15 *\/ */
+  /*       ( */
+  /*         EpsilonGraphVertex::Anon(AnonStep::Negative(AnonSym(3))), */
+  /*         TrieNodeRef(15) */
+  /*       ), */
+  /*       /\* 16 *\/ */
+  /*       ( */
+  /*         EpsilonGraphVertex::Anon(AnonStep::Negative(AnonSym(6))), */
+  /*         TrieNodeRef(16) */
+  /*       ), */
+  /*       /\* 17 *\/ */
+  /*       ( */
+  /*         EpsilonGraphVertex::Anon(AnonStep::Negative(AnonSym(5))), */
+  /*         TrieNodeRef(17) */
+  /*       ) */
+  /*     ] */
+  /*     .iter() */
+  /*     .cloned() */
+  /*     .collect::<IndexMap<_, _>>() */
+  /*   ); */
 
-    let all_trie_nodes: &[StackTrieNode] = preprocessed_grammar
-      .cyclic_graph_decomposition
-      .trie_graph
-      .trie_node_universe
-      .as_ref();
-    assert_eq!(
-      all_trie_nodes,
-      [
-        /* 0 */
-        StackTrieNode {
-          step: Some(NamedOrAnonStep::Named(StackStep::Positive(StackSym(
-            b_prod
-          )))),
-          next_nodes: [StackTrieNextEntry::Incomplete(TrieNodeRef(1))]
-            .iter()
-            .cloned()
-            .collect::<IndexSet<_>>(),
-          prev_nodes: [StackTrieNextEntry::Incomplete(TrieNodeRef(2))]
-            .iter()
-            .cloned()
-            .collect::<IndexSet<_>>()
-        },
-        /* 1 */
-        StackTrieNode {
-          step: Some(NamedOrAnonStep::Anon(AnonStep::Positive(AnonSym(7)))),
-          next_nodes: [StackTrieNextEntry::Incomplete(TrieNodeRef(2))]
-            .iter()
-            .cloned()
-            .collect::<IndexSet<_>>(),
-          prev_nodes: [StackTrieNextEntry::Incomplete(TrieNodeRef(0))]
-            .iter()
-            .cloned()
-            .collect::<IndexSet<_>>()
-        },
-        /* 2 */
-        StackTrieNode {
-          step: Some(NamedOrAnonStep::Anon(AnonStep::Positive(AnonSym(8)))),
-          next_nodes: [StackTrieNextEntry::Incomplete(TrieNodeRef(0))]
-            .iter()
-            .cloned()
-            .collect::<IndexSet<_>>(),
-          prev_nodes: [StackTrieNextEntry::Incomplete(TrieNodeRef(1))]
-            .iter()
-            .cloned()
-            .collect::<IndexSet<_>>()
-        },
-        /* 3 */
-        StackTrieNode {
-          step: Some(NamedOrAnonStep::Named(StackStep::Negative(StackSym(
-            b_prod
-          )))),
-          next_nodes: [
-            StackTrieNextEntry::Incomplete(TrieNodeRef(4)),
-            StackTrieNextEntry::Incomplete(TrieNodeRef(14))
-          ]
-          .iter()
-          .cloned()
-          .collect::<IndexSet<_>>(),
-          prev_nodes: [
-            StackTrieNextEntry::Incomplete(TrieNodeRef(5)),
-            StackTrieNextEntry::Incomplete(TrieNodeRef(17))
-          ]
-          .iter()
-          .cloned()
-          .collect::<IndexSet<_>>()
-        },
-        /* 4 */
-        StackTrieNode {
-          step: Some(NamedOrAnonStep::Anon(AnonStep::Negative(AnonSym(8)))),
-          next_nodes: [StackTrieNextEntry::Incomplete(TrieNodeRef(5))]
-            .iter()
-            .cloned()
-            .collect::<IndexSet<_>>(),
-          prev_nodes: [StackTrieNextEntry::Incomplete(TrieNodeRef(3))]
-            .iter()
-            .cloned()
-            .collect::<IndexSet<_>>()
-        },
-        /* 5 */
-        StackTrieNode {
-          step: Some(NamedOrAnonStep::Anon(AnonStep::Negative(AnonSym(7)))),
-          next_nodes: [StackTrieNextEntry::Incomplete(TrieNodeRef(3))]
-            .iter()
-            .cloned()
-            .collect::<IndexSet<_>>(),
-          prev_nodes: [StackTrieNextEntry::Incomplete(TrieNodeRef(4))]
-            .iter()
-            .cloned()
-            .collect::<IndexSet<_>>()
-        },
-        /* 6 */
-        StackTrieNode {
-          step: None,
-          next_nodes: [StackTrieNextEntry::Incomplete(TrieNodeRef(7))]
-            .iter()
-            .cloned()
-            .collect::<IndexSet<_>>(),
-          prev_nodes: [StackTrieNextEntry::Incomplete(TrieNodeRef(9))]
-            .iter()
-            .cloned()
-            .collect::<IndexSet<_>>()
-        },
-        /* 7 */
-        StackTrieNode {
-          step: Some(NamedOrAnonStep::Anon(AnonStep::Positive(AnonSym(2)))),
-          next_nodes: [StackTrieNextEntry::Incomplete(TrieNodeRef(8))]
-            .iter()
-            .cloned()
-            .collect::<IndexSet<_>>(),
-          prev_nodes: [StackTrieNextEntry::Incomplete(TrieNodeRef(6))]
-            .iter()
-            .cloned()
-            .collect::<IndexSet<_>>()
-        },
-        /* 8 */
-        StackTrieNode {
-          step: Some(NamedOrAnonStep::Named(StackStep::Positive(StackSym(
-            a_prod
-          )))),
-          next_nodes: [StackTrieNextEntry::Incomplete(TrieNodeRef(9))]
-            .iter()
-            .cloned()
-            .collect::<IndexSet<_>>(),
-          prev_nodes: [StackTrieNextEntry::Incomplete(TrieNodeRef(7))]
-            .iter()
-            .cloned()
-            .collect::<IndexSet<_>>()
-        },
-        /* 9 */
-        StackTrieNode {
-          step: Some(NamedOrAnonStep::Anon(AnonStep::Positive(AnonSym(1)))),
-          next_nodes: [StackTrieNextEntry::Incomplete(TrieNodeRef(6))]
-            .iter()
-            .cloned()
-            .collect::<IndexSet<_>>(),
-          prev_nodes: [StackTrieNextEntry::Incomplete(TrieNodeRef(8))]
-            .iter()
-            .cloned()
-            .collect::<IndexSet<_>>()
-        },
-        /* 10 */
-        StackTrieNode {
-          step: None,
-          next_nodes: [StackTrieNextEntry::Incomplete(TrieNodeRef(11))]
-            .iter()
-            .cloned()
-            .collect::<IndexSet<_>>(),
-          prev_nodes: [StackTrieNextEntry::Incomplete(TrieNodeRef(13))]
-            .iter()
-            .cloned()
-            .collect::<IndexSet<_>>()
-        },
-        /* 11 */
-        StackTrieNode {
-          step: Some(NamedOrAnonStep::Anon(AnonStep::Negative(AnonSym(1)))),
-          next_nodes: [StackTrieNextEntry::Incomplete(TrieNodeRef(12))]
-            .iter()
-            .cloned()
-            .collect::<IndexSet<_>>(),
-          prev_nodes: [StackTrieNextEntry::Incomplete(TrieNodeRef(10))]
-            .iter()
-            .cloned()
-            .collect::<IndexSet<_>>()
-        },
-        /* 12 */
-        StackTrieNode {
-          step: Some(NamedOrAnonStep::Named(StackStep::Negative(StackSym(
-            a_prod
-          )))),
-          next_nodes: [
-            StackTrieNextEntry::Incomplete(TrieNodeRef(13)),
-            StackTrieNextEntry::Incomplete(TrieNodeRef(16))
-          ]
-          .iter()
-          .cloned()
-          .collect::<IndexSet<_>>(),
-          prev_nodes: [
-            StackTrieNextEntry::Incomplete(TrieNodeRef(11)),
-            StackTrieNextEntry::Incomplete(TrieNodeRef(15))
-          ]
-          .iter()
-          .cloned()
-          .collect::<IndexSet<_>>()
-        },
-        /* 13 */
-        StackTrieNode {
-          step: Some(NamedOrAnonStep::Anon(AnonStep::Negative(AnonSym(2)))),
-          next_nodes: [StackTrieNextEntry::Incomplete(TrieNodeRef(10))]
-            .iter()
-            .cloned()
-            .collect::<IndexSet<_>>(),
-          prev_nodes: [StackTrieNextEntry::Incomplete(TrieNodeRef(12))]
-            .iter()
-            .cloned()
-            .collect::<IndexSet<_>>()
-        },
-        /* 14 */
-        StackTrieNode {
-          step: Some(NamedOrAnonStep::Anon(AnonStep::Negative(AnonSym(4)))),
-          next_nodes: [StackTrieNextEntry::Incomplete(TrieNodeRef(15))]
-            .iter()
-            .cloned()
-            .collect::<IndexSet<_>>(),
-          prev_nodes: [StackTrieNextEntry::Incomplete(TrieNodeRef(3))]
-            .iter()
-            .cloned()
-            .collect::<IndexSet<_>>()
-        },
-        /* 15 */
-        StackTrieNode {
-          step: Some(NamedOrAnonStep::Anon(AnonStep::Negative(AnonSym(3)))),
-          next_nodes: [StackTrieNextEntry::Incomplete(TrieNodeRef(12))]
-            .iter()
-            .cloned()
-            .collect::<IndexSet<_>>(),
-          prev_nodes: [StackTrieNextEntry::Incomplete(TrieNodeRef(14))]
-            .iter()
-            .cloned()
-            .collect::<IndexSet<_>>()
-        },
-        /* 16 */
-        StackTrieNode {
-          step: Some(NamedOrAnonStep::Anon(AnonStep::Negative(AnonSym(6)))),
-          next_nodes: [StackTrieNextEntry::Incomplete(TrieNodeRef(17))]
-            .iter()
-            .cloned()
-            .collect::<IndexSet<_>>(),
-          prev_nodes: [StackTrieNextEntry::Incomplete(TrieNodeRef(12))]
-            .iter()
-            .cloned()
-            .collect::<IndexSet<_>>()
-        },
-        /* 17 */
-        StackTrieNode {
-          step: Some(NamedOrAnonStep::Anon(AnonStep::Negative(AnonSym(5)))),
-          next_nodes: [StackTrieNextEntry::Incomplete(TrieNodeRef(3))]
-            .iter()
-            .cloned()
-            .collect::<IndexSet<_>>(),
-          prev_nodes: [StackTrieNextEntry::Incomplete(TrieNodeRef(16))]
-            .iter()
-            .cloned()
-            .collect::<IndexSet<_>>()
-        }
-      ]
-      .as_ref()
-    );
-  }
+  /*   let all_trie_nodes: &[StackTrieNode] = preprocessed_grammar */
+  /*     .cyclic_graph_decomposition */
+  /*     .trie_graph */
+  /*     .trie_node_universe */
+  /*     .as_ref(); */
+  /*   assert_eq!( */
+  /*     all_trie_nodes, */
+  /*     [ */
+  /*       /\* 0 *\/ */
+  /*       StackTrieNode { */
+  /*         step: Some(NamedOrAnonStep::Named(StackStep::Positive(StackSym( */
+  /*           b_prod */
+  /*         )))), */
+  /*         next_nodes: [StackTrieNextEntry::Incomplete(TrieNodeRef(1))] */
+  /*           .iter() */
+  /*           .cloned() */
+  /*           .collect::<IndexSet<_>>(), */
+  /*         prev_nodes: [StackTrieNextEntry::Incomplete(TrieNodeRef(2))] */
+  /*           .iter() */
+  /*           .cloned() */
+  /*           .collect::<IndexSet<_>>() */
+  /*       }, */
+  /*       /\* 1 *\/ */
+  /*       StackTrieNode { */
+  /*         step: Some(NamedOrAnonStep::Anon(AnonStep::Positive(AnonSym(7)))), */
+  /*         next_nodes: [StackTrieNextEntry::Incomplete(TrieNodeRef(2))] */
+  /*           .iter() */
+  /*           .cloned() */
+  /*           .collect::<IndexSet<_>>(), */
+  /*         prev_nodes: [StackTrieNextEntry::Incomplete(TrieNodeRef(0))] */
+  /*           .iter() */
+  /*           .cloned() */
+  /*           .collect::<IndexSet<_>>() */
+  /*       }, */
+  /*       /\* 2 *\/ */
+  /*       StackTrieNode { */
+  /*         step: Some(NamedOrAnonStep::Anon(AnonStep::Positive(AnonSym(8)))), */
+  /*         next_nodes: [StackTrieNextEntry::Incomplete(TrieNodeRef(0))] */
+  /*           .iter() */
+  /*           .cloned() */
+  /*           .collect::<IndexSet<_>>(), */
+  /*         prev_nodes: [StackTrieNextEntry::Incomplete(TrieNodeRef(1))] */
+  /*           .iter() */
+  /*           .cloned() */
+  /*           .collect::<IndexSet<_>>() */
+  /*       }, */
+  /*       /\* 3 *\/ */
+  /*       StackTrieNode { */
+  /*         step: Some(NamedOrAnonStep::Named(StackStep::Negative(StackSym( */
+  /*           b_prod */
+  /*         )))), */
+  /*         next_nodes: [ */
+  /*           StackTrieNextEntry::Incomplete(TrieNodeRef(4)), */
+  /*           StackTrieNextEntry::Incomplete(TrieNodeRef(14)) */
+  /*         ] */
+  /*         .iter() */
+  /*         .cloned() */
+  /*         .collect::<IndexSet<_>>(), */
+  /*         prev_nodes: [ */
+  /*           StackTrieNextEntry::Incomplete(TrieNodeRef(5)), */
+  /*           StackTrieNextEntry::Incomplete(TrieNodeRef(17)) */
+  /*         ] */
+  /*         .iter() */
+  /*         .cloned() */
+  /*         .collect::<IndexSet<_>>() */
+  /*       }, */
+  /*       /\* 4 *\/ */
+  /*       StackTrieNode { */
+  /*         step: Some(NamedOrAnonStep::Anon(AnonStep::Negative(AnonSym(8)))), */
+  /*         next_nodes: [StackTrieNextEntry::Incomplete(TrieNodeRef(5))] */
+  /*           .iter() */
+  /*           .cloned() */
+  /*           .collect::<IndexSet<_>>(), */
+  /*         prev_nodes: [StackTrieNextEntry::Incomplete(TrieNodeRef(3))] */
+  /*           .iter() */
+  /*           .cloned() */
+  /*           .collect::<IndexSet<_>>() */
+  /*       }, */
+  /*       /\* 5 *\/ */
+  /*       StackTrieNode { */
+  /*         step: Some(NamedOrAnonStep::Anon(AnonStep::Negative(AnonSym(7)))), */
+  /*         next_nodes: [StackTrieNextEntry::Incomplete(TrieNodeRef(3))] */
+  /*           .iter() */
+  /*           .cloned() */
+  /*           .collect::<IndexSet<_>>(), */
+  /*         prev_nodes: [StackTrieNextEntry::Incomplete(TrieNodeRef(4))] */
+  /*           .iter() */
+  /*           .cloned() */
+  /*           .collect::<IndexSet<_>>() */
+  /*       }, */
+  /*       /\* 6 *\/ */
+  /*       StackTrieNode { */
+  /*         step: None, */
+  /*         next_nodes: [StackTrieNextEntry::Incomplete(TrieNodeRef(7))] */
+  /*           .iter() */
+  /*           .cloned() */
+  /*           .collect::<IndexSet<_>>(), */
+  /*         prev_nodes: [StackTrieNextEntry::Incomplete(TrieNodeRef(9))] */
+  /*           .iter() */
+  /*           .cloned() */
+  /*           .collect::<IndexSet<_>>() */
+  /*       }, */
+  /*       /\* 7 *\/ */
+  /*       StackTrieNode { */
+  /*         step: Some(NamedOrAnonStep::Anon(AnonStep::Positive(AnonSym(2)))), */
+  /*         next_nodes: [StackTrieNextEntry::Incomplete(TrieNodeRef(8))] */
+  /*           .iter() */
+  /*           .cloned() */
+  /*           .collect::<IndexSet<_>>(), */
+  /*         prev_nodes: [StackTrieNextEntry::Incomplete(TrieNodeRef(6))] */
+  /*           .iter() */
+  /*           .cloned() */
+  /*           .collect::<IndexSet<_>>() */
+  /*       }, */
+  /*       /\* 8 *\/ */
+  /*       StackTrieNode { */
+  /*         step: Some(NamedOrAnonStep::Named(StackStep::Positive(StackSym( */
+  /*           a_prod */
+  /*         )))), */
+  /*         next_nodes: [StackTrieNextEntry::Incomplete(TrieNodeRef(9))] */
+  /*           .iter() */
+  /*           .cloned() */
+  /*           .collect::<IndexSet<_>>(), */
+  /*         prev_nodes: [StackTrieNextEntry::Incomplete(TrieNodeRef(7))] */
+  /*           .iter() */
+  /*           .cloned() */
+  /*           .collect::<IndexSet<_>>() */
+  /*       }, */
+  /*       /\* 9 *\/ */
+  /*       StackTrieNode { */
+  /*         step: Some(NamedOrAnonStep::Anon(AnonStep::Positive(AnonSym(1)))), */
+  /*         next_nodes: [StackTrieNextEntry::Incomplete(TrieNodeRef(6))] */
+  /*           .iter() */
+  /*           .cloned() */
+  /*           .collect::<IndexSet<_>>(), */
+  /*         prev_nodes: [StackTrieNextEntry::Incomplete(TrieNodeRef(8))] */
+  /*           .iter() */
+  /*           .cloned() */
+  /*           .collect::<IndexSet<_>>() */
+  /*       }, */
+  /*       /\* 10 *\/ */
+  /*       StackTrieNode { */
+  /*         step: None, */
+  /*         next_nodes: [StackTrieNextEntry::Incomplete(TrieNodeRef(11))] */
+  /*           .iter() */
+  /*           .cloned() */
+  /*           .collect::<IndexSet<_>>(), */
+  /*         prev_nodes: [StackTrieNextEntry::Incomplete(TrieNodeRef(13))] */
+  /*           .iter() */
+  /*           .cloned() */
+  /*           .collect::<IndexSet<_>>() */
+  /*       }, */
+  /*       /\* 11 *\/ */
+  /*       StackTrieNode { */
+  /*         step: Some(NamedOrAnonStep::Anon(AnonStep::Negative(AnonSym(1)))), */
+  /*         next_nodes: [StackTrieNextEntry::Incomplete(TrieNodeRef(12))] */
+  /*           .iter() */
+  /*           .cloned() */
+  /*           .collect::<IndexSet<_>>(), */
+  /*         prev_nodes: [StackTrieNextEntry::Incomplete(TrieNodeRef(10))] */
+  /*           .iter() */
+  /*           .cloned() */
+  /*           .collect::<IndexSet<_>>() */
+  /*       }, */
+  /*       /\* 12 *\/ */
+  /*       StackTrieNode { */
+  /*         step: Some(NamedOrAnonStep::Named(StackStep::Negative(StackSym( */
+  /*           a_prod */
+  /*         )))), */
+  /*         next_nodes: [ */
+  /*           StackTrieNextEntry::Incomplete(TrieNodeRef(13)), */
+  /*           StackTrieNextEntry::Incomplete(TrieNodeRef(16)) */
+  /*         ] */
+  /*         .iter() */
+  /*         .cloned() */
+  /*         .collect::<IndexSet<_>>(), */
+  /*         prev_nodes: [ */
+  /*           StackTrieNextEntry::Incomplete(TrieNodeRef(11)), */
+  /*           StackTrieNextEntry::Incomplete(TrieNodeRef(15)) */
+  /*         ] */
+  /*         .iter() */
+  /*         .cloned() */
+  /*         .collect::<IndexSet<_>>() */
+  /*       }, */
+  /*       /\* 13 *\/ */
+  /*       StackTrieNode { */
+  /*         step: Some(NamedOrAnonStep::Anon(AnonStep::Negative(AnonSym(2)))), */
+  /*         next_nodes: [StackTrieNextEntry::Incomplete(TrieNodeRef(10))] */
+  /*           .iter() */
+  /*           .cloned() */
+  /*           .collect::<IndexSet<_>>(), */
+  /*         prev_nodes: [StackTrieNextEntry::Incomplete(TrieNodeRef(12))] */
+  /*           .iter() */
+  /*           .cloned() */
+  /*           .collect::<IndexSet<_>>() */
+  /*       }, */
+  /*       /\* 14 *\/ */
+  /*       StackTrieNode { */
+  /*         step: Some(NamedOrAnonStep::Anon(AnonStep::Negative(AnonSym(4)))), */
+  /*         next_nodes: [StackTrieNextEntry::Incomplete(TrieNodeRef(15))] */
+  /*           .iter() */
+  /*           .cloned() */
+  /*           .collect::<IndexSet<_>>(), */
+  /*         prev_nodes: [StackTrieNextEntry::Incomplete(TrieNodeRef(3))] */
+  /*           .iter() */
+  /*           .cloned() */
+  /*           .collect::<IndexSet<_>>() */
+  /*       }, */
+  /*       /\* 15 *\/ */
+  /*       StackTrieNode { */
+  /*         step: Some(NamedOrAnonStep::Anon(AnonStep::Negative(AnonSym(3)))), */
+  /*         next_nodes: [StackTrieNextEntry::Incomplete(TrieNodeRef(12))] */
+  /*           .iter() */
+  /*           .cloned() */
+  /*           .collect::<IndexSet<_>>(), */
+  /*         prev_nodes: [StackTrieNextEntry::Incomplete(TrieNodeRef(14))] */
+  /*           .iter() */
+  /*           .cloned() */
+  /*           .collect::<IndexSet<_>>() */
+  /*       }, */
+  /*       /\* 16 *\/ */
+  /*       StackTrieNode { */
+  /*         step: Some(NamedOrAnonStep::Anon(AnonStep::Negative(AnonSym(6)))), */
+  /*         next_nodes: [StackTrieNextEntry::Incomplete(TrieNodeRef(17))] */
+  /*           .iter() */
+  /*           .cloned() */
+  /*           .collect::<IndexSet<_>>(), */
+  /*         prev_nodes: [StackTrieNextEntry::Incomplete(TrieNodeRef(12))] */
+  /*           .iter() */
+  /*           .cloned() */
+  /*           .collect::<IndexSet<_>>() */
+  /*       }, */
+  /*       /\* 17 *\/ */
+  /*       StackTrieNode { */
+  /*         step: Some(NamedOrAnonStep::Anon(AnonStep::Negative(AnonSym(5)))), */
+  /*         next_nodes: [StackTrieNextEntry::Incomplete(TrieNodeRef(3))] */
+  /*           .iter() */
+  /*           .cloned() */
+  /*           .collect::<IndexSet<_>>(), */
+  /*         prev_nodes: [StackTrieNextEntry::Incomplete(TrieNodeRef(16))] */
+  /*           .iter() */
+  /*           .cloned() */
+  /*           .collect::<IndexSet<_>>() */
+  /*       } */
+  /*     ] */
+  /*     .as_ref() */
+  /*   ); */
+  /* } */
 
   #[ignore]
   #[test]
