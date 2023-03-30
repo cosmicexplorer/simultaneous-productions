@@ -27,8 +27,10 @@
          1. [X] make it accept any production name with doubled ~$$~ if needed!
       3. [X] put ~SerializableGrammar~ in ~grammar_specification::constraints~!
       4. [X] do ~proptest~ tests!!!
-4. [ ] make parsing understand stack cycles [0/1]
-   1. [ ] graphvis for ~ParseableGrammar~!
+4. [ ] make parsing understand stack cycles [0/3]
+   1. [ ] represent an entire stack cycle graph as a case of ~NamedOrAnonStep~
+   2. [ ] make it possible to traverse/resume all paths through the stack cycle graph in e.g. ~ParseableGrammar::stack_diff_pair_zipper~
+   3. [ ] graphvis for ~ParseableGrammar~!
 5. [ ] introduce a mode to /generate/ a string from a given ~PreprocessedGrammar~
 6. [-] enable regex operators! [2/8]
    1. [X] introduce ~Group~ as a ~CaseElement~!
