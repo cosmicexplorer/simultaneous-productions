@@ -632,6 +632,7 @@ pub mod grammar_building {
           let tok_ref_edge = gv::Edge {
             source: tok_id.clone(),
             target: tok_ref_id.clone(),
+            color: Some(gv::Color("purple".to_string())),
             ..Default::default()
           };
           token_edges.push(tok_ref_edge);
@@ -639,6 +640,9 @@ pub mod grammar_building {
 
         let mut prod_ref_vertices: IndexMap<gc::ProdRef, gv::Vertex> = IndexMap::new();
 
+        let mut tok_ref_edges: Vec<gv::Edge> = Vec::new();
+        let mut prod_ref_edges: Vec<gv::Edge> = Vec::new();
+        let mut group_ref_edges: Vec<gv::Edge> = Vec::new();
         let mut group_edges: Vec<gv::Edge> = Vec::new();
         let mut group_ref_vertices: IndexMap<gc::GroupRef, gv::Vertex> = IndexMap::new();
         for (group_ref, prod_ref) in groups.into_iter() {
@@ -665,6 +669,7 @@ pub mod grammar_building {
           let group_ref_edge = gv::Edge {
             source: group_id,
             target: prod_ref_id.clone(),
+            color: Some(gv::Color("pink".to_string())),
             ..Default::default()
           };
           group_edges.push(group_ref_edge);
@@ -683,10 +688,12 @@ pub mod grammar_building {
               id: gv::Id::new(format!("prod_ref_{}", &prod_ref)),
               label: Some(gv::Label(format!("{:?}", &prod_ref))),
               ..Default::default()
-            });
+            })
+            .clone();
 
           for case in prod.0.into_iter() {
             let mut prev = prod_ref_id.clone();
+            let mut next_edge_color = "blue";
             for case_el in case.0.into_iter() {
               let cur_id = {
                 let id = gv::Id::new(format!("case_el_{}", case_el_index));
@@ -700,11 +707,49 @@ pub mod grammar_building {
               };
               case_el_vertices.push(cur_vertex);
 
+              match case_el {
+                gc::CaseEl::Tok(tok_ref) => {
+                  let gv::Vertex { id: source, .. } = tok_ref_vertices.get(&tok_ref).unwrap();
+                  tok_ref_edges.push(gv::Edge {
+                    source: source.clone(),
+                    target: cur_id.clone(),
+                    color: Some(gv::Color("green4".to_string())),
+                    ..Default::default()
+                  });
+                },
+                gc::CaseEl::Prod(prod_ref) => {
+                  let gv::Vertex { id: source, .. } = prod_ref_vertices
+                    .entry(prod_ref.clone())
+                    .or_insert_with(|| gv::Vertex {
+                      id: gv::Id::new(format!("prod_ref_{}", &prod_ref)),
+                      label: Some(gv::Label(format!("{:?}", &prod_ref))),
+                      ..Default::default()
+                    });
+                  prod_ref_edges.push(gv::Edge {
+                    source: source.clone(),
+                    target: cur_id.clone(),
+                    color: Some(gv::Color("aqua".to_string())),
+                    ..Default::default()
+                  });
+                },
+                gc::CaseEl::Group(group_ref) => {
+                  let gv::Vertex { id: source, .. } = group_ref_vertices.get(&group_ref).unwrap();
+                  group_ref_edges.push(gv::Edge {
+                    source: source.clone(),
+                    target: cur_id.clone(),
+                    color: Some(gv::Color("red".to_string())),
+                    ..Default::default()
+                  });
+                },
+              }
+
               let next_edge = gv::Edge {
                 source: prev.clone(),
                 target: cur_id.clone(),
+                color: Some(gv::Color(next_edge_color.to_string())),
                 ..Default::default()
               };
+              next_edge_color = "black";
               case_el_edges.push(next_edge);
 
               prev = cur_id;
@@ -713,6 +758,7 @@ pub mod grammar_building {
             let final_edge = gv::Edge {
               source: prev,
               target: prod_ref_id.clone(),
+              color: Some(gv::Color("yellow".to_string())),
               ..Default::default()
             };
             case_el_edges.push(final_edge);
@@ -725,6 +771,10 @@ pub mod grammar_building {
           label: Some(gv::Label("tokens".to_string())),
           color: Some(gv::Color("purple".to_string())),
           fontcolor: Some(gv::Color("purple".to_string())),
+          node_defaults: Some(gv::NodeDefaults {
+            color: Some(gv::Color("purple".to_string())),
+            fontcolor: Some(gv::Color("purple".to_string())),
+          }),
           entities: token_vertices.into_iter().map(gv::Entity::Vertex).collect(),
           ..Default::default()
         };
@@ -735,6 +785,10 @@ pub mod grammar_building {
           label: Some(gv::Label("TokRefs".to_string())),
           color: Some(gv::Color("green4".to_string())),
           fontcolor: Some(gv::Color("green4".to_string())),
+          node_defaults: Some(gv::NodeDefaults {
+            color: Some(gv::Color("green4".to_string())),
+            fontcolor: Some(gv::Color("green4".to_string())),
+          }),
           entities: tok_ref_vertices
             .into_iter()
             .map(|(_, vtx)| gv::Entity::Vertex(vtx))
@@ -761,6 +815,10 @@ pub mod grammar_building {
           label: Some(gv::Label("prod refs".to_string())),
           color: Some(gv::Color("aqua".to_string())),
           fontcolor: Some(gv::Color("aqua".to_string())),
+          node_defaults: Some(gv::NodeDefaults {
+            color: Some(gv::Color("aqua".to_string())),
+            fontcolor: Some(gv::Color("aqua".to_string())),
+          }),
           entities: prod_ref_vertices
             .into_iter()
             .map(|(_, vtx)| gv::Entity::Vertex(vtx))
@@ -775,6 +833,15 @@ pub mod grammar_building {
 
         for token_edge in token_edges.into_iter() {
           gb.accept_entity(gv::Entity::Edge(token_edge));
+        }
+        for tok_ref_edge in tok_ref_edges.into_iter() {
+          gb.accept_entity(gv::Entity::Edge(tok_ref_edge));
+        }
+        for prod_ref_edge in prod_ref_edges.into_iter() {
+          gb.accept_entity(gv::Entity::Edge(prod_ref_edge));
+        }
+        for group_ref_edge in group_ref_edges.into_iter() {
+          gb.accept_entity(gv::Entity::Edge(group_ref_edge));
         }
         for group_edge in group_edges.into_iter() {
           gb.accept_entity(gv::Entity::Edge(group_edge));
@@ -952,7 +1019,7 @@ mod tests {
     let gb = token_grammar.build_graph();
     let graphvizier::generator::DotOutput(output) = gb.build(gv::Id::new("test_graph"));
 
-    assert_eq!(output, "digraph test_graph {\n  compound = true;\n\n  subgraph token_vertices {\n    label = \"tokens\";\n    cluster = true;\n    rank = same;\n\n    color = \"purple\";\n    fontcolor = \"purple\";\n\n    token_0[label=\"<a>\", ];\n    token_1[label=\"<b>\", ];\n  }\n\n  subgraph tok_ref_vertices {\n    label = \"TokRefs\";\n    cluster = true;\n    rank = same;\n\n    color = \"green4\";\n    fontcolor = \"green4\";\n\n    tok_ref_0[label=\"TokRef(0)\", ];\n    tok_ref_1[label=\"TokRef(1)\", ];\n  }\n\n  subgraph group_ref_vertices {\n    label = \"group refs\";\n    cluster = true;\n    rank = same;\n\n    color = \"red\";\n    fontcolor = \"red\";\n\n  }\n\n  subgraph prod_ref_vertices {\n    label = \"prod refs\";\n    cluster = true;\n    rank = same;\n\n    color = \"aqua\";\n    fontcolor = \"aqua\";\n\n    prod_ref_0[label=\"ProdRef(0)\", ];\n    prod_ref_1[label=\"ProdRef(1)\", ];\n  }\n\n  case_el_0[label=\"Tok(TokRef(0))\", ];\n\n  case_el_1[label=\"Tok(TokRef(1))\", ];\n\n  case_el_2[label=\"Tok(TokRef(0))\", ];\n\n  case_el_3[label=\"Tok(TokRef(1))\", ];\n\n  case_el_4[label=\"Prod(ProdRef(0))\", ];\n\n  case_el_5[label=\"Prod(ProdRef(0))\", ];\n\n  case_el_6[label=\"Tok(TokRef(0))\", ];\n\n  token_0 -> tok_ref_0;\n\n  token_1 -> tok_ref_1;\n\n  prod_ref_0 -> case_el_0;\n\n  case_el_0 -> case_el_1;\n\n  case_el_1 -> prod_ref_0;\n\n  prod_ref_1 -> case_el_2;\n\n  case_el_2 -> case_el_3;\n\n  case_el_3 -> case_el_4;\n\n  case_el_4 -> prod_ref_1;\n\n  prod_ref_1 -> case_el_5;\n\n  case_el_5 -> case_el_6;\n\n  case_el_6 -> prod_ref_1;\n}\n");
+    assert_eq!(output, "digraph test_graph {\n  compound = true;\n\n  subgraph token_vertices {\n    label = \"tokens\";\n    cluster = true;\n    rank = same;\n\n    color = \"purple\";\n    fontcolor = \"purple\";\n    node [color=\"purple\", fontcolor=\"purple\", ];\n\n    token_0[label=\"<a>\", ];\n    token_1[label=\"<b>\", ];\n  }\n\n  subgraph tok_ref_vertices {\n    label = \"TokRefs\";\n    cluster = true;\n    rank = same;\n\n    color = \"green4\";\n    fontcolor = \"green4\";\n    node [color=\"green4\", fontcolor=\"green4\", ];\n\n    tok_ref_0[label=\"TokRef(0)\", ];\n    tok_ref_1[label=\"TokRef(1)\", ];\n  }\n\n  subgraph group_ref_vertices {\n    label = \"group refs\";\n    cluster = true;\n    rank = same;\n\n    color = \"red\";\n    fontcolor = \"red\";\n\n  }\n\n  subgraph prod_ref_vertices {\n    label = \"prod refs\";\n    cluster = true;\n    rank = same;\n\n    color = \"aqua\";\n    fontcolor = \"aqua\";\n    node [color=\"aqua\", fontcolor=\"aqua\", ];\n\n    prod_ref_0[label=\"ProdRef(0)\", ];\n    prod_ref_1[label=\"ProdRef(1)\", ];\n  }\n\n  case_el_0[label=\"Tok(TokRef(0))\", ];\n\n  case_el_1[label=\"Tok(TokRef(1))\", ];\n\n  case_el_2[label=\"Tok(TokRef(0))\", ];\n\n  case_el_3[label=\"Tok(TokRef(1))\", ];\n\n  case_el_4[label=\"Prod(ProdRef(0))\", ];\n\n  case_el_5[label=\"Prod(ProdRef(0))\", ];\n\n  case_el_6[label=\"Tok(TokRef(0))\", ];\n\n  token_0 -> tok_ref_0[color=\"purple\", ];\n\n  token_1 -> tok_ref_1[color=\"purple\", ];\n\n  tok_ref_0 -> case_el_0[color=\"green4\", ];\n\n  tok_ref_1 -> case_el_1[color=\"green4\", ];\n\n  tok_ref_0 -> case_el_2[color=\"green4\", ];\n\n  tok_ref_1 -> case_el_3[color=\"green4\", ];\n\n  tok_ref_0 -> case_el_6[color=\"green4\", ];\n\n  prod_ref_0 -> case_el_4[color=\"aqua\", ];\n\n  prod_ref_0 -> case_el_5[color=\"aqua\", ];\n\n  prod_ref_0 -> case_el_0[color=\"blue\", ];\n\n  case_el_0 -> case_el_1[color=\"black\", ];\n\n  case_el_1 -> prod_ref_0[color=\"yellow\", ];\n\n  prod_ref_1 -> case_el_2[color=\"blue\", ];\n\n  case_el_2 -> case_el_3[color=\"black\", ];\n\n  case_el_3 -> case_el_4[color=\"black\", ];\n\n  case_el_4 -> prod_ref_1[color=\"yellow\", ];\n\n  prod_ref_1 -> case_el_5[color=\"blue\", ];\n\n  case_el_5 -> case_el_6[color=\"black\", ];\n\n  case_el_6 -> prod_ref_1[color=\"yellow\", ];\n}\n");
   }
 
   #[test]
@@ -967,7 +1034,7 @@ mod tests {
     let gb = token_grammar.build_graph();
     let graphvizier::generator::DotOutput(output) = gb.build(gv::Id::new("test_graph"));
 
-    assert_eq!(output, "digraph test_graph {\n  compound = true;\n\n  subgraph token_vertices {\n    label = \"tokens\";\n    cluster = true;\n    rank = same;\n\n    color = \"purple\";\n    fontcolor = \"purple\";\n\n    token_0[label=\"<a>\", ];\n    token_1[label=\"<b>\", ];\n    token_2[label=\"<c>\", ];\n  }\n\n  subgraph tok_ref_vertices {\n    label = \"TokRefs\";\n    cluster = true;\n    rank = same;\n\n    color = \"green4\";\n    fontcolor = \"green4\";\n\n    tok_ref_0[label=\"TokRef(0)\", ];\n    tok_ref_1[label=\"TokRef(1)\", ];\n    tok_ref_2[label=\"TokRef(2)\", ];\n  }\n\n  subgraph group_ref_vertices {\n    label = \"group refs\";\n    cluster = true;\n    rank = same;\n\n    color = \"red\";\n    fontcolor = \"red\";\n\n  }\n\n  subgraph prod_ref_vertices {\n    label = \"prod refs\";\n    cluster = true;\n    rank = same;\n\n    color = \"aqua\";\n    fontcolor = \"aqua\";\n\n    prod_ref_0[label=\"ProdRef(0)\", ];\n    prod_ref_1[label=\"ProdRef(1)\", ];\n  }\n\n  case_el_0[label=\"Tok(TokRef(0))\", ];\n\n  case_el_1[label=\"Tok(TokRef(1))\", ];\n\n  case_el_2[label=\"Tok(TokRef(2))\", ];\n\n  case_el_3[label=\"Tok(TokRef(0))\", ];\n\n  case_el_4[label=\"Prod(ProdRef(0))\", ];\n\n  case_el_5[label=\"Tok(TokRef(2))\", ];\n\n  case_el_6[label=\"Tok(TokRef(1))\", ];\n\n  case_el_7[label=\"Tok(TokRef(2))\", ];\n\n  case_el_8[label=\"Prod(ProdRef(1))\", ];\n\n  case_el_9[label=\"Prod(ProdRef(0))\", ];\n\n  case_el_10[label=\"Prod(ProdRef(1))\", ];\n\n  case_el_11[label=\"Prod(ProdRef(0))\", ];\n\n  case_el_12[label=\"Tok(TokRef(1))\", ];\n\n  case_el_13[label=\"Tok(TokRef(2))\", ];\n\n  token_0 -> tok_ref_0;\n\n  token_1 -> tok_ref_1;\n\n  token_2 -> tok_ref_2;\n\n  prod_ref_0 -> case_el_0;\n\n  case_el_0 -> case_el_1;\n\n  case_el_1 -> case_el_2;\n\n  case_el_2 -> prod_ref_0;\n\n  prod_ref_0 -> case_el_3;\n\n  case_el_3 -> case_el_4;\n\n  case_el_4 -> case_el_5;\n\n  case_el_5 -> prod_ref_0;\n\n  prod_ref_0 -> case_el_6;\n\n  case_el_6 -> case_el_7;\n\n  case_el_7 -> case_el_8;\n\n  case_el_8 -> prod_ref_0;\n\n  prod_ref_1 -> case_el_9;\n\n  case_el_9 -> prod_ref_1;\n\n  prod_ref_1 -> case_el_10;\n\n  case_el_10 -> prod_ref_1;\n\n  prod_ref_1 -> case_el_11;\n\n  case_el_11 -> case_el_12;\n\n  case_el_12 -> case_el_13;\n\n  case_el_13 -> prod_ref_1;\n}\n");
+    assert_eq!(output, "digraph test_graph {\n  compound = true;\n\n  subgraph token_vertices {\n    label = \"tokens\";\n    cluster = true;\n    rank = same;\n\n    color = \"purple\";\n    fontcolor = \"purple\";\n    node [color=\"purple\", fontcolor=\"purple\", ];\n\n    token_0[label=\"<a>\", ];\n    token_1[label=\"<b>\", ];\n    token_2[label=\"<c>\", ];\n  }\n\n  subgraph tok_ref_vertices {\n    label = \"TokRefs\";\n    cluster = true;\n    rank = same;\n\n    color = \"green4\";\n    fontcolor = \"green4\";\n    node [color=\"green4\", fontcolor=\"green4\", ];\n\n    tok_ref_0[label=\"TokRef(0)\", ];\n    tok_ref_1[label=\"TokRef(1)\", ];\n    tok_ref_2[label=\"TokRef(2)\", ];\n  }\n\n  subgraph group_ref_vertices {\n    label = \"group refs\";\n    cluster = true;\n    rank = same;\n\n    color = \"red\";\n    fontcolor = \"red\";\n\n  }\n\n  subgraph prod_ref_vertices {\n    label = \"prod refs\";\n    cluster = true;\n    rank = same;\n\n    color = \"aqua\";\n    fontcolor = \"aqua\";\n    node [color=\"aqua\", fontcolor=\"aqua\", ];\n\n    prod_ref_0[label=\"ProdRef(0)\", ];\n    prod_ref_1[label=\"ProdRef(1)\", ];\n  }\n\n  case_el_0[label=\"Tok(TokRef(0))\", ];\n\n  case_el_1[label=\"Tok(TokRef(1))\", ];\n\n  case_el_2[label=\"Tok(TokRef(2))\", ];\n\n  case_el_3[label=\"Tok(TokRef(0))\", ];\n\n  case_el_4[label=\"Prod(ProdRef(0))\", ];\n\n  case_el_5[label=\"Tok(TokRef(2))\", ];\n\n  case_el_6[label=\"Tok(TokRef(1))\", ];\n\n  case_el_7[label=\"Tok(TokRef(2))\", ];\n\n  case_el_8[label=\"Prod(ProdRef(1))\", ];\n\n  case_el_9[label=\"Prod(ProdRef(0))\", ];\n\n  case_el_10[label=\"Prod(ProdRef(1))\", ];\n\n  case_el_11[label=\"Prod(ProdRef(0))\", ];\n\n  case_el_12[label=\"Tok(TokRef(1))\", ];\n\n  case_el_13[label=\"Tok(TokRef(2))\", ];\n\n  token_0 -> tok_ref_0[color=\"purple\", ];\n\n  token_1 -> tok_ref_1[color=\"purple\", ];\n\n  token_2 -> tok_ref_2[color=\"purple\", ];\n\n  tok_ref_0 -> case_el_0[color=\"green4\", ];\n\n  tok_ref_1 -> case_el_1[color=\"green4\", ];\n\n  tok_ref_2 -> case_el_2[color=\"green4\", ];\n\n  tok_ref_0 -> case_el_3[color=\"green4\", ];\n\n  tok_ref_2 -> case_el_5[color=\"green4\", ];\n\n  tok_ref_1 -> case_el_6[color=\"green4\", ];\n\n  tok_ref_2 -> case_el_7[color=\"green4\", ];\n\n  tok_ref_1 -> case_el_12[color=\"green4\", ];\n\n  tok_ref_2 -> case_el_13[color=\"green4\", ];\n\n  prod_ref_0 -> case_el_4[color=\"aqua\", ];\n\n  prod_ref_1 -> case_el_8[color=\"aqua\", ];\n\n  prod_ref_0 -> case_el_9[color=\"aqua\", ];\n\n  prod_ref_1 -> case_el_10[color=\"aqua\", ];\n\n  prod_ref_0 -> case_el_11[color=\"aqua\", ];\n\n  prod_ref_0 -> case_el_0[color=\"blue\", ];\n\n  case_el_0 -> case_el_1[color=\"black\", ];\n\n  case_el_1 -> case_el_2[color=\"black\", ];\n\n  case_el_2 -> prod_ref_0[color=\"yellow\", ];\n\n  prod_ref_0 -> case_el_3[color=\"blue\", ];\n\n  case_el_3 -> case_el_4[color=\"black\", ];\n\n  case_el_4 -> case_el_5[color=\"black\", ];\n\n  case_el_5 -> prod_ref_0[color=\"yellow\", ];\n\n  prod_ref_0 -> case_el_6[color=\"blue\", ];\n\n  case_el_6 -> case_el_7[color=\"black\", ];\n\n  case_el_7 -> case_el_8[color=\"black\", ];\n\n  case_el_8 -> prod_ref_0[color=\"yellow\", ];\n\n  prod_ref_1 -> case_el_9[color=\"blue\", ];\n\n  case_el_9 -> prod_ref_1[color=\"yellow\", ];\n\n  prod_ref_1 -> case_el_10[color=\"blue\", ];\n\n  case_el_10 -> prod_ref_1[color=\"yellow\", ];\n\n  prod_ref_1 -> case_el_11[color=\"blue\", ];\n\n  case_el_11 -> case_el_12[color=\"black\", ];\n\n  case_el_12 -> case_el_13[color=\"black\", ];\n\n  case_el_13 -> prod_ref_1[color=\"yellow\", ];\n}\n");
   }
 
   #[test]
@@ -983,6 +1050,6 @@ mod tests {
     let graphvizier::generator::DotOutput(output) = gb.build(gv::Id::new("test_graph"));
 
     /* FIXME: the ::Optional operator isn't getting synced here! */
-    assert_eq!(output, "asfd");
+    assert_eq!(output, "digraph test_graph {\n  compound = true;\n\n  subgraph token_vertices {\n    label = \"tokens\";\n    cluster = true;\n    rank = same;\n\n    color = \"purple\";\n    fontcolor = \"purple\";\n    node [color=\"purple\", fontcolor=\"purple\", ];\n\n    token_0[label=\"<a>\", ];\n  }\n\n  subgraph tok_ref_vertices {\n    label = \"TokRefs\";\n    cluster = true;\n    rank = same;\n\n    color = \"green4\";\n    fontcolor = \"green4\";\n    node [color=\"green4\", fontcolor=\"green4\", ];\n\n    tok_ref_0[label=\"TokRef(0)\", ];\n  }\n\n  subgraph group_ref_vertices {\n    label = \"group refs\";\n    cluster = true;\n    rank = same;\n\n    color = \"red\";\n    fontcolor = \"red\";\n\n    group_0[label=\"(0)\", ];\n  }\n\n  subgraph prod_ref_vertices {\n    label = \"prod refs\";\n    cluster = true;\n    rank = same;\n\n    color = \"aqua\";\n    fontcolor = \"aqua\";\n    node [color=\"aqua\", fontcolor=\"aqua\", ];\n\n    prod_ref_1[label=\"ProdRef(1)\", ];\n    prod_ref_0[label=\"ProdRef(0)\", ];\n  }\n\n  case_el_0[label=\"Tok(TokRef(0))\", ];\n\n  case_el_1[label=\"Group(GroupRef(0))\", ];\n\n  token_0 -> tok_ref_0[color=\"purple\", ];\n\n  tok_ref_0 -> case_el_0[color=\"green4\", ];\n\n  group_0 -> case_el_1[color=\"red\", ];\n\n  group_0 -> prod_ref_1[color=\"pink\", ];\n\n  prod_ref_1 -> case_el_0[color=\"blue\", ];\n\n  case_el_0 -> prod_ref_1[color=\"yellow\", ];\n\n  prod_ref_0 -> case_el_1[color=\"blue\", ];\n\n  case_el_1 -> prod_ref_0[color=\"yellow\", ];\n}\n");
   }
 }
