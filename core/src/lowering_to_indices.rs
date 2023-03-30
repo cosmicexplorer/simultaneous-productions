@@ -112,6 +112,17 @@ pub mod graph_coordinates {
     pub el: CaseElRef,
   }
 
+  #[cfg(test)]
+  impl TokenPosition {
+    pub fn new(prod: usize, case: usize, el: usize) -> Self {
+      Self {
+        prod: ProdRef(prod),
+        case: CaseRef(case),
+        el: CaseElRef(el),
+      }
+    }
+  }
+
   /* FIXME: make doc comment apply to the macro expansion!!
    * Points to a particular token value within an alphabet.
    *

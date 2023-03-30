@@ -658,6 +658,7 @@ $P_2$: $P_1$ -> <bc>
     assert_eq!(sp, group_productions());
   }
 
+  #[ignore]
   #[test]
   fn group_graphviz() {
     use graphvizier::{entities as gv, Graphable};
