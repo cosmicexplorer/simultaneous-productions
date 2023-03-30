@@ -62,7 +62,6 @@ mod grammar_indexing;
 mod interns;
 mod lowering_to_indices;
 pub mod text_backend;
-pub mod transitions;
 
 /// The basic traits which define an input *grammar* (TODO: link to paper!).
 ///

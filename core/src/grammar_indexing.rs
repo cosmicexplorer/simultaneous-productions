@@ -28,10 +28,7 @@
 //!
 //! *Implementation Note: Performance doesn't matter here.*
 
-use crate::{
-  lowering_to_indices::{grammar_building as gb, graph_coordinates as gc},
-  transitions,
-};
+use crate::lowering_to_indices::{grammar_building as gb, graph_coordinates as gc};
 
 use displaydoc::Display;
 use graphvizier::entities as gv;
@@ -488,6 +485,134 @@ impl StartEndEpsilonIntervals {
   }
 }
 
+#[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct IndexedTrieNodeRef(pub usize);
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct IndexedTrieNode {
+  pub next_nodes: IndexMap<Option<NamedOrAnonStep>, Vec<IndexedTrieNodeRef>>,
+  pub prev_nodes: IndexMap<Option<NamedOrAnonStep>, Vec<IndexedTrieNodeRef>>,
+}
+
+impl IndexedTrieNode {
+  fn bare() -> Self {
+    Self {
+      next_nodes: IndexMap::new(),
+      prev_nodes: IndexMap::new(),
+    }
+  }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct IndexedTrie {
+  pub vertex_mapping: IndexMap<EpsilonGraphVertex, IndexedTrieNodeRef>,
+  pub trie_node_universe: Vec<IndexedTrieNode>,
+}
+
+impl IndexedTrie {
+  fn new() -> Self {
+    Self {
+      vertex_mapping: IndexMap::new(),
+      trie_node_universe: Vec::new(),
+    }
+  }
+
+  fn get_trie(&mut self, node_ref: IndexedTrieNodeRef) -> &mut IndexedTrieNode {
+    let IndexedTrieNodeRef(node_index) = node_ref;
+    self
+      .trie_node_universe
+      .get_mut(node_index)
+      .expect("indexed trie node was out of bounds somehow?")
+  }
+
+  fn trie_ref_for_vertex(&mut self, vtx: &EpsilonGraphVertex) -> IndexedTrieNodeRef {
+    let basic_node = IndexedTrieNode::bare();
+    let trie_node_ref_for_vertex = if let Some(x) = self.vertex_mapping.get(vtx) {
+      *x
+    } else {
+      let next_ref = IndexedTrieNodeRef(self.trie_node_universe.len());
+      self.trie_node_universe.push(basic_node.clone());
+      self.vertex_mapping.insert(*vtx, next_ref);
+      next_ref
+    };
+    trie_node_ref_for_vertex
+  }
+
+  pub fn from_epsilon_graph(graph: EpsilonNodeStateSubgraph) -> Self {
+    let EpsilonNodeStateSubgraph {
+      vertex_mapping,
+      trie_node_universe,
+    } = graph;
+    let reverse_vertex_mapping: IndexMap<TrieNodeRef, EpsilonGraphVertex> = vertex_mapping
+      .iter()
+      .map(|(x, y)| (y.clone(), x.clone()))
+      .collect();
+    let mut ret = Self::new();
+
+    for (vtx, TrieNodeRef(old_trie_node_ref)) in vertex_mapping.into_iter() {
+      let new_trie_ref = ret.trie_ref_for_vertex(&vtx);
+      let IndexedTrieNode {
+        next_nodes: mut new_next_nodes,
+        prev_nodes: mut new_prev_nodes,
+      } = ret.get_trie(new_trie_ref).clone();
+
+      let StackTrieNode {
+        next_nodes: old_next_nodes,
+        prev_nodes: old_prev_nodes,
+        ..
+      } = trie_node_universe[old_trie_node_ref].clone();
+
+      /* Copy over next nodes. */
+      for old_next_entry in old_next_nodes.into_iter() {
+        match old_next_entry {
+          StackTrieNextEntry::Completed(lowered_state) => {
+            let ref mut next_nodes = new_next_nodes.entry(None).or_insert_with(Vec::new);
+            let old_next_vertex = lowered_state.into_vertex();
+            let new_next_trie_ref = ret.trie_ref_for_vertex(&old_next_vertex);
+            next_nodes.push(new_next_trie_ref);
+          },
+          StackTrieNextEntry::Incomplete(TrieNodeRef(old_next_node_ref)) => {
+            let StackTrieNode { step, .. } = trie_node_universe[old_next_node_ref];
+            let ref mut next_nodes = new_next_nodes.entry(step.clone()).or_insert_with(Vec::new);
+            let old_next_vertex = reverse_vertex_mapping
+              .get(&TrieNodeRef(old_next_node_ref))
+              .unwrap();
+            let new_next_trie_ref = ret.trie_ref_for_vertex(&old_next_vertex);
+            next_nodes.push(new_next_trie_ref);
+          },
+        }
+      }
+      /* Copy over prev nodes. */
+      for old_prev_entry in old_prev_nodes.into_iter() {
+        match old_prev_entry {
+          StackTrieNextEntry::Completed(lowered_state) => {
+            let ref mut prev_nodes = new_prev_nodes.entry(None).or_insert_with(Vec::new);
+            let old_prev_vertex = lowered_state.into_vertex();
+            let new_prev_trie_ref = ret.trie_ref_for_vertex(&old_prev_vertex);
+            prev_nodes.push(new_prev_trie_ref);
+          },
+          StackTrieNextEntry::Incomplete(TrieNodeRef(old_prev_node_ref)) => {
+            let StackTrieNode { step, .. } = trie_node_universe[old_prev_node_ref];
+            let ref mut prev_nodes = new_prev_nodes.entry(step.clone()).or_insert_with(Vec::new);
+            let old_prev_vertex = reverse_vertex_mapping
+              .get(&TrieNodeRef(old_prev_node_ref))
+              .unwrap();
+            let new_prev_trie_ref = ret.trie_ref_for_vertex(&old_prev_vertex);
+            prev_nodes.push(new_prev_trie_ref);
+          },
+        }
+      }
+
+      *ret.get_trie(new_trie_ref) = IndexedTrieNode {
+        next_nodes: new_next_nodes,
+        prev_nodes: new_prev_nodes,
+      };
+    }
+
+    ret
+  }
+}
+
 /// A [TokenGrammar][gb::TokenGrammar] after being parsed for cycles.
 ///
 /// There is no intentionally no reference to any
@@ -501,7 +626,7 @@ pub struct PreprocessedGrammar<Tok> {
   ///
   /// where `{S}^+_-` (LaTeX formatting) is ordered sequences of signed
   /// stack symbols!
-  pub graph_transitions: transitions::IndexedTrie,
+  pub graph_transitions: IndexedTrie,
   /// `M: T -> {Q}`, where `{Q}` is sets of states!
   ///
   /// These don't need to be quick to access or otherwise optimized for the
@@ -672,7 +797,7 @@ impl<Tok> PreprocessedGrammar<Tok> {
     let (terminals_interval_graph, token_states_mapping) =
       Self::produce_terminals_interval_graph(grammar);
     let CyclicGraphDecomposition { trie_graph } = terminals_interval_graph.connect_all_vertices();
-    let graph_transitions = transitions::IndexedTrie::from_epsilon_graph(trie_graph);
+    let graph_transitions = IndexedTrie::from_epsilon_graph(trie_graph);
 
     PreprocessedGrammar {
       token_states_mapping,
