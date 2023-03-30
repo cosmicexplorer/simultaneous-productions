@@ -137,12 +137,12 @@ pub enum LoweredState {
 }
 
 impl LoweredState {
-  fn from_vertex(vtx: EpsilonGraphVertex) -> Self {
+  fn from_vertex(vtx: EpsilonGraphVertex) -> Option<Self> {
     match vtx {
-      EpsilonGraphVertex::Start(_) => LoweredState::Start,
-      EpsilonGraphVertex::End(_) => LoweredState::End,
-      EpsilonGraphVertex::State(pos) => LoweredState::Within(pos),
-      EpsilonGraphVertex::Anon(_) => panic!("an anonymous vertex cannot start an interval!"),
+      EpsilonGraphVertex::Start(_) => Some(LoweredState::Start),
+      EpsilonGraphVertex::End(_) => Some(LoweredState::End),
+      EpsilonGraphVertex::State(pos) => Some(LoweredState::Within(pos)),
+      EpsilonGraphVertex::Anon(_) => None,
     }
   }
 }
@@ -347,7 +347,7 @@ pub struct CyclicGraphDecomposition {
   pub cyclic_subgraph: EpsilonNodeStateSubgraph,
   /* TODO: is this an optimization, or is this info not in cyclic_subgraph itself? */
   pub pairwise_state_transitions: Vec<CompletedStatePairWithVertices>,
-  /* TODO: document how/why this is used in parse reco */
+  /* TODO: document how/why this is used in parse reconstruction.rs! */
   pub anon_step_mapping: IndexMap<AnonSym, UnflattenedProdCaseRef>,
 }
 
@@ -638,7 +638,8 @@ impl IntermediateTokenTransition {
             .extend(intermediate_nonterminals_for_next_step.clone().into_iter());
 
           let completed_state_pair = StatePair {
-            left: LoweredState::from_vertex(*start),
+            left: LoweredState::from_vertex(*start)
+              .expect("an anonymous vertex cannot start an interval!"),
             right: LoweredState::End,
           };
           let single_completion = CompletedStatePairWithVertices {
@@ -706,7 +707,8 @@ impl IntermediateTokenTransition {
       /* Similar to start and end, but the `todo` starts off at the state. */
       EpsilonGraphVertex::State(state_pos) => {
         let completed_state_pair = StatePair {
-          left: LoweredState::from_vertex(*start),
+          left: LoweredState::from_vertex(*start)
+            .expect("an anonymous vertex cannot start an interval!"),
           right: LoweredState::Within(state_pos),
         };
         let completed_path_makes_sense = match start {
