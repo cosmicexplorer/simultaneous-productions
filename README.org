@@ -7,6 +7,9 @@
 - [ ] hack up a [[P.S. prototype]] and develop a pitch
   - the pitch should explain that i haven't published yet because i didn't want to get scooped on [[the real prize]]
 
+** refs
+- [[https://www.cs.cornell.edu/~asampson/blog/flattening.html][packed AST format for idempotent evaluation of parent/child results]]
+
 ** code TODO [33%]
 1. [X] remove ~no_std~ impl
 2. [X] graphviz for every intermediate graph in grammar processing! [3/3]
