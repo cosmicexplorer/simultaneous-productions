@@ -93,14 +93,38 @@ additional constraints to the search process which ensure termination in the "ye
 case:
 1. Ordering: evaluate all (pairs of?) smaller adjacent paths before (pairs of?) larger
    adjacent paths.
-   - This allows users to provide *inherently infinite constructions* like `A = ""; A = AaA` in
-     their grammar (this one is also ambiguous, which may also be desired).
+   - This is needed in a basic sense, so that `A = ""; A = Aa` sees whether popping the A stack is
+     needed on the right before pushing more and more on the left infinitely.
+     - However, this allows users to provide *inherently infinite constructions*
+       like `A = ""; A = AaA` in their grammar (this one is also ambiguous, which may also be
+       desired).
+   - This should ensure that if there is a finite "yes" solution, that the parse will always find
+     that solution in finite time (THAT IS THE INTENTION: NEED TO PROVE THIS).
    - TODO: "larger" in terms of spanned input tokens, or in terms of spanned stack transitions?
      Likely both, in order to cover `A = AaA`?
 2. Bounding, which "cuts off" any further steps into a stack cycle according to some criteria:
    a. "lookaround": bound how many input tokens the current path is allowed to span before cutoff.
    b. "recursion depth": bound how many times the path between two adjacent states is allowed to
       cycle (to intersect itself) before cutoff.
+   - Bounds should be applicable to individual productions or cases as well as the entire graph,
+     **since the end user will be best able to determine which bounds apply to their language**.
+     - Any bound on the "stack cycle" mechanism will ensure termination, but most stack cycles are
+       intended to remain unbounded (e.g. I want "a+" to count any number of consecutive "a"s). The
+       end user will be best able to determine which constraint is appropriate to their use case.
    - TODO: what is "cutoff"? It appears to refer to the intermediate paths spawned between
      some interval.
+
+
+Each "stack cycle" is a cyclic path of stack steps between (not including!!!) state vertices in the
+`EpsilonIntervalGraph` (which may or may not begin or end with the cycle!). With a finite
+breadth-first search, we can identify all cycles in all paths between a given consecutive state pair
+and mark all nodes in the cycle as cyclic........?
+
+
+!
+
+I'm pretty sure undecidability only occurs with multiple separate stacks, which isn't
+implemented yet. So we don't need to consider "bounding" yet, and we can implement "ordering" for
+now by simply not considering longer stack transitions before exhausting the shorter ones (which
+requires us to do a breadth-first search when connecting up adjacent sub-parses!).
  */
