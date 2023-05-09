@@ -61,6 +61,7 @@ pub mod grammar_grammar;
 mod grammar_indexing;
 mod interns;
 mod lowering_to_indices;
+/* mod parsing; */
 pub mod text_backend;
 
 /// The basic traits which define an input *grammar* (TODO: link to paper!).
@@ -460,6 +461,8 @@ pub mod state {
   #[cfg(doc)]
   use crate::execution::Input;
   #[cfg(doc)]
+  use active::{InProgress, Ready};
+  #[cfg(doc)]
   use preprocessing::{Detokenized, Indexed, Init};
 
   /// Phases of interpreting an S.P. grammar into an executable specification.
@@ -468,10 +471,12 @@ pub mod state {
   pub mod preprocessing {
     use crate::{
       grammar_indexing as gi, grammar_specification as gs,
-      lowering_to_indices::grammar_building as gb,
+      lowering_to_indices::{grammar_building as gb, graph_coordinates as gc},
+      /* parsing as p, */
     };
 
-    use core::{fmt, iter::IntoIterator};
+    /* use core::fmt; */
+    use core::iter::IntoIterator;
 
     /// Container for an implementor of
     /// [gs::synthesis::SimultaneousProductions].
@@ -493,25 +498,107 @@ pub mod state {
     {
       /// Create a [`gb::TokenGrammar`] and convert it to [`Detokenized`] for
       /// further preprocessing.
-      pub fn try_index(self) -> Result<Detokenized<Tok>, gb::GrammarConstructionError<ID>> {
-        Ok(Detokenized(gb::TokenGrammar::new(self.0)?))
+      pub fn try_index(self) -> Result<Detokenized<Tok, ID>, gb::GrammarConstructionError<ID>> {
+        let (token_grammar, prod_ref_map) = gb::TokenGrammar::new(self.0)?;
+        Ok(Detokenized {
+          token_grammar,
+          prod_ref_map,
+        })
       }
     }
 
     /// Container after converting the tokens into [gc::TokenPosition]s.
     #[derive(Debug, Clone)]
-    pub struct Detokenized<Tok>(pub gb::TokenGrammar<Tok>);
+    pub struct Detokenized<Tok, ID> {
+      pub token_grammar: gb::TokenGrammar<Tok>,
+      pub prod_ref_map: gc::ProdRefMap<ID>,
+    }
 
-    impl<Tok> Detokenized<Tok> {
+    impl<Tok, ID> Detokenized<Tok, ID> {
       /// Create a [`gi::PreprocessedGrammar`] and convert it to [`Indexed`] for
       /// further preprocessing.
-      pub fn index(self) -> Indexed<Tok> {
-        Indexed(gi::PreprocessedGrammar::new(self.0))
+      pub fn index(self) -> Indexed<Tok, ID> {
+        let Self {
+          token_grammar,
+          prod_ref_map,
+        } = self;
+        Indexed {
+          preprocessed_grammar: gi::PreprocessedGrammar::new(token_grammar),
+          prod_ref_map,
+        }
       }
     }
 
     /// Container for an immediately executable grammar.
     #[derive(Debug, Clone)]
-    pub struct Indexed<Tok>(pub gi::PreprocessedGrammar<Tok>);
+    pub struct Indexed<Tok, ID> {
+      pub preprocessed_grammar: gi::PreprocessedGrammar<Tok>,
+      pub prod_ref_map: gc::ProdRefMap<ID>,
+    }
+
+    /* impl<Tok, ID> Indexed<Tok, ID> */
+    /* where */
+    /*   ID: gs::constraints::Hashable, */
+    /*   Tok: gs::constraints::Hashable + fmt::Debug + Clone, */
+    /* { */
+    /*   /// Create a [`p::ParseableGrammar`] and convert to a parseable state. */
+    /*   /// */
+    /*   /// **FIXME: `input` should be a [crate::execution::Input]!!** */
+    /*   pub fn attach_input<PR>( */
+    /*     &self, */
+    /*     input: &p::Input<Tok>, */
+    /*     top_level: PR, */
+    /*   ) -> Result<super::active::Ready<'_>, p::ParsingInputFailure<Tok>> */
+    /*   where */
+    /*     PR: gs::indirect::ProductionReference<ID = ID>, */
+    /*   { */
+    /*     let Self { */
+    /*       preprocessed_grammar, */
+    /*       prod_ref_map, */
+    /*     } = self; */
+    /*     Ok(super::active::Ready::new(p::ParseableGrammar::new( */
+    /*       self.0.clone(), */
+    /*       input, */
+    /*     )?)) */
+    /*   } */
+    /* } */
   }
+
+  /* /// Phases of receiving an [Input] and parsing something useful out of it. */
+  /* /// */
+  /* /// `([Indexed] ->) [Ready] -> [InProgress]` */
+  /* pub mod active { */
+  /*   use crate::parsing as p; */
+
+  /*   use core::marker::PhantomData; */
+
+  /*   /// Container for a parseable grammar that propagates the lifetime of an */
+  /*   /// input. */
+  /*   #[derive(Debug, Clone)] */
+  /*   pub struct Ready<'a>(pub p::ParseableGrammar, PhantomData<&'a u8>); */
+
+  /*   impl<'a> Ready<'a> { */
+  /*     #[allow(missing_docs)] */
+  /*     pub fn new(grammar: p::ParseableGrammar) -> Self { */
+  /*       Self(grammar, PhantomData) */
+  /*     } */
+
+  /*     /// "Detokenize" *(TODO: cite!)* the input and produce a [`p::Parse`] */
+  /*     /// instance! */
+  /*     pub fn initialize_parse(self) -> InProgress<'a> { */
+  /*       InProgress::new(p::Parse::initialize_with_trees_for_adjacent_pairs(self.0)) */
+  /*     } */
+  /*   } */
+
+  /*   /// The final form of an initialized parse, ready to iterate over the input! */
+  /*   #[derive(Debug, Clone)] */
+  /*   pub struct InProgress<'a>(pub p::Parse, PhantomData<&'a u8>); */
+
+  /*   impl<'a> InProgress<'a> { */
+  /*     #[allow(missing_docs)] */
+  /*     pub fn new(parse: p::Parse) -> Self { */
+  /*       Self(parse, PhantomData) */
+  /*     } */
+  /*   } */
+  /* } */
 }

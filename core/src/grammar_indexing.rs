@@ -31,7 +31,6 @@
 use crate::lowering_to_indices::{grammar_building as gb, graph_coordinates as gc};
 
 use displaydoc::Display;
-use graphvizier::entities as gv;
 use indexmap::{IndexMap, IndexSet};
 
 use core::fmt;
@@ -407,7 +406,7 @@ impl EpsilonIntervalGraph {
 
     let trie_graph: EpsilonNodeStateSubgraph = {
       let mut ret = EpsilonNodeStateSubgraph::new();
-      for (prod_ref, intervals) in all_cases.into_iter() {
+      for intervals in all_cases.into_values() {
         let StartEndEpsilonIntervals {
           start_epsilons,
           end_epsilons,
@@ -618,8 +617,6 @@ impl IndexedTrie {
 /// There is no intentionally no reference to any
 /// [TokenGrammar][gb::TokenGrammar], in the hope that it becomes easier to have
 /// the runtime we want just fall out of the code without too much work.
-///
-/// TODO: ^???
 #[derive(Debug, Clone)]
 pub struct PreprocessedGrammar<Tok> {
   /// `A: T x T -> {S}^+_-`
@@ -1018,11 +1015,16 @@ mod tests {
     text_backend::{basic_productions, new_token_position, non_cyclic_productions},
   };
 
+  use graphvizier::entities as gv;
+
   #[test]
   fn token_grammar_state_indexing() {
     let prods = non_cyclic_productions();
-    let state::preprocessing::Detokenized::<char>(grammar) =
-      state::preprocessing::Init(prods).try_index().unwrap();
+    let state::preprocessing::Detokenized::<char, _> {
+      token_grammar: grammar,
+      /* TODO: test prod_ref_map? */
+      ..
+    } = state::preprocessing::Init(prods).try_index().unwrap();
     assert_eq!(
       grammar
         .tokens
@@ -1057,10 +1059,12 @@ mod tests {
   #[test]
   fn terminals_interval_graph() {
     let noncyclic_prods = non_cyclic_productions();
-    let state::preprocessing::Detokenized::<char>(noncyclic_grammar) =
-      state::preprocessing::Init(noncyclic_prods)
-        .try_index()
-        .unwrap();
+    let state::preprocessing::Detokenized::<char, _> {
+      token_grammar: noncyclic_grammar,
+      ..
+    } = state::preprocessing::Init(noncyclic_prods)
+      .try_index()
+      .unwrap();
 
     let (noncyclic_interval_graph, _) =
       PreprocessedGrammar::produce_terminals_interval_graph(noncyclic_grammar);
@@ -1184,6 +1188,7 @@ mod tests {
 
     /* Now check that the transition graph is as we expect. */
     let CyclicGraphDecomposition { trie_graph } = noncyclic_interval_graph.connect_all_vertices();
+    let _ = trie_graph; /* TODO: uncomment this test! */
     /* There are no stack cycles in the noncyclic graph. */
     /* assert_eq!( */
     /*      trie_graph, */
@@ -1226,8 +1231,10 @@ mod tests {
     /* TODO: test `.find_start_end_indices()` and `.connect_all_vertices()` here
      * too! */
     let prods = basic_productions();
-    let state::preprocessing::Detokenized::<char>(grammar) =
-      state::preprocessing::Init(prods).try_index().unwrap();
+    let state::preprocessing::Detokenized::<char, _> {
+      token_grammar: grammar,
+      ..
+    } = state::preprocessing::Init(prods).try_index().unwrap();
     let (interval_graph, _) = PreprocessedGrammar::produce_terminals_interval_graph(grammar);
     assert_eq!(
       &interval_graph,
@@ -1792,7 +1799,10 @@ mod tests {
 
     let prods = non_cyclic_productions();
     let detokenized = state::preprocessing::Init(prods).try_index().unwrap();
-    let state::preprocessing::Indexed(preprocessed_grammar) = detokenized.index();
+    let state::preprocessing::Indexed {
+      preprocessed_grammar,
+      ..
+    } = detokenized.index();
 
     let gb = preprocessed_grammar.build_graph();
     let graphvizier::generator::DotOutput(output) = gb.build(gv::Id::new("test_graph"));
@@ -1807,7 +1817,10 @@ mod tests {
 
     let prods = basic_productions();
     let detokenized = state::preprocessing::Init(prods).try_index().unwrap();
-    let state::preprocessing::Indexed(preprocessed_grammar) = detokenized.index();
+    let state::preprocessing::Indexed {
+      preprocessed_grammar,
+      ..
+    } = detokenized.index();
 
     let gb = preprocessed_grammar.build_graph();
     let graphvizier::generator::DotOutput(output) = gb.build(gv::Id::new("test_graph"));

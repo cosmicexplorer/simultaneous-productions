@@ -518,6 +518,8 @@ impl SerializableGrammar for SP {
           }
           fn format_group(group: Group) -> String {
             let Group { elements, op } = group;
+            /* TODO: remove this! */
+            #[allow(unstable_name_collisions)]
             let joined_elements: String = elements
               .into_iter()
               .map(|group_el| match group_el {
@@ -537,6 +539,8 @@ impl SerializableGrammar for SP {
           };
           case_elements.push(formatted_case_el);
         }
+        /* TODO: remove this! */
+        #[allow(unstable_name_collisions)]
         let case_elements: String = case_elements
           .into_iter()
           .intersperse(" -> ".to_string())
@@ -546,6 +550,8 @@ impl SerializableGrammar for SP {
       }
     }
 
+    /* TODO: remove this! */
+    #[allow(unstable_name_collisions)]
     let lines: String = lines.into_iter().intersperse("\n".to_string()).collect();
     Ok(SPTextFormat::from(lines))
   }

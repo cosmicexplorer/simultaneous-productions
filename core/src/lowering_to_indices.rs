@@ -52,6 +52,7 @@ pub mod graph_coordinates {
   use crate::grammar_specification as gs;
 
   use displaydoc::Display;
+  use indexmap::IndexMap;
 
   macro_rules! via_primitive {
     ($type_name:ident, $primitive:ident) => {
@@ -139,6 +140,9 @@ pub mod graph_coordinates {
     Prod(ProdRef),
     Group(GroupRef),
   }
+
+  #[derive(Debug, Clone, PartialEq, Eq)]
+  pub struct ProdRefMap<ID>(pub IndexMap<ProdRef, ID>);
 }
 
 pub mod grammar_building {
@@ -397,7 +401,9 @@ pub mod grammar_building {
       ///    at.
       /// 2. Match up [ProductionReference]s to [ProdRef]s, or error
       ///    out.
-      pub fn new<Lit, ID, PR, Group, C, P, SP>(sp: SP) -> Result<Self, GrammarConstructionError<ID>>
+      pub fn new<Lit, ID, PR, Group, C, P, SP>(
+        sp: SP,
+      ) -> Result<(Self, gc::ProdRefMap<ID>), GrammarConstructionError<ID>>
       where
         Lit: gs::direct::Literal<Tok = Tok> + IntoIterator<Item = Tok>,
         ID: gs::constraints::Hashable + Clone,
@@ -427,7 +433,8 @@ pub mod grammar_building {
         // Collect all the tokens (splitting up literals) as we traverse the
         // productions. So literal strings are "flattened" into their individual
         // tokens.
-        let mut tokens: InternedLookupTable<Tok, gc::TokRef, gc::TokenPosition> = InternedLookupTable::new();
+        let mut tokens: InternedLookupTable<Tok, gc::TokRef, gc::TokenPosition> =
+          InternedLookupTable::new();
         /* Collect all the recursive groups, and replace them with CaseElement::GroupRef. */
         let mut groups: InternArena<gc::ProdRef, gc::GroupRef> = InternArena::new();
         let mut ret_prods: DetokenizedProductions = DetokenizedProductions::new();
@@ -597,11 +604,16 @@ pub mod grammar_building {
           ret_prods.insert_new_production((cur_prod_ref, Production(ret_cases)));
         }
 
-        Ok(Self {
-          graph: ret_prods,
-          tokens,
-          groups: groups.into_vec_with_keys().into_iter().collect(),
-        })
+        let id_prod_mapping: IndexMap<gc::ProdRef, ID> =
+          id_prod_mapping.into_iter().map(|(x, y)| (y, x)).collect();
+        Ok((
+          Self {
+            graph: ret_prods,
+            tokens,
+            groups: groups.into_vec_with_keys().into_iter().collect(),
+          },
+          gc::ProdRefMap(id_prod_mapping),
+        ))
       }
     }
 
@@ -884,8 +896,10 @@ mod tests {
       .as_ref(),
     );
 
-    let state::preprocessing::Detokenized(grammar) =
-      state::preprocessing::Init(prods).try_index().unwrap();
+    let state::preprocessing::Detokenized {
+      token_grammar: grammar,
+      ..
+    } = state::preprocessing::Init(prods).try_index().unwrap();
     let mut dt = gb::DetokenizedProductions::new();
     dt.insert_new_production((
       gc::ProdRef(0),
@@ -928,8 +942,10 @@ mod tests {
   #[test]
   fn token_grammar_construction() {
     let prods = non_cyclic_productions();
-    let state::preprocessing::Detokenized(grammar) =
-      state::preprocessing::Init(prods).try_index().unwrap();
+    let state::preprocessing::Detokenized {
+      token_grammar: grammar,
+      ..
+    } = state::preprocessing::Init(prods).try_index().unwrap();
     let mut dt = gb::DetokenizedProductions::new();
     dt.insert_new_production((
       gc::ProdRef(0),
@@ -1011,7 +1027,7 @@ mod tests {
     );
     let grammar: Result<gb::TokenGrammar<char>, _> = state::preprocessing::Init(prods)
       .try_index()
-      .map(|state::preprocessing::Detokenized(grammar)| grammar);
+      .map(|state::preprocessing::Detokenized { token_grammar, .. }| token_grammar);
     assert_eq!(
       grammar,
       Result::<gb::TokenGrammar::<char>, gb::GrammarConstructionError<ProductionReference>>::Err(
@@ -1026,7 +1042,7 @@ mod tests {
     use graphvizier::Graphable;
 
     let prods = non_cyclic_productions();
-    let state::preprocessing::Detokenized(token_grammar) =
+    let state::preprocessing::Detokenized { token_grammar, .. } =
       state::preprocessing::Init(prods).try_index().unwrap();
 
     let gb = token_grammar.build_graph();
@@ -1041,7 +1057,7 @@ mod tests {
     use graphvizier::Graphable;
 
     let prods = basic_productions();
-    let state::preprocessing::Detokenized(token_grammar) =
+    let state::preprocessing::Detokenized { token_grammar, .. } =
       state::preprocessing::Init(prods).try_index().unwrap();
 
     let gb = token_grammar.build_graph();
@@ -1056,7 +1072,7 @@ mod tests {
     use graphvizier::Graphable;
 
     let prods = group_productions();
-    let state::preprocessing::Detokenized(token_grammar) =
+    let state::preprocessing::Detokenized { token_grammar, .. } =
       state::preprocessing::Init(prods).try_index().unwrap();
 
     let gb = token_grammar.build_graph();

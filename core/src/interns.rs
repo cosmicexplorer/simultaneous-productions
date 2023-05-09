@@ -93,6 +93,12 @@ where
   }
 }
 
+/* FIXME: While these are never used, they typically would be from any intern table used in an
+ * online manner (e.g. for a programming language to look up a value by symbol). The fact that we
+ * don't use these is why this module hasn't been made into its own crate: because its conception
+ * of "interned" values (assuming we can produce monotonically increasing indices) is specialized
+ * for our offline grammar preprocessing. */
+#[allow(dead_code)]
 impl<T, R> InternArena<T, R>
 where
   R: AsRef<usize>,
